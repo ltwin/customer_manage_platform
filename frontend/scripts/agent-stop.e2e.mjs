@@ -369,6 +369,49 @@ try {
     await s.close()
   })
 
+  await check('start: a stopped message whose result is unknown keeps the stop when sent again', async () => {
+    let calls = 0
+    const s = await startScene(({ json, server }) => {
+      if (++calls === 1) return json({ error: { code: 'creative_unavailable', message: 'down' } }, 503)
+      server.runs.run2 = { ...server.run, id: 'run2', state: 'queued', trigger_message_id: 'message-2', last_event_seq: '1' }
+      delete server.runs.run2.finished_at
+      return json(server.runs.run2)
+    })
+    await sendMessage(s)
+    await s.button('停止').waitFor({ timeout: 300 })
+    await s.button('停止').click()
+    s.release()
+    const again = s.page.getByRole('button', { name: '重新发送' })
+    await again.waitFor()
+    assert.equal(s.server.cancels.length, 0)
+    await again.click()
+    for (let i = 0; i < 40 && !s.server.cancels.some((entry) => entry.run === 'run2'); i++) await sleep(50)
+    assert.equal(calls, 2)
+    assert(s.server.cancels.some((entry) => entry.run === 'run2'), 'the run made by sending again was cancelled')
+    await s.close()
+  })
+
+  await check('send: while waiting for a stop the composer is held, so no message is dropped', async () => {
+    let respond
+    const s = await scene({ cancel: ({ json, server, end }) => new Promise((resolve) => { respond = async () => { await end(); resolve(json(answered(server.run))) } }) })
+    await s.button('停止').click()
+    const editor = s.page.getByRole('textbox', { name: '创作问题' })
+    await editor.click()
+    await s.page.keyboard.type('第二条')
+    await s.page.keyboard.press('Enter')
+    await s.page.waitForFunction(() => document.querySelector('[aria-label="创作问题"][aria-disabled="true"]'))
+    await s.page.keyboard.type('第三条')
+    await s.page.keyboard.press('Enter')
+    assert.equal(await editor.innerText(), '', 'nothing typed while held')
+    await respond()
+    for (let i = 0; i < 40 && s.server.sends.length === 0; i++) await sleep(50)
+    await sleep(300)
+    assert.deepEqual(s.server.sends.map((send) => send.path.split('/').at(-1)), ['egress-consents'], 'only the second message was sent')
+    // The mock refuses it, so its words come back to the composer.
+    await editor.getByText('第二条').waitFor()
+    await s.close()
+  })
+
   const failed = results.filter((result) => !result.ok)
   if (failed.length) {
     console.log(`${failed.length} of ${results.length} failed`)

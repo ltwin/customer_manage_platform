@@ -551,6 +551,16 @@ function AgentConversation({
     setBusy(true)
     setError('')
     try {
+      // 上一个运行的停止还没落定时先等它：会话要等停止提交后才空出来。等待时
+      // 输入框随 busy 锁着，后面的消息不会被吞掉；这时又点了停止，就不发了。
+      const ready = await afterStop()
+      if (!ready || stopOnStart.current) {
+        if (mounted.current) {
+          setOutgoing(null)
+          restoreDraft(command.draft)
+        }
+        return
+      }
       if (!savePending(pendingRef.current, command)) return
       const outcome = await performAgentChain(
         command,
@@ -574,9 +584,11 @@ function AgentConversation({
           }
           setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
           followLatest()
-          if (stopOnStart.current) stop(reply)
+          if (stopOnStart.current || command.stopped) stop(reply)
         }
-      } else if (!(stopOnStart.current && outcome.kind === 'rejected')) {
+      } else if (
+        !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped))
+      ) {
         // 已经停了的那条被拒：没有运行要停，草稿照常放回，不再报错。
         setError(
           outcome.error instanceof Error
@@ -584,6 +596,13 @@ function AgentConversation({
             : '提交结果暂不确定，请确认原操作',
         )
       }
+      // 结果未知时链还留着，重新发送重放的是同一操作：停止要跟着链走。
+      if (
+        outcome.kind === 'unknown' &&
+        stopOnStart.current &&
+        !outcome.chain.stopped
+      )
+        savePending(outcome.chain, { ...outcome.chain, stopped: true })
       if (outcome.kind === 'rejected' || outcome.kind === 'unknown') {
         // 原文回到输入框：明确被拒时链已清掉，可以改了再发；结果未知时链还在，
         // 输入框随链锁着，等确认送达或重新发送。建好的对话照样留着。
@@ -644,7 +663,7 @@ function AgentConversation({
     }
     throw new Error('run still active after cancel')
   }
-  // 停止还没落定时，新消息等它：会话要等停止提交后才空出来。
+  // 停止还没落定时，新消息等它（见 perform）。
   function afterStop(): Promise<boolean> {
     return stopRequest.current ?? Promise.resolve(true)
   }
@@ -673,11 +692,7 @@ function AgentConversation({
     void notice.confirm().then((ok) => {
       if (!ok) return
       showOutgoing(outgoingParts([commandSegment(value)], titleOf), !keepDraft)
-      void afterStop().then((stopped) => {
-        if (stopped) return perform(chain, keepDraft)
-        setOutgoing(null)
-        restoreDraft(chain.draft)
-      })
+      void perform(chain, keepDraft)
     })
   }
   // 补全命令后光标立刻落到末尾：编辑器应用新文本时会把光标放回原处，
@@ -766,11 +781,7 @@ function AgentConversation({
           editing ? selectedNames(editing) : [],
         ),
       )
-      void afterStop().then((stopped) => {
-        if (stopped) return perform(chain)
-        setOutgoing(null)
-        restoreDraft(saved)
-      })
+      void perform(chain)
     })
   }
   // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。

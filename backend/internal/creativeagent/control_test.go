@@ -234,14 +234,19 @@ func TestCStoppedRunsLateAnswerDoesNotReachTheNextRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workedA := make(chan error, 1)
-	go func() { workedA <- f.work(f.alice, a.ID) }()
 	// However the test ends, A is let go and its worker finishes before the
-	// fixture's database closes.
+	// fixture's database closes. doneA is closed once, so both the test and the
+	// cleanup can wait on it.
+	var errA error
+	doneA := make(chan struct{})
+	go func() {
+		defer close(doneA)
+		errA = f.work(f.alice, a.ID)
+	}()
 	var unblock sync.Once
 	t.Cleanup(func() {
 		unblock.Do(func() { close(release) })
-		<-workedA
+		<-doneA
 	})
 	<-entered
 	receipt, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": a.ID}))
@@ -260,10 +265,10 @@ func TestCStoppedRunsLateAnswerDoesNotReachTheNextRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	unblock.Do(func() { close(release) })
-	if err = <-workedA; err != nil {
-		t.Fatal(err)
+	<-doneA
+	if errA != nil {
+		t.Fatal(errA)
 	}
-	workedA <- nil // the cleanup reads once more
 	f.sweepRuns()
 	gotA, err := f.service.ReadRun(t.Context(), f.alice, a.ID)
 	if err != nil || gotA.State != RunCancelled || gotA.SettlementState != "settled" {

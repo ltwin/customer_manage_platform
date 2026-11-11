@@ -48,7 +48,12 @@ export type AgentStep = {
   createdAt: string
   payload: Record<string, unknown>
 }
-export type PendingAgentChain = { steps: AgentStep[]; draft?: AgentDraft }
+export type PendingAgentChain = {
+  steps: AgentStep[]
+  draft?: AgentDraft
+  // 运行还没建好时摄影师就点了停止：链无论何时走完，建出的运行都要随即取消。
+  stopped?: true
+}
 export type AgentDraft = {
   conversation: string
   model: string
@@ -160,7 +165,11 @@ export function advanceChain(
       ...more,
     ]
   }
-  return { steps, ...(draft ? { draft } : {}) }
+  return {
+    steps,
+    ...(draft ? { draft } : {}),
+    ...(chain.stopped ? { stopped: true as const } : {}),
+  }
 }
 export function ownsPendingChain(
   storage: Pick<Storage, 'getItem'>,
@@ -353,6 +362,7 @@ export function pendingAgentChain(
   return {
     steps,
     ...(value.draft !== undefined ? { draft: readDraft(value.draft) } : {}),
+    ...(value.stopped === true ? { stopped: true as const } : {}),
   }
 }
 

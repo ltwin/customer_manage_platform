@@ -86,6 +86,27 @@ test('uncertain submissions retain the exact operation and bytes across refresh'
   )
   assert.throws(() => pendingAgentChain(JSON.stringify({ steps: [] })))
 })
+// 停在结果未知的那条记着摄影师已经点了停止：刷新、重新发送、链往下走都不丢。
+test('a stop asked for before the run existed stays with the uncertain chain', () => {
+  const step = (path: string, operation: string) => ({
+    path,
+    operation,
+    createdAt: '2026-11-10T00:00:00Z',
+    payload: {},
+  })
+  const chain = {
+    steps: [
+      step('/conversations/c/egress-consents', 'consent'),
+      step('/conversations/c/runs', 'run'),
+    ],
+    stopped: true as const,
+  }
+  assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)
+  assert.equal(advanceChain(chain, { id: 'consent-id' })?.stopped, true)
+  const plain = { steps: chain.steps }
+  assert.equal(pendingAgentChain(JSON.stringify(plain))?.stopped, undefined)
+  assert.equal(advanceChain(plain, { id: 'consent-id' })?.stopped, undefined)
+})
 test('legacy records become a chain that replays the original bytes', () => {
   const body = JSON.stringify({
     operation_id: 'operation-one',
