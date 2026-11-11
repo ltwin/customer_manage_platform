@@ -1,5 +1,6 @@
 import type { Asset, Canvas, CanvasNode, Content } from './api.ts'
 import type { Prompt } from './generation.ts'
+import { characterOf } from '../assets/character.ts'
 
 // 展示信息来自画布快照；编号排序与服务端生成准入保持一致。
 export type PromptReference = {
@@ -93,6 +94,17 @@ export function promptReferences(
     const content = source?.content ?? asset?.content
     const kind =
       content?.kind ?? source?.metadata.type_key.replace('core.', '') ?? 'image'
+    // A card expands into its views, numbered like images; the payload
+    // counts them until the node or asset summary arrives.
+    const imageCount =
+      kind === 'character'
+        ? (source?.character?.view_count ??
+          asset?.character?.view_count ??
+          characterOf(content)?.views.length ??
+          0)
+        : 0
+    const firstImage = (counts.get('image') ?? 0) + 1
+    if (imageCount) counts.set('image', firstImage - 1 + imageCount)
     const number = (counts.get(kind) ?? 0) + 1
     counts.set(kind, number)
     const prefixes: Record<string, string> = {
@@ -105,10 +117,17 @@ export function promptReferences(
     const prefix = prefixes[kind] ?? '参考'
     return {
       key: `${r.rank}:${r.id}`,
-      sourceID: r.sourceID ?? null,
+      sourceID: r.sourceID ?? r.revision ?? null,
       title: source?.metadata.title || asset?.title || '参考素材',
       kind,
-      label: `${prefix}${number}`,
+      label:
+        kind !== 'character'
+          ? `${prefix}${number}`
+          : imageCount > 1
+            ? `角色卡 · 图${firstImage}–图${firstImage + imageCount - 1}`
+            : imageCount === 1
+              ? `角色卡 · 图${firstImage}`
+              : '角色卡',
       content,
       revisionID: source?.data.content_revision_id ?? r.revision ?? null,
       connected: !!r.sourceID && connected.has(r.sourceID),
@@ -121,7 +140,7 @@ export function promptReferences(
 export function connectedReferences(refs: PromptReference[]) {
   const seen = new Set<string>()
   return refs.filter((r) => {
-    if (!r.connected || !r.sourceID || seen.has(r.sourceID)) return false
+    if ((!r.connected && r.draftIndex === undefined) || !r.sourceID || seen.has(r.sourceID)) return false
     seen.add(r.sourceID)
     return true
   })

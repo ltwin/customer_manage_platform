@@ -286,7 +286,18 @@ func externalRefusal(err error) error {
 	}
 	var refusal *toolRefusal
 	var public creativeops.Public
+	var characterSearch *characterSearchArguments
 	switch {
+	case errors.As(err, &characterSearch):
+		message := characterSearch.Message
+		if len(characterSearch.Candidates) > 0 {
+			raw, err := json.Marshal(characterSearch.Candidates)
+			if err != nil {
+				return err
+			}
+			message += "。候选 " + string(raw)
+		}
+		return &ExternalError{Code: "invalid_arguments", Message: message}
 	case errors.Is(err, store.ErrCreativeAccessDenied):
 		return &ExternalError{Code: "forbidden", Message: "这个账号现在不能使用创意空间"}
 	case errors.Is(err, errToolArguments):

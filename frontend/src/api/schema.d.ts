@@ -1237,6 +1237,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 新建角色卡并保存第一个版本 */
+        post: operations["createCreativeCharacter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/assets/{id}/character-revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在角色卡上保存完整的新版本 */
+        post: operations["saveCreativeCharacterRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/character-ips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查找内置和当前账号用过的角色 IP */
+        get: operations["suggestCreativeCharacterIPs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/capabilities": {
         parameters: {
             query?: never;
@@ -3326,7 +3377,81 @@ export interface components {
             };
         };
         /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
-        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"] | components["schemas"]["CreativeMaterialPayload"];
+        CreativeContentRevisionPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"] | components["schemas"]["CreativeModelPayload"] | components["schemas"]["CreativeModelPreviewPayload"] | components["schemas"]["CreativeMaterialPayload"] | components["schemas"]["CreativeCharacterContentPayload"];
+        CreativeCharacterContentPayload: {
+            character: components["schemas"]["CreativeCharacterPayload"];
+        };
+        CreativeCharacterPayload: {
+            name: string;
+            appearance: string;
+            /** @description 有序的生成参考图，第一张为封面。同一修订只出现一次 */
+            views: components["schemas"]["CreativeCharacterView"][];
+            /** @description 用于追溯的原始素材，不会发送给生成模型 */
+            sources: {
+                content_revision_id: string;
+            }[];
+            aliases?: string[];
+            variant?: string;
+            /** @enum {string} */
+            origin?: "original" | "derivative";
+            ip?: components["schemas"]["CreativeCharacterIP"];
+            work?: string;
+            attribution?: string;
+            source_urls?: string[];
+        };
+        CreativeCharacterView: {
+            content_revision_id: string;
+            /** @enum {string} */
+            view: "front" | "three_quarter" | "side" | "back" | "face" | "full_body" | "detail" | "other";
+            note?: string;
+        };
+        CreativeCharacterIP: {
+            name: string;
+            key?: string;
+        };
+        CreativeCharacterBrief: {
+            name: string;
+            variant?: string;
+            ip?: components["schemas"]["CreativeCharacterIP"];
+            work?: string;
+            view_count: number;
+        };
+        CreativeCharacterIPSuggestions: {
+            items: {
+                name: string;
+                key?: string;
+                builtin: boolean;
+                character_count: number;
+                works: string[];
+            }[];
+        };
+        CreativeCharacterTarget: {
+            description?: string;
+            group_ids?: string[];
+            tag_ids?: string[];
+            new_tags?: components["schemas"]["CreativeNewTag"][];
+            is_favorite?: boolean;
+        };
+        CreateCreativeCharacterRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: {
+                character: components["schemas"]["CreativeCharacterPayload"];
+                target?: components["schemas"]["CreativeCharacterTarget"];
+            };
+        };
+        SaveCreativeCharacterRevisionRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: {
+                expected_revision: components["schemas"]["CreativeRevision"];
+                character: components["schemas"]["CreativeCharacterPayload"];
+            };
+        };
         /** @description material 内容的载荷（材质资产）：一个材质槽的完整分配，只由「材质存入资产库」写入。用到槽位时把 slot 原样写进 update_objects 的 material_slots，之后与资产没有关联。贴图只给图片的 content_revision_id，像素按修订另取媒体读取票据。 */
         CreativeMaterialPayload: {
             material: {
@@ -3492,7 +3617,7 @@ export interface components {
             id: string;
             content_id: string;
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material" | "character";
             sequence: components["schemas"]["CreativeRevision"];
             payload: components["schemas"]["CreativeContentRevisionPayload"];
             media?: components["schemas"]["CreativeMediaObject"][];
@@ -3508,11 +3633,12 @@ export interface components {
             }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
-            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
+            kind: "text" | "link" | "image" | "video" | "audio" | "model" | "material" | "character";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
             content?: components["schemas"]["CreativeContentRevision"];
+            character?: components["schemas"]["CreativeCharacterBrief"];
             unavailable: boolean;
             is_favorite: boolean;
             /** Format: date-time */
@@ -3618,6 +3744,8 @@ export interface components {
                 model: number;
                 /** Format: int64 */
                 material: number;
+                /** Format: int64 */
+                character: number;
             };
             tags: {
                 tag_id: string;
@@ -3732,6 +3860,7 @@ export interface components {
             placement_revision: components["schemas"]["CreativeRevision"];
             data_revision: components["schemas"]["CreativeRevision"];
             content?: components["schemas"]["CreativeContentRevision"];
+            character?: components["schemas"]["CreativeCharacterNodeView"];
             version_summary?: components["schemas"]["CreativeNodeVersionSummary"];
             /** @description 只出现在文档节点上；文档已删除、类型未注册或内容不可展示时为 null，同时 status.content_state 为 unavailable。 */
             document_summary?: components["schemas"]["CreativeDocumentSummary"] | null;
@@ -3742,6 +3871,13 @@ export interface components {
              * @enum {string}
              */
             based_on_state?: "current" | "stale" | "unavailable";
+        };
+        CreativeCharacterNodeView: {
+            name: string;
+            cover_revision_id: string;
+            view_count: number;
+            asset_id?: string;
+            latest_revision_id?: string;
         };
         /** @description 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。 */
         CreativeNodeVersionSummary: {
@@ -4802,7 +4938,30 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"] | components["schemas"]["CreativeUploadDetails"];
+        CreativeCharacterFieldDetails: {
+            fields: string[];
+        };
+        CreativeCharacterImageDetails: {
+            content_revision_ids: string[];
+        };
+        CreativeCharacterWorkDetails: {
+            candidates: {
+                ip: string;
+                work: string;
+            }[];
+        };
+        CreativeCharacterGenerationDetails: {
+            characters: {
+                name: string;
+                content_revision_id: string;
+                view_count: number;
+            }[];
+            limit?: number;
+            total?: number;
+            image_index?: number;
+            content_revision_id?: string;
+        };
+        ErrorDetails: components["schemas"]["CreativeCharacterFieldDetails"] | components["schemas"]["CreativeCharacterImageDetails"] | components["schemas"]["CreativeCharacterWorkDetails"] | components["schemas"]["CreativeCharacterGenerationDetails"] | components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"] | components["schemas"]["CreativeFieldDetails"] | components["schemas"]["CreativeLimitDetails"] | components["schemas"]["CreativeMaterialSlotDetails"] | components["schemas"]["CreativeSceneTextureDetails"] | components["schemas"]["CreativeShotKeysDetails"] | components["schemas"]["CreativeUploadDetails"];
         /** @description 有通道的属性在这些分镜帧上缺少关键帧（data: 场景时间线「分镜帧必有关键帧」），最多 50 项。 首次创建通道、新建或复制分镜、挪动或删除分镜时，调用方须在同一批里写全关键帧。 */
         CreativeShotKeysDetails: {
             missing: components["schemas"]["CreativeShotKeyGap"][];
@@ -7035,7 +7194,7 @@ export interface components {
              * @description 文档节点类型（core.scene、internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
              * @enum {string}
              */
-            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group" | "core.scene" | "internal.document";
+            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.character" | "core.group" | "core.scene" | "internal.document";
             title?: string;
             x: number;
             y: number;
@@ -7158,7 +7317,14 @@ export interface components {
             /** @enum {string} */
             group_mode?: "subtree";
         };
-        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionFillFromAsset"] | components["schemas"]["CreativeActionFillFromUpload"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
+        CreativeActionUpdateCharacter: {
+            /** @enum {string} */
+            type: "update_character";
+            node_id: string;
+            /** @description 必须等于对应角色卡资产的当前版本。 */
+            content_revision_id: string;
+        };
+        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionUpdateCharacter"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionFillFromAsset"] | components["schemas"]["CreativeActionFillFromUpload"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
         CreativeBatchPayload: {
             /** @enum {string} */
             type: "batch";
@@ -7280,6 +7446,8 @@ export interface components {
             execution_id_snapshot: string | null;
             output_ordinal: number | null;
             generation_provenance: {
+                characters?: components["schemas"]["CreativeGenerationCharacter"][];
+            } & {
                 [key: string]: unknown;
             };
             /** Format: date-time */
@@ -8542,6 +8710,15 @@ export interface components {
             canvas_id: string;
             /** Format: date-time */
             created_at: string;
+            characters?: components["schemas"]["CreativeGenerationCharacter"][];
+        };
+        CreativeGenerationCharacter: {
+            node_id: string;
+            content_id: string;
+            content_revision_id: string;
+            name: string;
+            /** @description 第一张和最后一张参考图的编号。 */
+            images: number[];
         };
         CreativeRequestExecutionPayload: {
             configuration_revision: string;
@@ -8704,7 +8881,11 @@ export interface operations {
                 view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link" | "image" | "video" | "audio" | "model" | "material";
+                kind?: "text" | "link" | "image" | "video" | "audio" | "model" | "material" | "character";
+                /** @description 按角色卡所属 IP 的目录 key、名称或别名筛选 */
+                character_ip?: string;
+                /** @description 按角色卡作品的名称或别名筛选。别名有歧义时返回候选 */
+                character_work?: string;
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
@@ -11285,6 +11466,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeCharacter: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeCharacterRequest"];
+            };
+        };
+        responses: {
+            /** @description 角色卡已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveCreativeCharacterRevision: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveCreativeCharacterRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description 保存成功，载荷无变化时复用当前版本 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    suggestCreativeCharacterIPs: {
+        parameters: {
+            query?: {
+                query?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description IP 候选 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeCharacterIPSuggestions"];
                 };
             };
             /** @description 请求失败 */

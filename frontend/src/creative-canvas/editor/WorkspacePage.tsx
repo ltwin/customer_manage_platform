@@ -32,7 +32,8 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
-import { assetActions, isCanvasAsset } from './assetPlacement.ts'
+import { acceptsCharacterReference, assetActions, isCanvasAsset } from './assetPlacement.ts'
+import CharacterDialog from '../assets/CharacterDialog.tsx'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
 import { useAgentRuns } from './agentRuns.ts'
 import { isActiveRun } from './agentState.ts'
@@ -199,6 +200,7 @@ function Workspace({ account }: { account: string }) {
   } | null>(null)
   const referenceSeq = useRef(0)
   const [nodeDragging, setNodeDragging] = useState(false)
+  const [characterViews, setCharacterViews] = useState<string[] | null>(null)
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
@@ -475,6 +477,8 @@ function Workspace({ account }: { account: string }) {
     setDiscard(null)
     setRedoStack([])
     setLibraryTask(null)
+    // The card dialog writes to the library, not this canvas: switching
+    // canvases keeps it, so a save in flight is never cut off.
   }, [canvasID])
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => {
@@ -911,9 +915,12 @@ function Workspace({ account }: { account: string }) {
   }
   // 为节点选参考：素材竖排在目标左侧并连线；左边已有节点就继续往左让。
   function pickReferences(targetID: string, list: api.Asset[]) {
-    const picked = list.filter(isCanvasAsset)
     const target = view?.nodes.find((n) => n.id === targetID)
-    if (!view || !target || !queue || !editable || !picked.length) return
+    if (!view || !target || !queue || !editable) return
+    const picked = list.filter(isCanvasAsset).filter(
+      (asset) => asset.kind !== 'character' || acceptsCharacterReference(target.metadata.type_key),
+    )
+    if (!picked.length) return
     const heights = picked.map((a) => {
       const m = a.content?.media?.find((x) => x.role === 'original')
       return (a.kind === 'image' || a.kind === 'video') && m?.width && m.height
@@ -1666,6 +1673,7 @@ function Workspace({ account }: { account: string }) {
                   }
                   onSaveNodes={(ids, groupID) => void saveNodes(ids, groupID)}
                   onSaveNodesAsk={setSavingMany}
+                  onCreateCharacter={setCharacterViews}
                   onFillNode={fillNode}
                   onUploadFileToNode={uploadFileToNode}
                   onLibraryFill={(id, kind) => {
@@ -1683,6 +1691,7 @@ function Workspace({ account }: { account: string }) {
                     if (n)
                       openLibraryTask({
                         kind: 'pick',
+                        allowCharacter: acceptsCharacterReference(n.metadata.type_key),
                         nodeID: id,
                         title: n.metadata.title || '节点',
                       })
@@ -1721,6 +1730,7 @@ function Workspace({ account }: { account: string }) {
                       onPickReferences={() =>
                         openLibraryTask({
                           kind: 'pick',
+                          allowCharacter: acceptsCharacterReference(node.metadata.type_key),
                           nodeID: node.id,
                           title: node.metadata.title || '节点',
                         })
@@ -1871,6 +1881,19 @@ function Workspace({ account }: { account: string }) {
             />
           ) : null
         })()}
+      {characterViews && (
+        <CharacterDialog
+          account={account}
+          views={characterViews}
+          catalog={catalog}
+          onSaved={() => {
+            setCharacterViews(null)
+            refresh()
+            setCopyNotice('角色卡已存入资产库')
+          }}
+          onClose={() => setCharacterViews(null)}
+        />
+      )}
       {savingNode && view && (
         <StudioDialog
           title="存入个人资产库"

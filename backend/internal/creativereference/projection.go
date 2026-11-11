@@ -40,9 +40,9 @@ func Live(ctx context.Context, tx Reader, revisionIDs []string) (map[string]bool
 // revisions by it (media GC). It names creative_content_revisions by table, not
 // alias, and binds the account as $1, so it only fits a scoped query.
 //
-// A revision held by another revision (a material's or a library model copy's
-// textures) lives while the holder is not deleted. Whether the holder itself
-// lives is its own test: GC deletes it first and the texture a round later.
+// A revision held by another revision (textures or a character card's images)
+// lives while the holder is not deleted. GC reclaims the holder first, then
+// the images in a later round if they have no other owners.
 const LiveOwnerCondition = `EXISTS (SELECT 1 FROM creative_assets a JOIN creative_contents c ON c.account_id=a.account_id AND c.id=a.content_id WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revisions.id AND a.content_id=creative_content_revisions.content_id AND a.kind=c.kind)
 OR EXISTS (SELECT 1 FROM creative_nodes n JOIN creative_contents c ON c.account_id=n.account_id AND c.id=n.content_id WHERE n.account_id=$1 AND n.content_revision_id=creative_content_revisions.id AND n.content_id=creative_content_revisions.content_id AND n.type_key='core.'||c.kind)
 OR EXISTS (SELECT 1 FROM creative_message_content_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)

@@ -19,6 +19,7 @@ export default function AssetViewer({
   onClose,
   blocked = false,
   onPlace,
+  onEditCharacter,
   label,
   foot,
 }: {
@@ -31,6 +32,7 @@ export default function AssetViewer({
   onClose: () => void
   blocked?: boolean
   onPlace?: (asset: api.Asset) => void
+  onEditCharacter?: (asset: api.Asset) => void
   label?: string
   /** 底部换成调用方的操作，按当前看的那一项给出。 */
   foot?: (asset: api.Asset) => React.ReactNode
@@ -132,6 +134,7 @@ export default function AssetViewer({
                 }
               : undefined
           }
+          onEditCharacter={onEditCharacter ? () => onEditCharacter(asset) : undefined}
           foot={foot?.(asset)}
         />
       }

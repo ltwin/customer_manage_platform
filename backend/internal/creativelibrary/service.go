@@ -71,6 +71,7 @@ type Asset struct {
 	ContentID         string                    `json:"content_id"`
 	ContentRevisionID string                    `json:"content_revision_id"`
 	Content           *creativecontent.Revision `json:"content,omitempty"`
+	Character         *CharacterBrief           `json:"character,omitempty"`
 	Unavailable       bool                      `json:"unavailable"`
 	Rating            *float64                  `json:"rating"`
 }
@@ -195,6 +196,9 @@ func ValidateImportTargetInTx(ctx context.Context, tx store.TxAccountScope, t Im
 // revision inside the caller's operation. The caller has locked the library
 // root and verified the revision's usage; this never writes a second receipt.
 func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativecontent.Revision, t ImportTarget) (AssetResult, error) {
+	if r.Kind == creativecontent.CharacterKind {
+		return AssetResult{}, creativeops.ErrValidation
+	}
 	if err := ValidateImportTarget(t); err != nil {
 		return AssetResult{}, err
 	}
@@ -202,6 +206,10 @@ func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r crea
 	if err != nil {
 		return AssetResult{}, err
 	}
+	return createAssetFromRevision(ctx, tx, r, t, revision)
+}
+
+func createAssetFromRevision(ctx context.Context, tx store.TxAccountScope, r creativecontent.Revision, t ImportTarget, revision creativeops.Revision) (AssetResult, error) {
 	id := "ccas_" + uuid.NewString()
 	if err := tx.Insert(ctx, "creative_assets", []string{"id", "kind", "title", "normalized_title", "description", "content_id", "content_revision_id", "source_url", "is_favorite"}, id, r.Kind, t.Title, textindex.Normalize(t.Title), t.Description, r.ContentID, r.ID, r.Payload.URL, t.Favorite); err != nil {
 		return AssetResult{}, err
@@ -223,6 +231,9 @@ func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r crea
 // already pinned to the same revision only gains the chosen groups and tags,
 // so saving the same picture twice never duplicates it.
 func SaveRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativecontent.Revision, t ImportTarget) (AssetResult, error) {
+	if r.Kind == creativecontent.CharacterKind {
+		return AssetResult{}, creativeops.ErrValidation
+	}
 	if err := ValidateImportTarget(t); err != nil {
 		return AssetResult{}, err
 	}
@@ -395,6 +406,7 @@ func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, 
 		}
 		r = creativecontent.WithoutModelCode(r)
 		a.Content = &r
+		a.Character = characterBrief(r.Payload.Character)
 		items := []Asset{a}
 		err = attachPalettes(ctx, tx, items)
 		a = items[0]

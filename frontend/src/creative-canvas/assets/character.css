@@ -1,0 +1,153 @@
+.cc-dialog-overlay.al-character-overlay {
+  z-index: 82;
+}
+.al-character-form {
+  gap: 14px;
+}
+.al-character-form fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.al-character-form textarea {
+  min-height: 6em;
+  resize: vertical;
+}
+.al-character-form label,
+.al-character-ip label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.al-character-form legend {
+  padding: 0;
+  margin-block-end: 8px;
+}
+.al-character-ip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.al-character-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.al-character-list li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+.al-character-list li > .al-character-image {
+  aspect-ratio: 1;
+  border-radius: var(--r-sm);
+}
+.al-character-image {
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--s1);
+}
+.al-character-image .cc-media {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.al-character-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.al-character-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.al-character-form footer {
+  display: flex;
+  justify-content: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: sticky;
+  bottom: 0;
+  padding-block: 8px;
+  background: var(--s2);
+  border-top: 1px solid var(--line);
+}
+.al-character-form .al-character-error {
+  color: var(--danger);
+  margin: 0;
+}
+.al-character-cap {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.al-character-cap small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+.al-character-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  /* Lines up with .al-filters and .al-pills above and below it. */
+  padding: 6px 20px;
+}
+@media (max-width: 760px) {
+  .al-character-filter {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+.al-character-filter .al-character-ip {
+  width: min(100%, 320px);
+}
+.v-character-views {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 8px;
+}
+.v-character-views figure {
+  margin: 0;
+  min-width: 0;
+}
+.v-character-views .al-character-image {
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: var(--r-sm);
+}
+.v-character-views figcaption {
+  margin-block-start: 4px;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+.v-character-appearance {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .al-character-list li {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .al-character-list .al-character-tools {
+    grid-column: 2;
+  }
+}

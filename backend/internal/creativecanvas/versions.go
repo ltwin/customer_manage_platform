@@ -259,13 +259,27 @@ func ReuseVersionPrompt(ctx context.Context, scope store.AccountScope, c creativ
 			return creativeops.Outcome{}, ErrNotFound
 		}
 		var provenance struct {
-			Prompt NodePrompt `json:"prompt"`
+			Prompt  NodePrompt        `json:"prompt"`
+			Sources map[string]string `json:"reference_sources"`
+			Inputs  []VersionInput    `json:"reference_inputs"`
 		}
 		if err = json.Unmarshal(version.Provenance, &provenance); err != nil || provenance.Prompt.ID == "" {
 			return creativeops.Outcome{}, creativeops.ErrValidation
 		}
 		refs := []InputSource{}
-		for ordinal, input := range version.Inputs {
+		inputs := version.Inputs
+		if len(provenance.Inputs) > 0 {
+			// Restore the unexpanded references so the same card is expanded once
+			// and a mention can still resolve if the original node was removed.
+			inputs = provenance.Inputs
+			provenance.Prompt.Text = promptMention.ReplaceAllStringFunc(provenance.Prompt.Text, func(token string) string {
+				if revision := provenance.Sources[promptMention.FindStringSubmatch(token)[1]]; revision != "" {
+					return "@[" + revision + "]"
+				}
+				return token
+			})
+		}
+		for ordinal, input := range inputs {
 			if _, err = creativecontent.RequireUsable(ctx, tx, input.RevisionID, "display"); err != nil {
 				return creativeops.Outcome{}, err
 			}

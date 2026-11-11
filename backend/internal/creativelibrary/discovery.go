@@ -125,6 +125,24 @@ func DiscoverAssets(ctx context.Context, sc store.AccountScope, query Search, bu
 				if b, ok := creativecontent.MaterialBriefOf(a.Content.Payload); ok {
 					item["material"] = b
 				}
+			} else if a.Content != nil && a.Content.Payload.Character != nil {
+				card := a.Content.Payload.Character
+				aliases := card.Aliases
+				if aliases == nil {
+					aliases = []string{}
+				}
+				brief := map[string]any{"name": card.Name, "aliases": aliases, "view_count": len(card.Views)}
+				for key, value := range map[string]string{"variant": card.Variant, "origin": card.Origin, "work": card.Work} {
+					if value != "" {
+						brief[key] = value
+					}
+				}
+				if card.IP != nil {
+					brief["ip"] = card.IP
+				}
+				appearance := []rune(card.Appearance)
+				brief["appearance"] = string(appearance[:min(200, len(appearance))])
+				item["character"] = brief
 			} else if a.Content != nil {
 				for _, m := range a.Content.Media {
 					if m.Width != nil && m.Height != nil {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { components } from '../../api/schema'
+import { ApiError } from '../../api/transport.ts'
 import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
 import { readCache, readStamp } from '../editor/readCache.ts'
@@ -135,7 +136,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
       })
       .catch((e: unknown) => {
         if (mine === seq.current && !controller.signal.aborted)
-          setState((s) => ({ ...s, key, error: errorMessage(e) }))
+          setState((s) => ({ ...s, key, error: assetListError(e) }))
       })
     return () => controller.abort()
   }, [key, refresh])
@@ -185,4 +186,10 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
     stale: current?.stale ?? false,
     loadMore,
   }
+}
+
+function assetListError(e: unknown): string {
+  if (e instanceof ApiError && e.details && 'candidates' in e.details)
+    return `${e.message}。候选为${e.details.candidates.map(({ ip, work }) => `${ip} · ${work}`).join('、')}`
+  return errorMessage(e)
 }

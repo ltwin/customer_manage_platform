@@ -109,6 +109,15 @@ const defaultActions: Record<string, string[]> = {
     'replace',
     'save_to_library',
   ],
+  'core.character': [
+    'move',
+    'resize',
+    'rename',
+    'duplicate',
+    'remove',
+    'reference',
+    'update_character',
+  ],
   'core.group': ['move', 'rename', 'duplicate', 'remove', 'ungroup'],
   // Document nodes share one definition on the server (documentDefinition).
   'core.scene': ['move', 'resize', 'rename', 'duplicate', 'remove', 'maximize'],
@@ -456,6 +465,18 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
                   payload: action.payload,
                   truncated: false,
                 },
+          }))
+          break
+        case 'update_character':
+          // The new card arrives with the next snapshot; the update hint
+          // goes in the same frame so the click reads as done.
+          setNode(action.node_id, (n) => ({
+            ...n,
+            data: { ...n.data, content_revision_id: action.content_revision_id },
+            character: n.character && {
+              ...n.character,
+              latest_revision_id: undefined,
+            },
           }))
           break
         case 'fill_from_asset': {

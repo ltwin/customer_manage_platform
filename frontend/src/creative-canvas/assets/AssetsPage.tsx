@@ -1,3 +1,5 @@
+import { UserRoundPlus } from 'lucide-react'
+import CharacterDialog from './CharacterDialog.tsx'
 import { useAssetImport } from './AssetImport.tsx'
 import TrashControls from './TrashControls.tsx'
 import AssetViewer from '../viewer/AssetViewer.tsx'
@@ -55,6 +57,7 @@ function Assets({ account }: { account: string }) {
     items: BuiltinMaterial[]
     initialID: string
   } | null>(null)
+  const [characterDialog, setCharacterDialog] = useState<{ views?: string[]; asset?: api.Asset } | null>(null)
   const [refresh, setRefresh] = useState(0)
   const reload = () => setRefresh((n) => n + 1)
   const [prefs, setPrefs] = useState(readPrefs)
@@ -130,6 +133,7 @@ function Assets({ account }: { account: string }) {
     blocked:
       actions.blocked ||
       !!viewer ||
+      !!characterDialog ||
       !!builtinViewer ||
       !!popup ||
       !!confirm ||
@@ -145,7 +149,7 @@ function Assets({ account }: { account: string }) {
   })
   const blocked = actions.blocked || selected.length > 100
   useSidebarRefresh(refresh)
-  const navigationBlocked = actions.blocked || importer.busy
+  const navigationBlocked = actions.blocked || importer.busy || !!characterDialog
   const { setNavigationBlocked } = useCreativeShell()
   useEffect(() => {
     setNavigationBlocked(navigationBlocked)
@@ -182,6 +186,19 @@ function Assets({ account }: { account: string }) {
     return () => document.removeEventListener('visibilitychange', visible)
   }, [])
 
+  function canCreateCharacter(assets: api.Asset[]) {
+    return !actions.blocked && assets.length >= 1 && assets.length <= 4 &&
+      assets.every((item) => item.kind === 'image' && !item.deleted_at && !item.unavailable)
+  }
+  function createCharacter(assets: api.Asset[] = []) {
+    setCharacterDialog({ views: [...new Set(assets.map((item) => item.content_revision_id))] })
+  }
+
+  const createCharacterAction = canCreateCharacter(selected) ? (
+    <button type="button" className="btn" onClick={() => createCharacter(selected)}>
+      <UserRoundPlus size={14} /> 创建角色卡
+    </button>
+  ) : null
   function assetMenu(asset: api.Asset, at: Point) {
     const assets = selection.ids.includes(asset.id) ? selected : [asset]
     if (!selection.ids.includes(asset.id)) pick(asset.id)
@@ -192,7 +209,15 @@ function Assets({ account }: { account: string }) {
       onAction: (kind) => action(kind, at, assets),
       onRemoveFromGroup: () => organize(assets, 'group', query.group, false),
     })
-    if (menu) setMenu({ at, ...menu })
+    if (menu) {
+      if (canCreateCharacter(assets))
+        menu.items.unshift({
+          label: '创建角色卡',
+          icon: <UserRoundPlus size={14} />,
+          action: () => createCharacter(assets),
+        })
+      setMenu({ at, ...menu })
+    }
   }
   const tree = useTreeCommands({
     account,
@@ -294,12 +319,22 @@ function Assets({ account }: { account: string }) {
           />
         ) : (
         <AssetBrowser
-          importButton={importer.button('al-phone-import')}
+          importButton={
+            <>
+              {importer.button('al-phone-import')}
+              {query.view !== 'trash' && (
+                <button type="button" className="btn" disabled={actions.blocked || importer.busy} onClick={() => createCharacter()}>
+                  <UserRoundPlus size={14} /> 新建角色卡
+                </button>
+              )}
+            </>
+          }
           onImportFiles={importer.files}
           importBlocked={
             actions.blocked ||
             importer.open ||
             !!viewer ||
+            !!characterDialog ||
             !!confirm ||
             !!popup ||
             !!menu
@@ -345,12 +380,14 @@ function Assets({ account }: { account: string }) {
               blocked={blocked}
               onAction={action}
               onClear={clear}
+              extra={createCharacterAction}
             />
           }
         />
         )}
         {prefs.inspector && !builtin && (
           <AssetInspector
+            extra={createCharacterAction}
             onColor={(color) => go({ ...query, color })}
             assets={selected}
             catalog={catalog}
@@ -389,13 +426,17 @@ function Assets({ account }: { account: string }) {
           }}
         />
       )}
-      {viewer ? (
+      {viewer && !characterDialog?.asset ? (
         <AssetViewer
           {...viewer}
           catalog={catalog}
           actions={actions}
           organization={organization}
           refresh={refresh}
+          onEditCharacter={(asset) => {
+            setViewer({ ...viewer, initialID: asset.id })
+            setCharacterDialog({ asset })
+          }}
           onClose={() => {
             returnFocus.current = viewer.initialID
             setViewer(null)
@@ -403,6 +444,20 @@ function Assets({ account }: { account: string }) {
         />
       ) : (
         organization.overlays
+      )}
+      {characterDialog && (
+        <CharacterDialog
+          account={account}
+          catalog={catalog}
+          group={query.group}
+          {...characterDialog}
+          onSaved={() => {
+            if (!characterDialog.asset) go({ ...enter(query, 'all'), kind: 'character' }, true)
+            setCharacterDialog(null)
+            reload()
+          }}
+          onClose={() => setCharacterDialog(null)}
+        />
       )}
     </>
   )

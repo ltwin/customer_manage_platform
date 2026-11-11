@@ -474,6 +474,7 @@ GET /api/v1/creative/character-ips?query=fa&limit=5
 - `search_assets` 每个角色卡项附要点 `character`：`name`、`aliases`、`variant`（有时）、`origin`（有时）、`ip`（有时）、`work`（有时）、`view_count`、`appearance` 前 200 码点。不附图片。助手据 `ip`、`work`、`variant` 向摄影师区分同名角色。
 - `read_asset` 读角色卡版本：返回完整载荷（`name`、`aliases`、`variant`、`appearance`、`views[{content_revision_id, view, note}]`、`sources[{content_revision_id}]`、`origin`、`ip`、`work`、`attribution`、`source_urls`）。
   - **图片**：按 `views` 的顺序附图片，最多 4 张（即 `views` 全部）。附上的每张图都必须是这个版本 `views` 里的图片修订，读取时逐张校验，不接受调用方另指图片。
+  - `read_asset` 按版本读取：资产进回收站或彻底删除，不影响画布节点已持有的版本（`data: 角色卡节点`），内置和外部助手一致；回收站只影响 `search_assets` 的结果。
   - 某张图无法压缩到可发送的大小或格式时，单独省略这一张，其余照附；`images_omitted: [{content_revision_id, reason}]` 列出被省略的图和原因。内置助手因模型不能看图或缺 `image_preview` 而全部不附时，`images_omitted` 同样列出全部并给出原因。
   - `sources` 只给 ID、宽高等元数据，不附像素。
 - `edit_canvas`：与放置其他资产相同的结果，节点类型为 `core.character`。
@@ -484,7 +485,7 @@ GET /api/v1/creative/character-ips?query=fa&limit=5
 | 信号 | 错误 | 触发条件 | 处理 |
 |---|---|---|---|
 | 工具错误 | `invalid_arguments` | `kind` 不合法；给了 `character_ip` / `character_work` 但 `kind` 不是 `character`；`character_work` 的别名命中多部作品（结果里列出候选） | 助手修正参数，或把候选给摄影师选 |
-| 工具错误 | `not_found` | 资产或版本不存在、不属于本账号，或资产在回收站 | 重新搜索 |
+| 工具错误 | `not_found` | 资产或版本不存在、不属于本账号 | 重新搜索 |
 | 工具错误 | 现有连线校验错误 | 把角色卡节点连到非生成节点，或作为 `data` 输入 | 按 `data: 角色卡节点` 改连 |
 | 生成受理失败 | 见 `patterns: 角色卡展开为生成参考` 第 5、6 条 | 展开后超限或图片不可用 | 减少角色卡或参考图 |
 

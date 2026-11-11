@@ -75,6 +75,9 @@ func indexAsset(ctx context.Context, tx store.TxAccountScope, a Asset, payload c
 	if err != nil {
 		return err
 	}
+	if payload.Character != nil {
+		return indexCharacter(ctx, tx, a, text, payload.Character)
+	}
 	return tx.Upsert(ctx, "creative_asset_search", []string{"asset_id", "normalized_text", "asset_revision", "normalization_version"}, []string{"account_id", "asset_id"}, []string{"normalized_text", "asset_revision", "normalization_version"}, a.ID, text, a.Revision, textindex.Version)
 }
 func relationCount(ctx context.Context, tx store.TxAccountScope, id string) (int64, error) {
@@ -234,6 +237,9 @@ func Metadata(ctx context.Context, sc store.AccountScope, c creativeops.Command)
 		}
 		if a.DeletedAt != nil {
 			return LibraryResult{}, ErrTrashed
+		}
+		if a.Kind == creativecontent.CharacterKind && v.Title != nil {
+			return LibraryResult{}, &creativecontent.CharacterFieldError{Fields: []string{"title"}}
 		}
 		title, desc, fav := a.Title, a.Description, a.Favorite
 		if v.Title != nil {

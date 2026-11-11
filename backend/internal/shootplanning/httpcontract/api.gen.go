@@ -2658,6 +2658,37 @@ type CreativeBriefPatch struct {
 	WorkTitle      nullable.Nullable[string]   `json:"work_title,omitempty"`
 }
 
+// CreativeCharacterFieldDetails defines model for CreativeCharacterFieldDetails.
+type CreativeCharacterFieldDetails struct {
+	Fields []string `json:"fields"`
+}
+
+// CreativeCharacterGenerationDetails defines model for CreativeCharacterGenerationDetails.
+type CreativeCharacterGenerationDetails struct {
+	Characters []struct {
+		ContentRevisionId string `json:"content_revision_id"`
+		Name              string `json:"name"`
+		ViewCount         int    `json:"view_count"`
+	} `json:"characters"`
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	ImageIndex        *int    `json:"image_index,omitempty"`
+	Limit             *int    `json:"limit,omitempty"`
+	Total             *int    `json:"total,omitempty"`
+}
+
+// CreativeCharacterImageDetails defines model for CreativeCharacterImageDetails.
+type CreativeCharacterImageDetails struct {
+	ContentRevisionIds []string `json:"content_revision_ids"`
+}
+
+// CreativeCharacterWorkDetails defines model for CreativeCharacterWorkDetails.
+type CreativeCharacterWorkDetails struct {
+	Candidates []struct {
+		Ip   string `json:"ip"`
+		Work string `json:"work"`
+	} `json:"candidates"`
+}
+
 // CreativeDocumentConflict defines model for CreativeDocumentConflict.
 type CreativeDocumentConflict struct {
 	CurrentRev  nullable.Nullable[CreativeRevision] `json:"current_rev"`
@@ -4210,6 +4241,110 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeCharacterFieldDetails returns the union data inside the ErrorDetails as a CreativeCharacterFieldDetails
+func (t ErrorDetails) AsCreativeCharacterFieldDetails() (CreativeCharacterFieldDetails, error) {
+	var body CreativeCharacterFieldDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterFieldDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterFieldDetails
+func (t *ErrorDetails) FromCreativeCharacterFieldDetails(v CreativeCharacterFieldDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterFieldDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterFieldDetails
+func (t *ErrorDetails) MergeCreativeCharacterFieldDetails(v CreativeCharacterFieldDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterImageDetails returns the union data inside the ErrorDetails as a CreativeCharacterImageDetails
+func (t ErrorDetails) AsCreativeCharacterImageDetails() (CreativeCharacterImageDetails, error) {
+	var body CreativeCharacterImageDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterImageDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterImageDetails
+func (t *ErrorDetails) FromCreativeCharacterImageDetails(v CreativeCharacterImageDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterImageDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterImageDetails
+func (t *ErrorDetails) MergeCreativeCharacterImageDetails(v CreativeCharacterImageDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterWorkDetails returns the union data inside the ErrorDetails as a CreativeCharacterWorkDetails
+func (t ErrorDetails) AsCreativeCharacterWorkDetails() (CreativeCharacterWorkDetails, error) {
+	var body CreativeCharacterWorkDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterWorkDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterWorkDetails
+func (t *ErrorDetails) FromCreativeCharacterWorkDetails(v CreativeCharacterWorkDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterWorkDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterWorkDetails
+func (t *ErrorDetails) MergeCreativeCharacterWorkDetails(v CreativeCharacterWorkDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCharacterGenerationDetails returns the union data inside the ErrorDetails as a CreativeCharacterGenerationDetails
+func (t ErrorDetails) AsCreativeCharacterGenerationDetails() (CreativeCharacterGenerationDetails, error) {
+	var body CreativeCharacterGenerationDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCharacterGenerationDetails overwrites any union data inside the ErrorDetails as the provided CreativeCharacterGenerationDetails
+func (t *ErrorDetails) FromCreativeCharacterGenerationDetails(v CreativeCharacterGenerationDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCharacterGenerationDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeCharacterGenerationDetails
+func (t *ErrorDetails) MergeCreativeCharacterGenerationDetails(v CreativeCharacterGenerationDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
 	return err
 }
 

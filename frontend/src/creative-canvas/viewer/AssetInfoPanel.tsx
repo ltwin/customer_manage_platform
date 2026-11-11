@@ -1,3 +1,5 @@
+import { CharacterImage } from '../assets/CharacterFields.tsx'
+import { characterIdentity, characterOf, characterViewLabel } from '../assets/character.ts'
 import { Fragment } from 'react'
 import AssetDescriptionInput from "../assets/AssetDescriptionInput.tsx"
 import { ArrowUpRight, Download, Plus, Trash2, Undo2, X } from 'lucide-react'
@@ -21,6 +23,7 @@ export default function AssetInfoPanel({
   blocked,
   onRate,
   onPlace,
+  onEditCharacter,
   foot,
 }: {
   asset: Asset
@@ -29,6 +32,7 @@ export default function AssetInfoPanel({
   blocked: boolean
   onRate: (rating: number | null) => void
   onPlace?: () => void
+  onEditCharacter?: () => void
   /** 带着任务打开时（挑素材引用），底部换成任务自己的操作。 */
   foot?: React.ReactNode
 }) {
@@ -36,6 +40,7 @@ export default function AssetInfoPanel({
   const duration = mediaDuration(asset)
   const model = modelInfo(asset.content)
   const material = assetMaterial(asset.content)
+  const character = characterOf(asset.content)
   // 模型和材质只能用在 3D 场景：不给「放入项目」「放入画布」。
   const canvasPlaceable = isCanvasAsset(asset)
   const disabled = blocked || !!asset.deleted_at
@@ -50,6 +55,9 @@ export default function AssetInfoPanel({
           {duration ? ` · ${duration}` : ''}
           {asset.deleted_at ? ' · 在回收站' : ''}
         </span>
+        {asset.kind === 'character' ? (
+          <h2 className="v-title">{asset.title}</h2>
+        ) : (
         <input
           key={`${asset.id}:${asset.title}`}
           className="v-title"
@@ -73,6 +81,7 @@ export default function AssetInfoPanel({
             }
           }}
         />
+        )}
         <StarRating
           size={22}
           value={asset.rating}
@@ -103,6 +112,52 @@ export default function AssetInfoPanel({
             </>
           )}
         </dl>
+        {character && (
+          <>
+            <section className="v-sec">
+              <header>外貌描述</header>
+              <p className="v-character-appearance">{character.appearance}</p>
+              {asset.character && <small>{characterIdentity(asset.character)}</small>}
+              {!!character.aliases?.length && <small>别名 · {character.aliases.join('、')}</small>}
+            </section>
+            <section className="v-sec">
+              <header>参考图</header>
+              <div className="v-character-views">
+                {character.views.map((view, index) => (
+                  <figure key={view.content_revision_id}>
+                    <CharacterImage id={view.content_revision_id} label={characterViewLabel(view.view)} />
+                    <figcaption>
+                      {characterViewLabel(view.view)}{index === 0 ? ' · 封面' : ''}
+                      {view.note && <div>{view.note}</div>}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            </section>
+            {!!character.sources.length && (
+              <section className="v-sec">
+                <header>原始素材</header>
+                <div className="v-character-views">
+                  {character.sources.map((source, index) => (
+                    <figure key={`${source.content_revision_id}:${index}`}>
+                      <CharacterImage id={source.content_revision_id} label={`原始素材 ${index + 1}`} />
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
+            {(character.origin || character.attribution || !!character.source_urls?.length) && (
+              <section className="v-sec">
+                <header>来源备注</header>
+                {character.origin && <small>{character.origin === 'original' ? '原创' : '作品衍生'}</small>}
+                {character.attribution && <p className="v-character-appearance">{character.attribution}</p>}
+                {character.source_urls?.map((url, index) => (
+                  <a key={`${url}:${index}`} href={url} target="_blank" rel="noreferrer">来源链接 {index + 1}</a>
+                ))}
+              </section>
+            )}
+          </>
+        )}
         {(['group', 'tag'] as const).map((kind) => {
           const entries =
             kind === 'group' ? (catalog?.groups ?? []) : (catalog?.tags ?? [])
@@ -206,6 +261,13 @@ export default function AssetInfoPanel({
                 放入项目…
               </button>
             )}
+            {asset.kind === 'character' ? (
+              onEditCharacter && character && (
+                <button type="button" className="btn btn-primary wide" disabled={disabled || asset.unavailable} onClick={onEditCharacter}>
+                  编辑角色卡
+                </button>
+              )
+            ) : (
             <button
               className="btn"
               disabled={disabled || asset.unavailable}
@@ -218,6 +280,7 @@ export default function AssetInfoPanel({
               <Download size={14} />
               下载
             </button>
+            )}
             <button
               className="btn danger"
               disabled={disabled}

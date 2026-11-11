@@ -605,7 +605,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					}
 					ref, err := resolve(block.RefID)
 					if errors.Is(err, ErrModelCapability) || errors.Is(err, ErrEgressRequired) {
-						ref = schema.UserMessage(referenceLabel(block.RefID) + "（历史图片本轮未加载；需要图片能力及授权）")
+						ref = schema.UserMessage(referenceLabel(block.RefID) + "（历史引用本轮未加载；" + unloadedReferenceReason(err) + "）")
 					} else if err != nil {
 						return err
 					}
@@ -1346,4 +1346,12 @@ func (s *Service) settlementOfRun(ctx context.Context, scope store.AccountScope,
 		}
 	}
 	return state
+}
+
+// unloadedReferenceReason says why a history reference is told by label only.
+func unloadedReferenceReason(err error) string {
+	if errors.Is(err, ErrModelCapability) {
+		return "当前模型不能看图"
+	}
+	return "本会话的外发授权不含这类内容"
 }
