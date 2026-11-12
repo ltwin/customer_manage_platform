@@ -1,7 +1,7 @@
 <!-- 本 Epic 的目标契约 delta。已批准不代表已实现；项目 .lti/contracts/ 记录已交付事实。
 子项 1（scene-timeline-shots）交付「data: MODIFY 导出图来源」「architecture: MODIFY 场景模块」及之前的条目；子项 2（scene-glb-import）交付「patterns: MODIFY 几何模块契约」「data: MODIFY 模型资产」，以及「data: MODIFY 场景文档」「data: MODIFY 模型内容」「api: 导入模型到资产库」当时的版本。
 修订 v6：子项 3（scene-skinned-humanoid）在现行契约上再改「data: MODIFY 场景文档」「data: MODIFY 模型内容」「api: MODIFY 导入模型到资产库」（正文为改后的完整章节），并交付「data: MODIFY 内置贴图库」及之后的全部条目。
-修订 v9：子项 4（scene-pose-mode）在现行契约上再改「data: MODIFY 场景时间线」「api: MODIFY 场景时间线命令」「data: MODIFY 场景文档」（正文为改后的完整章节，原为子项 1、3 交付的版本），并交付「glossary: ADD 姿态」。修订 v10（子项 4 批准时）：`data: 场景文档`「姿态」的四元数存储时取 w ≥ 0，骨骼通道的关键帧不取。子项 5–6 的条目在各自起草前由 Epic 修订补全（见 design「接口设计」「数据与存储设计」）。 -->
+修订 v9：子项 4（scene-pose-mode）在现行契约上再改「data: MODIFY 场景时间线」「api: MODIFY 场景时间线命令」「data: MODIFY 场景文档」（正文为改后的完整章节，原为子项 1、3 交付的版本），并交付「glossary: ADD 姿态」。修订 v10（子项 4 批准时）：`data: 场景文档`「姿态」的四元数存储时取 w ≥ 0，骨骼通道的关键帧不取。修订 v11（子项 4 实施中）：底座规定一个单元在一批里只能出现一次，换模型与清除姿态写不进同一批的两个操作，改为 `set_instance_model` 的显式开关 `drop_incompatible_pose`（`api: 场景模型命令` 随子项 4 再修改，正文为改后的完整章节）。子项 5–6 的条目在各自起草前由 Epic 修订补全（见 design「接口设计」「数据与存储设计」）。 -->
 
 ## glossary: ADD 分镜
 
@@ -88,7 +88,7 @@
   - 基础值是 `objects[].pose` 里这根骨骼的同名字段（`data: 场景文档`「姿态」）；没有这一项时为单位四元数或零位移，也就是静止姿势。
   - 路径里的骨骼按 `objects[].pose` 的键规则校验：标准骨骼名要求模型有人形映射（不要求这根骨骼在映射里），`node:<下标>` 要求下标是模型骨架摘要里的关节，`position` 只在 `hips` 上。
   - 关键帧的值按 `objects[].pose` 的规则存储：四元数归一化后保留 6 位小数，位移保留 5 位小数；四元数不统一 w 的符号（修订 v10）。
-  - 实例换模型后，通道与 `objects[].pose` 一样要和新模型兼容，不兼容的由同一批清掉（`api: 场景时间线命令`「交互规则」）。
+  - 实例换模型后，通道与 `objects[].pose` 一样要和新模型兼容；不兼容的由换模型的操作按调用方的要求去掉（`drop_incompatible_pose`，`api: 场景时间线命令`「交互规则」）。
 
 ### 分镜帧必有关键帧
 - **规则**（Epic design 不变量 P8）：一个属性只要有通道，它在每个分镜的帧上都必须有关键帧。分镜的画面因此只由关键帧决定，不受外推和插值影响；分镜之外的帧可以另有关键帧。
@@ -182,7 +182,7 @@
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 有通道的属性在某个分镜帧上缺少关键帧（`details.missing` 列出 `[{object_id, path, marker_id, frame}]`，最多 50 项）；标记 ID 重复或格式不对、帧号重复或越界、`camera_object_id` 不指向摄像机；通道路径不在白名单或与物件 `kind` 不符；关键帧帧号不递增、值越界、四元数长度偏差过大、离散属性写了 `linear`；`focus_object_id` 的关键帧值不可对焦；`expected` 缺少新字段涉及的单元。姿态（子项 4）：`pose` 或骨骼通道写在不带骨架的物件上、标准骨骼名不在列表里或模型没有人形映射、`node:` 下标不是关节、`position` 写在 `hips` 以外、一项一个字段都没有；本批换了模型（`set_instance_model`）而没有清掉与新模型不兼容的姿态和骨骼通道（`details.incompatible` 列出 `[{object_id, key}]`）。`details.field` 指出字段路径，例如 `operations[0].updates[2].animation.set[1].value` | 修正，不可原样重试 |
+| 400 | `validation_failed` | 有通道的属性在某个分镜帧上缺少关键帧（`details.missing` 列出 `[{object_id, path, marker_id, frame}]`，最多 50 项）；标记 ID 重复或格式不对、帧号重复或越界、`camera_object_id` 不指向摄像机；通道路径不在白名单或与物件 `kind` 不符；关键帧帧号不递增、值越界、四元数长度偏差过大、离散属性写了 `linear`；`focus_object_id` 的关键帧值不可对焦；`expected` 缺少新字段涉及的单元。姿态（子项 4）：`pose` 或骨骼通道写在不带骨架的物件上、标准骨骼名不在列表里或模型没有人形映射、`node:` 下标不是关节、`position` 写在 `hips` 以外、一项一个字段都没有；本批之后有模型实例的姿态或骨骼通道与它的模型不兼容，通常是 `set_instance_model` 换了模型而没有带 `drop_incompatible_pose`（`details.incompatible` 列出 `[{object_id, key}]`，`key` 是 `pose` 的键或骨骼通道的路径，最多 50 项）。`details.field` 指出字段路径，例如 `operations[0].updates[2].animation.set[1].value` | 修正，不可原样重试 |
 | 404 | `not_found` | 同 `api: 提交场景命令` | 同左 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符，`details.conflicts` 同现有规则 | 重读后重新应用 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
@@ -193,7 +193,8 @@
 - **姿态与模型的兼容**（子项 4）：每批应用后，每个模型实例的 `pose` 和骨骼通道都要与它当时的模型兼容：
   - 标准骨骼名的键和路径要求模型有人形映射。
   - `node:<下标>` 要求下标是关节；本批用 `set_instance_model` 换了模型、而新旧骨架指纹不同时，这些键和路径不再有效。
-  - 不兼容的，调用方要在同一批里用 `pose: {<骨骼>: null}` 和 `animation.clear` 清掉。服务端不隐式删除，只检查。编辑器和助手的工具层写出清除，并提示摄影师哪些姿态被去掉。
+  - 不兼容的不会被悄悄去掉：调用方换模型时在 `set_instance_model` 上带 `drop_incompatible_pose: true`，由这个操作去掉新模型接不住的键和通道，响应的 `poses_cleared` 列出去掉了什么（`api: 场景模型命令`，修订 v11）。不带这个开关就返回 400。编辑器和助手的工具层换模型时都带上它，并按 `poses_cleared` 提示摄影师哪些姿态被去掉。
+  - 修订 v11 之前这里要求调用方在同一批里另写 `update_objects` 清除，但换模型和清除都写同一个内容单元，底座不允许一个单元在一批里出现两次，所以改为换模型操作自带的开关。
   - 内置男、女素体之间互换时都有人形映射，姿态和骨骼通道原样保留。
 - 不适用：分页、异步、限流（沿用全局请求体上限）。
 
@@ -492,7 +493,7 @@ export default function build({ params, THREE, lib, rng }) {
 
   - 每项至少一个字段；同一模型实例最多 512 个键（关节上限）。
   - 四元数写入时长度与 1 的差 ≤ 1e-3，存储时归一化、取 w ≥ 0 的一半（q 与 −q 是同一旋转，统一后同一姿态只有一种存法），再保留 6 位小数；骨骼通道的关键帧不统一符号，相邻关键帧靠符号走最短弧；位移每轴 ±100 m，存储时保留 5 位小数。等于静止姿势的项（单位四元数、零位移）存储时去掉。
-  - 与模型的兼容：标准骨骼名要求模型有人形映射；`node:` 键在实例换到骨架指纹不同的模型后失效。不兼容的键要由同一批命令清掉，否则返回 400（`api: 场景时间线命令`「交互规则」）。
+  - 与模型的兼容：标准骨骼名要求模型有人形映射；`node:` 键在实例换到骨架指纹不同的模型后失效。不兼容的键由换模型的操作按 `drop_incompatible_pose` 去掉，否则返回 400（`api: 场景时间线命令`「交互规则」）。
   - 渲染指纹按求值后的 `pose` 计入（物件整体计入指纹）；没有姿态时字段省略，已有场景的指纹不变。
 - **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
 
@@ -964,7 +965,7 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
 | `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容）、`faces`（可选，修订 v13：重新生成时由渲染端带过来的面级材质分配，结构见 `data: 模型内容`） | 无场景单元（不改快照） |
 | `derive_model`（修订 v13） | `ref`（同 `commit_model`）、`from_revision_id`（本账号完整形态的 `model` 修订，可以是库副本）、`faces`（新修订的完整分配；`null` 表示清空）、`base_content_id`（可选，规则同 `commit_model`） | 无场景单元（不改快照）。新修订的 `generator`、`manifest`、`name_hint`（导入的模型另有 `import`、`rig`，scene-pose-system 子项 3）取自来源修订，GLB 与缩略图复用来源修订的 blob，不上传、不编译；库副本的 `materials`、`source_revision_id` 不带过来。C8 的参考点也计划经这个操作写入 |
 | `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
-| `set_instance_model` | `object_id`、`model`（`{content_revision_id}`、`{ref}` 或 `{builtin}`；`builtin` 为内置模型的条目 ID，scene-pose-system 子项 3，例如把女素体换成男素体）、`material_slots`（可选，Epic 修订 v7：给出时整体替换这些实例的 `material_slots`，与模型引用在同一操作里写入同一个内容单元；不给时保留原值）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
+| `set_instance_model` | `object_id`、`model`（`{content_revision_id}`、`{ref}` 或 `{builtin}`；`builtin` 为内置模型的条目 ID，scene-pose-system 子项 3，例如把女素体换成男素体）、`material_slots`（可选，Epic 修订 v7：给出时整体替换这些实例的 `material_slots`，与模型引用在同一操作里写入同一个内容单元；不给时保留原值）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订）、`drop_incompatible_pose`（可选布尔，缺省 `false`，scene-pose-system 子项 4，修订 v11：为 `true` 时，去掉每个目标实例在换模型后不兼容的 `pose` 键和骨骼通道，规则见 `api: 场景时间线命令`「姿态与模型的兼容」） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
 
 - **分叉规则（I4）**：
   - `base_content_id` 被其他实例或资产引用时，`commit_model` 仍然在该内容上追加修订。是否让其他实例跟随，由 `set_instance_model` 的 `scope` 决定。
@@ -973,7 +974,7 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
 - **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
 - **校验**：`commit_model` 的 GLB 不能带骨架（暂存形态的 manifest 有 `skeleton` 时拒绝：代码模型不带骨骼，scene-pose-system 子项 3）；`derive_model` 不能以内置模型为来源（它没有内容修订），也不能以带骨架的修订为来源（带骨骼的模型暂不支持面级材质分配，Epic 修订 v7）。暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
 - **面级材质分配**（修订 v13）：`faces` 按 `data: 模型内容` 校验外形、上限和有效槽位数，不读 GLB。`derive_model` 与 `commit_model` 一样按 I4 分叉：编辑器和助手在共享且 `scope = "this"` 时不传 `base_content_id`。`derive_model` 与 `set_instance_model` 放在同一批，摄影师的一次「指定」只产生一条场景修订，撤销沿用内容单元的规则。
-- **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
+- **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。`drop_incompatible_pose` 去掉了内容时，同样经回执字段返回 `poses_cleared: [{object_id, key}]`（`key` 是 `pose` 的键或骨骼通道的路径，按物件、键排序，不设上限：一个实例最多 512 个键），没去掉任何内容时省略。
 - **失败响应**（在基础接口之上增加）：
 
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
@@ -1035,8 +1036,12 @@ scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展�
  "annotated_units": [], "removed_units": [], "reset_required": false,
  "models": {"pillar_faces": {"content_id": "ccnt_7d31", "content_revision_id": "ccrev_a0c4"}}}
 ```
+- **换模型时的姿态**（scene-pose-system 子项 4，修订 v11）：
+  - 男、女素体之间互换时都有人形映射，骨架指纹也相同，什么都不去掉。
+  - 换到没有骨架、没有人形映射或骨架不同的模型时，编辑器和助手的工具层带上 `drop_incompatible_pose: true`，按 `poses_cleared` 提示摄影师；撤销按内容单元恢复原模型、原姿态和骨骼通道。
+  - 去掉骨骼通道后，其他通道的分镜关键帧规则（P8）不受影响：被去掉的是整条通道。
 - **换模型时的材质**（Epic 修订 v7）：编辑器在男、女素体之间互换时，同一个 `set_instance_model` 带上目标素体的 `materials` 作为 `material_slots`，摄影师自定义过的材质一并重置；撤销按内容单元恢复原模型和原材质。助手经 `edit_scene` 换内置模型而没写材质时，工具层同样补上目标的 `materials`。
-- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。scene-pose-system 子项 3：`set_instance_model` 的 `model` 可以写 `{builtin}`，并可带 `material_slots`；`derive_model` 拒绝带骨架的来源；`commit_model` 拒绝带骨架的 GLB（此前 worker 本来就拒绝带 `skins` 的上传，没有调用方依赖它）；`derive_model` 照抄 `rig`。OpenAPI 同步，运行 `make generate`。
+- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。scene-pose-system 子项 3：`set_instance_model` 的 `model` 可以写 `{builtin}`，并可带 `material_slots`；`derive_model` 拒绝带骨架的来源；`commit_model` 拒绝带骨架的 GLB（此前 worker 本来就拒绝带 `skins` 的上传，没有调用方依赖它）；`derive_model` 照抄 `rig`。scene-pose-system 子项 4（修订 v11）：`set_instance_model` 加可选的 `drop_incompatible_pose`，响应加可选的 `poses_cleared`；旧调用方不发这个开关，旧场景没有姿态，行为不变。OpenAPI 同步，运行 `make generate`。
 
 ## glossary: ADD 素体
 
