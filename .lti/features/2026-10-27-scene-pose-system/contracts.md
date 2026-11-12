@@ -1,6 +1,7 @@
 <!-- 本 Epic 的目标契约 delta。已批准不代表已实现；项目 .lti/contracts/ 记录已交付事实。
 子项 1（scene-timeline-shots）交付「data: MODIFY 导出图来源」「architecture: MODIFY 场景模块」及之前的条目；子项 2（scene-glb-import）交付「patterns: MODIFY 几何模块契约」「data: MODIFY 模型资产」，以及「data: MODIFY 场景文档」「data: MODIFY 模型内容」「api: 导入模型到资产库」当时的版本。
-修订 v6：子项 3（scene-skinned-humanoid）在现行契约上再改「data: MODIFY 场景文档」「data: MODIFY 模型内容」「api: MODIFY 导入模型到资产库」（正文为改后的完整章节），并交付「data: MODIFY 内置贴图库」及之后的全部条目。子项 4–6 的条目在各自起草前由 Epic 修订补全（见 design「接口设计」「数据与存储设计」）。 -->
+修订 v6：子项 3（scene-skinned-humanoid）在现行契约上再改「data: MODIFY 场景文档」「data: MODIFY 模型内容」「api: MODIFY 导入模型到资产库」（正文为改后的完整章节），并交付「data: MODIFY 内置贴图库」及之后的全部条目。
+修订 v9：子项 4（scene-pose-mode）在现行契约上再改「data: MODIFY 场景时间线」「api: MODIFY 场景时间线命令」「data: MODIFY 场景文档」（正文为改后的完整章节，原为子项 1、3 交付的版本），并交付「glossary: ADD 姿态」。子项 5–6 的条目在各自起草前由 Epic 修订补全（见 design「接口设计」「数据与存储设计」）。 -->
 
 ## glossary: ADD 分镜
 
@@ -32,10 +33,10 @@
 - 不适用于：贝塞尔插值和曲线编辑（后续加 `interp = "bezier"` 时扩展本条）；蒙皮后的顶点不由求值器计算，求值器只给出骨骼通道的值。
 - 例子：子项 1 交付后补充求值器所在的文件和符号。
 
-## data: ADD 场景时间线
+## data: MODIFY 场景时间线
 
 ### 用途与存储角色
-- **用途**：扩展 `data: 场景文档`，记录分镜标记和物件属性的关键帧通道。一个场景因此可以有多个分镜，每个分镜的物件位置、可见性和摄像机参数可以不同，没有通道的属性所有分镜共用。
+- **用途**：扩展 `data: 场景文档`，记录分镜标记和物件属性的关键帧通道。一个场景因此可以有多个分镜，每个分镜的物件位置、可见性、摄像机参数和角色姿态可以不同，没有通道的属性所有分镜共用。
 - **存储**：与场景文档相同，位于快照载荷（`schema_version = 1`）内：`scene.timeline` 在新单元 `timeline` 内；`objects[].animation` 按属性归入物件现有的两个单元（见下「单元」）。不新增表或列。
 - **角色**：权威主数据。按帧求值的结果是派生量，不落库（`patterns: 关键帧求值`）。
 - **所有权**：只有 `creativescene` 经场景命令写入（`api: ADD 场景时间线命令`），写入者是摄影师（编辑器）或助手（`edit_scene`）。读取方是编辑器、渲染端、渲染指纹和助手工具。
@@ -64,7 +65,7 @@
 | `keys[].value` | 按路径的类型 | 是 | 约束与对应的基础值字段相同；四元数写入时长度与 1 的差 ≤ 1e-3，存储时归一化 |
 | `keys[].interp` | `"linear"` \| `"constant"` | 否 | 连续属性缺省 `linear`，离散属性只允许并缺省 `constant`；存储时补齐 |
 
-可动画的路径（白名单；以后的骨骼通道、灯光和环境属性经 Epic 修订加入）：
+可动画的路径（白名单；以后的灯光和环境属性经 Epic 修订加入）：
 
 | 路径 | 物件 | 值 | 类别 | 所在单元 |
 |---|---|---|---|---|
@@ -76,10 +77,18 @@
 | `camera.f_stop`、`camera.focus` | `camera` | 同上 | 连续 | `object:<id>:content` |
 | `camera.exposure_compensation`、`camera.iso`、`camera.shutter_s` | `camera` | 同 `data: 摄像机曝光` | 连续 | `object:<id>:content` |
 | `camera.sensor_mm`、`camera.aspect`、`camera.depth_of_field`、`camera.focus_object_id`、`camera.exposure_mode` | `camera` | 同上 | 离散 | `object:<id>:content` |
+| `pose.<标准骨骼名>.rotation` | `model_instance`，模型有人形映射 | `[x, y, z, w]` 单位四元数，同 `objects[].pose`（scene-pose-system 子项 4） | 连续（球面插值） | `object:<id>:content` |
+| `pose.hips.position` | 同上 | `[x, y, z]` 米，同 `objects[].pose` 的 `hips.position` | 连续 | `object:<id>:content` |
+| `pose.node:<节点下标>.rotation` | `model_instance`，模型带骨架 | 单位四元数，同 `objects[].pose` | 连续（球面插值） | `object:<id>:content` |
 
 - 路径不在白名单里，或者与物件的 `kind` 不符（例如方块写 `camera.focal_mm`），返回 400 并指出路径。
 - `camera.focus_object_id` 的关键帧值按基础值的规则校验：写入时非空就必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己。
 - `near`、`far`、`label` 和物件的名称、锁定、父级、顺序、模型、材质槽都不能打关键帧（Epic design 不变量 P4）。
+- **骨骼通道**（scene-pose-system 子项 4）：
+  - 基础值是 `objects[].pose` 里这根骨骼的同名字段（`data: 场景文档`「姿态」）；没有这一项时为单位四元数或零位移，也就是静止姿势。
+  - 路径里的骨骼按 `objects[].pose` 的键规则校验：标准骨骼名要求模型有人形映射（不要求这根骨骼在映射里），`node:<下标>` 要求下标是模型骨架摘要里的关节，`position` 只在 `hips` 上。
+  - 关键帧的值按 `objects[].pose` 的规则存储：四元数归一化后保留 6 位小数，位移保留 5 位小数。
+  - 实例换模型后，通道与 `objects[].pose` 一样要和新模型兼容，不兼容的由同一批清掉（`api: 场景时间线命令`「交互规则」）。
 
 ### 分镜帧必有关键帧
 - **规则**（Epic design 不变量 P8）：一个属性只要有通道，它在每个分镜的帧上都必须有关键帧。分镜的画面因此只由关键帧决定，不受外推和插值影响；分镜之外的帧可以另有关键帧。
@@ -123,7 +132,7 @@
   - 通道路径在白名单内并与 `kind` 相符。
   - 关键帧帧号严格递增，值合法。
   - 分镜帧必有关键帧（检查范围见上）。
-  - 全场景关键帧总数 ≤ 20000（初始值，子项 1 实测后调整），快照仍 ≤ 512 KiB。
+  - 全场景关键帧总数 ≤ 20000（初始值，子项 1 实测后调整），快照仍 ≤ 512 KiB。骨骼通道不另设上限：三个人形角色、十五个分镜、每根标准骨骼都打关键帧时约 2500 个关键帧、140 KB（scene-pose-system 子项 4 验收时实测）。
 - **读**：读取场景时随快照原样返回；服务端解码时补齐 `timeline` 的缺省值和 `interp`。
 - **求值**：按 `patterns: 关键帧求值`。渲染指纹、导出放置和助手读取在服务端求值；编辑器和渲染端在浏览器里求值。
 - **删除**：删除物件时，它的通道随物件一起删除；被删的摄像机仍可能被分镜引用（见上）。
@@ -132,18 +141,18 @@
 ### 生命周期与演进
 - 不迁移：没有 `timeline` 和 `animation` 就是没有分镜、没有通道，求值结果就是现在的快照，画面和渲染指纹都不变。
 - 前后端同一版本上线：旧编辑器不认识这两个字段，`update_objects` 整体替换不会丢失它们（字段不在旧编辑器写的键里），但旧编辑器会按基础值显示有通道的物件，与新编辑器不一致。回滚到不认识它们的后端会读取失败，只做前向修复（同修订 v17）。
+- scene-pose-system 子项 4：白名单加入骨骼通道 `pose.*`。不迁移：已有场景没有骨骼通道。旧编辑器不认识这些路径，按基础值显示姿态，前后端同一版本上线，回滚只做前向修复。
 - 后续：
   - `interp = "bezier"`（动画播放和曲线编辑时加）。
-  - 骨骼通道 `pose.*`（本 Epic 子项 4）。
   - 灯光、天空、雾的通道。
   - 密集动画拆出快照存储。
 
-## api: ADD 场景时间线命令
+## api: MODIFY 场景时间线命令
 
 ### 用途与调用
-- **用途**：编辑分镜标记和物件的关键帧通道。
+- **用途**：编辑分镜标记、物件的关键帧通道和角色的基础姿态。
 - **消费者**：前端场景编辑器（outbox）；助手工具 `edit_scene` 经同一领域命令，不经 HTTP。
-- **调用**：与 `api: 提交场景命令` 同一端点和外层（`POST /api/v1/creative/documents/{id}/commands`，`Idempotency-Key` 必填）。本条目新增一个操作 `set_timeline`，并给 `add_objects`、`update_objects` 增加 `animation` 字段。外壳规则不变：整批原子、按单元乐观并发、每个单元在一批里最多出现一次。
+- **调用**：与 `api: 提交场景命令` 同一端点和外层（`POST /api/v1/creative/documents/{id}/commands`，`Idempotency-Key` 必填）。本条目新增一个操作 `set_timeline`，并给 `add_objects`、`update_objects` 增加 `animation` 字段和 `pose` 字段（scene-pose-system 子项 4）。外壳规则不变：整批原子、按单元乐观并发、每个单元在一批里最多出现一次。
 - **权限**：同 `api: 提交场景命令`。
 
 ### 请求
@@ -159,10 +168,13 @@
 | op | 新字段 | 规则 | 涉及单元 |
 |---|---|---|---|
 | `add_objects` | `objects[].animation` | 完整的通道对象，外形与校验见数据契约。用于复制带动画的物件、撤销删除 | 同 `add_objects` |
-| `update_objects` | `updates[].animation` | `{clear?: [path], delete?: [{path, frame}], set?: [{path, frame, value, interp?}]}`，至少一项。按 `clear` → `delete` → `set` 的顺序应用：`clear` 删掉整条通道；`delete` 删掉这一帧的关键帧，帧上没有关键帧时忽略；`set` 按帧覆盖或插入。通道删空后不再存储。同一项里可以同时改基础值，例如删掉最后一个关键帧时，把基础值写成删除时这一帧的求值结果 | 每条路径按数据契约的「所在单元」：摆放类路径涉及 `object:<id>`，摄像机路径涉及 `object:<id>:content`；与同一项里的基础值改动合并计算 |
+| `update_objects` | `updates[].animation` | `{clear?: [path], delete?: [{path, frame}], set?: [{path, frame, value, interp?}]}`，至少一项。按 `clear` → `delete` → `set` 的顺序应用：`clear` 删掉整条通道；`delete` 删掉这一帧的关键帧，帧上没有关键帧时忽略；`set` 按帧覆盖或插入。通道删空后不再存储。同一项里可以同时改基础值，例如删掉最后一个关键帧时，把基础值写成删除时这一帧的求值结果 | 每条路径按数据契约的「所在单元」：摆放类路径涉及 `object:<id>`，摄像机路径和骨骼路径涉及 `object:<id>:content`；与同一项里的基础值改动合并计算 |
+| `add_objects` | `objects[].pose` | 完整的基础姿态，外形与校验见 `data: 场景文档`「姿态」。用于复制摆好姿势的角色、撤销删除 | 同 `add_objects` |
+| `update_objects` | `updates[].pose` | 按骨骼合并：`{<骨骼>: {rotation?, position?} \| null}`，至少一个键。写到的骨骼按字段合并；`null` 让这根骨骼回到静止姿势（去掉这一项）；没写的骨骼不变。姿态模式的「清除旋转」「清除位移」就是写单位四元数、零位移或 `null` | `object:<id>:content` |
 
 - 首次创建通道、新建分镜、复制分镜、改分镜帧号、删除分镜、添加只属于当前分镜的物件，都由编辑器和助手的工具层在同一批里写全（`data: ADD 场景时间线`「分镜帧必有关键帧」），例如 `set_timeline` 加上 `update_objects` 的 `animation`。服务端不隐式补帧，只检查结果。
 - 一批里 `set_timeline` 最多一个（`timeline` 单元只能出现一次）。
+- 姿态的基础值与骨骼通道走同一套编辑语义：骨骼没有通道时改 `pose`，所有分镜都变；有通道时在分镜帧上写 `animation`（Epic design「编辑语义」）。
 
 ### 成功响应
 与 `api: 提交场景命令` 相同：回执 `revision`、`changed_units`、`annotated_units`、`removed_units`、`reset_required`。不增加字段。
@@ -170,7 +182,7 @@
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 有通道的属性在某个分镜帧上缺少关键帧（`details.missing` 列出 `[{object_id, path, marker_id, frame}]`，最多 50 项）；标记 ID 重复或格式不对、帧号重复或越界、`camera_object_id` 不指向摄像机；通道路径不在白名单或与物件 `kind` 不符；关键帧帧号不递增、值越界、四元数长度偏差过大、离散属性写了 `linear`；`focus_object_id` 的关键帧值不可对焦；`expected` 缺少新字段涉及的单元。`details.field` 指出字段路径，例如 `operations[0].updates[2].animation.set[1].value` | 修正，不可原样重试 |
+| 400 | `validation_failed` | 有通道的属性在某个分镜帧上缺少关键帧（`details.missing` 列出 `[{object_id, path, marker_id, frame}]`，最多 50 项）；标记 ID 重复或格式不对、帧号重复或越界、`camera_object_id` 不指向摄像机；通道路径不在白名单或与物件 `kind` 不符；关键帧帧号不递增、值越界、四元数长度偏差过大、离散属性写了 `linear`；`focus_object_id` 的关键帧值不可对焦；`expected` 缺少新字段涉及的单元。姿态（子项 4）：`pose` 或骨骼通道写在不带骨架的物件上、标准骨骼名不在列表里或模型没有人形映射、`node:` 下标不是关节、`position` 写在 `hips` 以外、一项一个字段都没有；本批换了模型（`set_instance_model`）而没有清掉与新模型不兼容的姿态和骨骼通道（`details.incompatible` 列出 `[{object_id, key}]`）。`details.field` 指出字段路径，例如 `operations[0].updates[2].animation.set[1].value` | 修正，不可原样重试 |
 | 404 | `not_found` | 同 `api: 提交场景命令` | 同左 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符，`details.conflicts` 同现有规则 | 重读后重新应用 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
@@ -178,6 +190,11 @@
 
 ### 交互规则
 - **原子性、幂等、并发**：同 `api: 提交场景命令`。
+- **姿态与模型的兼容**（子项 4）：每批应用后，每个模型实例的 `pose` 和骨骼通道都要与它当时的模型兼容：
+  - 标准骨骼名的键和路径要求模型有人形映射。
+  - `node:<下标>` 要求下标是关节；本批用 `set_instance_model` 换了模型、而新旧骨架指纹不同时，这些键和路径不再有效。
+  - 不兼容的，调用方要在同一批里用 `pose: {<骨骼>: null}` 和 `animation.clear` 清掉。服务端不隐式删除，只检查。编辑器和助手的工具层写出清除，并提示摄影师哪些姿态被去掉。
+  - 内置男、女素体之间互换时都有人形映射，姿态和骨骼通道原样保留。
 - 不适用：分页、异步、限流（沿用全局请求体上限）。
 
 ### 调用示例
@@ -207,10 +224,32 @@
   "details": {"missing": [{"object_id": "sobj_Body7xQ2mN9pL4tR6vW8yZ", "path": "transform.position", "marker_id": "smk_A1b2C3d4E5f6G7h8I9j0K", "frame": 0}]}}}
 ```
 
+姿态示例（子项 4）：场景有分镜「回头」（第 0 帧）和「拔剑」（第 10 帧），女素体的左上臂还没有通道。在「拔剑」里用姿态模式把它抬起并打关键帧：按首次创建通道的规则，第 0 帧写修改前的值（基础姿态里没有这根骨骼，即单位四元数），第 10 帧写新值；同一项里把手肘的基础姿态清回静止：
+
+```json
+{"operation_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f70819", "client_created_at": "2026-11-13T09:00:00Z",
+ "payload": {
+   "expected": {"object:sobj_Body7xQ2mN9pL4tR6vW8yZ:content": "7"},
+   "operations": [
+     {"op": "update_objects", "updates": [
+       {"object_id": "sobj_Body7xQ2mN9pL4tR6vW8yZ",
+        "pose": {"leftLowerArm": null},
+        "animation": {"set": [{"path": "pose.leftUpperArm.rotation", "frame": 0, "value": [0, 0, 0, 1]},
+                              {"path": "pose.leftUpperArm.rotation", "frame": 10, "value": [0, 0, 0.5, 0.866025]}]}}]}]}}
+```
+
+同一写法用在没有人形映射的机器人模型上：
+
+```json
+{"error": {"code": "validation_failed", "message": "物件「机器人」的模型没有人形映射，不能写标准骨骼的姿态",
+  "details": {"field": "operations[0].updates[0].pose.leftUpperArm", "incompatible": [{"object_id": "sobj_Robot2xQ9mN4pL7tR1vW3", "key": "leftUpperArm"}]}}}
+```
+
 ### 兼容与变更
 - 只增加操作和可选字段，旧客户端不会发送它们。
 - `update_objects` 的 `animation` 是增量写法，不整体替换。旧编辑器改基础值时不会碰到已有的通道。
 - 回滚到不认识这些操作的后端会返回 400，前端同一版本上线。
+- 子项 4：`pose` 字段和骨骼路径只是追加。`update_objects` 的 `pose` 按骨骼合并，旧编辑器不写它，也不会碰到已有的姿态。前后端同一版本上线。
 
 ## api: MODIFY 导出分镜
 
@@ -418,8 +457,9 @@ export default function build({ params, THREE, lib, rng }) {
 | `objects[].model` | `{content_revision_id}` 或 `{builtin}` | `kind=model_instance` 时 | 二者恰好写一个（scene-pose-system 子项 3）。`content_revision_id` 必须是本账号 `model` 类型、`ready` 且可展示的内容修订；`builtin` 必须是 `data: 内置模型库` 清单里的条目 ID，否则返回 400 `creative_model_unavailable`。内置模型的实例不能做面级材质分配，有效槽位取清单条目的 manifest |
 | `objects[].material_slots` | `{<slot_id>:{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}` | 否 | 贴图与透明方式见下方「材质贴图」（修订 v17）。缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
 | `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
+| `objects[].pose` | object，键为骨骼，见下方「姿态」 | 否 | 基础姿态（scene-pose-system 子项 4）：只在 `kind=model_instance` 且模型带骨架时允许。缺省 `{}`，空对象存储时去掉；没写的骨骼保持静止姿势 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40, depth_of_field:bool, f_stop:0.5…64, focus>0（米，同 three.js `PerspectiveCamera.focus`）, focus_object_id:物件 ID 或 ""}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,"",false,2.8,10,""}`，存储时补齐；景深四个字段为修订 v8 新增，旧快照在读取时补齐。朝局部 −Z 看（three.js 摄像机约定）；视场角按画面长边对应传感器长边算出：`tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)`，`fov` 为 three.js 的垂直视场角（修订 v8），不写 three.js 的 `fov`。`focus_object_id` 非空时按该物件原点沿视线方向的深度对焦：写入时必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己；之后目标被删除不算违反契约，按 `focus` 对焦。写空字符串取消对焦物件（按键合并下 `null` 等于没写）。`depth_of_field = true` 时，白模导出按光圈和对焦虚化（design「渲染模式与导出」） |
-| 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
+| 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`pose`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。内置模型（`model.builtin`）不是账号内容，不进引用表。
 - **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。修订 v20（C5c2）：内置贴图材质（材质目录里 `kind = textured` 的预设，见 `data: 内置贴图库`）也接受 `mapping`、`alpha_mode`、`alpha_cutoff`，但不接受 `maps`（贴图由目录给出），写了返回 400；`mapping` 省略时存储为 `{kind:"triplanar", size_m:<目录里的真实尺寸>, rotation_deg:0, normal_strength:1}`，`alpha_mode` 省略时补 `opaque`。`params` 的键与范围同 `principled@1`（助手工具层按目录校验，命令接口照旧只校验外形），与目录的贴图相乘，规则同下；没写的参数取目录条目的缺省值。目录里没有的预设 ID 照旧只校验格式，但带了这三个字段时返回 400（无从判断是不是内置贴图材质）。
@@ -443,6 +483,17 @@ export default function build({ params, THREE, lib, rng }) {
   - 顶点色（scene-pose-system 子项 2）：`principled@1` 的 `params` 加布尔参数 `vertex_color`，缺省 `false`。打开时基础色再乘模型的 `COLOR_0`（按线性读取，同 glTF），与基础色贴图同时生效；带透明通道的 `COLOR_0` 只取 RGB。模型没有 `COLOR_0`、基础体和内置贴图材质上，这个参数不起作用。参数在材质目录里定义，命令接口照旧只校验外形。修订之前，没有分配材质的槽位按 GLB 自带的常数显示时已经带顶点色，这条规则不变。
   - 白模、线稿和线框不看材质（与 Blender 相同），贴图和透明方式都不体现；材质预览、最终渲染、`render_view` 和 `lit` 导出体现。
   - 单个场景最多引用 64 张不同的图片（跨所有槽位去重计数），超出返回 413 `creative_size_limit`。这是初始值，C5c1 实测后调整；scene-pose-system 子项 2 用带贴图的角色加布景实测，验收时决定是否调整。
+- **姿态**（scene-pose-system 子项 4）：模型实例的基础姿态，是各骨骼相对静止姿势的变化。有骨骼通道的骨骼按通道求值（`data: 场景时间线`），没有通道的取这里的值，所有分镜共用。
+
+| 键 | 值 | 约束 |
+|---|---|---|
+| 标准骨骼名（`patterns: 标准人形骨骼` 的骨骼列表） | `{rotation?: [x,y,z,w], position?: [x,y,z]}` | 模型有人形映射（`model.rig.humanoid`，内置素体也有）时才允许；不要求这根骨骼在映射里，缺少的骨骼按 patterns 把旋转传给子骨骼。`rotation` 是标准空间里相对 T 姿势的变化（patterns 的 q_b）。`position` 只允许在 `hips` 上：骨盆相对静止位置的位移，标准空间的米，按模型尺寸，随实例缩放 |
+| `node:<节点下标>` | `{rotation: [x,y,z,w]}` | 下标必须是模型骨架摘要（`manifest.skeleton`）里的关节，用于没有人形映射的骨架。旋转乘在节点的静止局部旋转之后：局部旋转 = 静止局部旋转 · rotation |
+
+  - 每项至少一个字段；同一模型实例最多 512 个键（关节上限）。
+  - 四元数写入时长度与 1 的差 ≤ 1e-3，存储时归一化并保留 6 位小数；位移每轴 ±100 m，存储时保留 5 位小数。等于静止姿势的项（单位四元数、零位移）存储时去掉。
+  - 与模型的兼容：标准骨骼名要求模型有人形映射；`node:` 键在实例换到骨架指纹不同的模型后失效。不兼容的键要由同一批命令清掉，否则返回 400（`api: 场景时间线命令`「交互规则」）。
+  - 渲染指纹按求值后的 `pose` 计入（物件整体计入指纹）；没有姿态时字段省略，已有场景的指纹不变。
 - **灯光**（字段与 three.js 同名同义，渲染时原样赋给对应的灯光类）：
 
 | `type` | three.js | 字段与缺省 |
@@ -478,6 +529,7 @@ export default function build({ params, THREE, lib, rng }) {
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 - scene-pose-system 子项 2（外部 GLB 导入）：`maps` 加 `emissive`，`principled@1` 加参数 `vertex_color`。不迁移：没有这两项就是没有自发光贴图、不乘顶点色，渲染与之前相同；自发光贴图的图片进引用表、计入 64 张上限，与其他贴图相同。旧编辑器不认识 `emissive` 键会读取失败，前后端同一版本上线，回滚只做前向修复。OpenAPI 的 `CreativeSceneTextureMaps` 加可选的 `emissive`。
 - scene-pose-system 子项 3（蒙皮人形角色）：`objects[].model` 可以写 `{builtin}`（`data: 内置模型库`），与 `content_revision_id` 二选一。不迁移：已有物件都是 `content_revision_id`。渲染指纹按 `builtin` 的条目 ID 计入模型身份（条目发布后不变，与内容修订 ID 同样稳定），没有内置模型的场景指纹不变。OpenAPI 的场景模型引用改为二选一的两种结构。旧编辑器和旧后端都不认识 `builtin`，前后端同一版本上线，回滚只做前向修复。
+- scene-pose-system 子项 4（姿态模式）：模型实例新增 `pose`，内容单元随之包含它。不迁移：没有这个字段就是静止姿势，画面与渲染指纹都不变。旧编辑器不认识 `pose`，会按静止姿势显示，前后端同一版本上线，回滚只做前向修复。
 
 ## data: MODIFY 模型内容
 
@@ -1150,3 +1202,10 @@ Authorization: Bearer <token>
 
 ### 兼容与变更
 首次定义，只新增路由和错误码 `creative_model_file_unavailable`，OpenAPI 加这一条后运行 `make generate`。
+
+## glossary: ADD 姿态
+
+- 定义：一个带骨骼的角色各骨骼相对静止姿势的旋转，人形角色另加骨盆位移。场景里，角色的基础姿态记在模型实例上，随分镜变化的部分记在骨骼通道上；以后存进库里就是姿态资产。
+- 不是：形态键（网格顶点的形变）；不是角色的静止姿势（静止姿势是模型自带的，姿态是在它之上的变化）；不是物件的位置和朝向（那是 `transform`）。
+- 边界场景：在分镜 2 里抬起左臂，是左上臂骨骼通道在这一帧的关键帧；没有分镜时转动头部，改的是基础姿态，所有帧都转；把整个角色挪到桌边，改的是物件的位置，不是姿态。
+- 拼写：代码 `pose`；字段 `objects[].pose`、通道路径 `pose.<骨骼>.rotation`、`pose.hips.position`；界面「姿态」「姿态模式」。
