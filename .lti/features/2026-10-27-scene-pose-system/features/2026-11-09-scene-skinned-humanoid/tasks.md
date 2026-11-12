@@ -125,7 +125,7 @@
     - 明确提示：面编辑对内置模型和 manifest 带 `skeleton` 的模型给出「带骨骼的模型和内置模型不能面编辑」（状态栏不再提示 Tab）；存入资产库对内置模型给出「内置模型不能存入资产库」。属性栏的代码模型参数区对内置模型不显示，内置模型的信息块留给 6.2。
     - `downloadGLB` 对 `builtin:` 键经 `authorizedFetch` 读 `/creative/scene-models/<file>`；503 时报「内置模型的文件暂时读不到」，走现有的加载失败占位（导出同样失败）。
     - 验证：`tsc -b`、`oxlint` 无报错；相关单测 11 个文件共 251 条通过；e2e（端口 5199，单条）「asset panel: Shift+A」和「a model that cannot be shown」通过。「a code model: 代码模型…」在改动前的提交上同样超时（等不到生成命令），与本次无关，未处理。
-- [ ] 5.2 蒙皮渲染：
+- [x] 5.2 蒙皮渲染：
   - `models/cache.ts` 分出骨架模板，合并时跳过蒙皮网格。
   - 新增 `objects/SkinnedModel.tsx`。
   - `SceneObjects.tsx` 分发。
@@ -137,6 +137,38 @@
   - 测试：合并与 `traceKey` 的单测（AC-7）。
   - e2e（单条）：`setPose` 后，视口、实时 GI 镜中、`lit` 导出三处的手部位置一致，包围盒更新（AC-6）；`__sceneNoMerge` 开与关的画面一致。
   - e2e（单条，自 4.2 移来）：导入 VRM 1.0 样例，放进场景后贴地、贴图正确（AC-2）。
+  - 实施记录：
+    - `models/cache.ts`：`modelParts(parsed)` 先用 `templateOf` 分出骨架模板，再让 `partsOf` 跳过模板拿走的网格（蒙皮网格一律跳过），所以蒙皮网格从不参与合并。共用几何的计数改为按全部网格算：静态网格与挂在关节下的网格可能共用一份几何，不能让静态那份的变换写进去。加载结果多了 `skeleton`，包含三样：
+      - `template`：骨架模板。
+      - `rest`：各蒙皮部件在静止姿势下的静态化几何，带 `traceKey = <模型键>#n<节点>p<primitive>#rest`。
+      - `still`：整个骨架在静止姿势下烘焙到模型空间的部件。
+      `stillMeshes(parts)` 返回静态部件加上 `still`，供模型预览、资产缩略图、导入缩略图和材质槽面板（常量、UV 判断）使用。释放时连同模板的几何一起释放。
+    - `rig/pose.ts` 新增 `posableOf`（人形的 `prepare` 按模板只算一次）、`posedGeometries`（静止姿势直接用加载时的 `rest`，其余姿态从缓存取，用完释放）、`skeletonBounds`。视口组件和取景都走这一组，保证同一份数据。
+    - 新增 `objects/SkinnedModel.tsx`：
+      - 每个实例克隆骨架，按 `testPoses` 里这个物件的姿态求值。
+      - 在 layout effect 里同步算出静态化几何，写到每个蒙皮网格的 `userData.posed = { geometry, root }`，卸载或换姿态时释放。
+      - 材质按显示方式（白模、幽灵、线框、槽位材质）在 effect 里换上，槽位材质沿用 `resolvePart` 和 `useSlotMaterial`；蒙皮网格关掉视锥剔除，因为 three 的包围球是静止姿势的。
+      - 选中轮廓和线框用 `createPortal` 挂进去：蒙皮部件挂到模型根下，用静态化几何；骨骼上挂的普通网格直接挂到网格自身下。
+    - 分发位置（与 design 的偏差）：没有在 `SceneObjects.tsx` 里另起分支，而是由 `ModelMesh` 在部件加载完成后，于静态部件旁边渲染 `SkinnedModel`。这样加载、灰块占位、切换修订时旧模型留在屏幕上的逻辑都不用重复。`SceneObjects.tsx` 只多传一个 `objectId`。
+    - 追踪层：`Traced` 增加 `matrixWorld` 字段。普通网格取网格自身的世界矩阵；蒙皮网格取 `userData.posed` 里的几何和模型根的世界矩阵，没有 `posed` 时不收集，所以不会用别的姿态去追踪。`base.ts` 的实例矩阵、包围盒、精度等级和移动判断都改用 `t.matrixWorld`。构建期间的剔除是现成的：新 `traceKey` 的段还没到时，`instances()` 不会把它排进顶层。
+    - 拾取：`placement/raycast.ts:raycastPosed` 用代理网格，把静态化几何放到模型根的矩阵下求交，命中对象记为蒙皮网格。面法线换到蒙皮网格自身的空间，因为视口按命中对象的矩阵换算法线（吸附依赖这一点）。`accelerateModels` 把 BVH 建在静态化几何上，缓存按字节计入。
+    - 取景：`host/framing.ts:sceneBounds` 对有测试姿态、且模型已加载的物件，用姿态下的包围盒；静止姿势仍用 manifest 的包围盒。
+    - 导出和 `render_view`：静态化几何在挂载提交的 layout effect 里同步算好，早于 `onCommit`；段重建由现有的 `base.ready()` 等待。`host/pageExecutor.ts` 不用改。
+    - 线稿（design 的未决项）：`render/lineArt.ts` 用 `overrideMaterial` 画屏幕空间的法线和深度，节点材质会对蒙皮网格做蒙皮，所以自动跟随姿态，不用改。
+    - `.vrm` 也是 GLB 容器：场景里「导入模型…」和资产库导入的文件选择器都接受 `.glb,.vrm`，`fileImport.ts:isModelFile` 也认 `.vrm`（AC-2 要摄影师能选到 VRM 文件）。
+    - 测试夹具：`scripts/fixtures/rig/glb.ts:characterGLB` 可以传尺寸和材质，在关节处放一个带法线的方块，用于 e2e 在画面里找位置。
+    - 单测（`scripts/creative-scene-rig-skin.test.ts`，新增 5 条，共 12 条通过）：
+      - 蒙皮网格和挂在关节下的网格归骨架，不进合并；与静态网格共用的几何保持原样；按修订加载后带上静止姿势的 `traceKey`（AC-7）。
+      - 只有摆了姿态的实例 `traceKey` 会变；同一姿态的实例共用同一份几何；释放后不再钉住（AC-7）。
+      - 追踪收集取（姿态几何，模型根矩阵）；没有姿态几何时不收集；与 three 的光栅逐顶点一致。
+      - 拾取命中姿态几何，经 BVH 和不经 BVH 两条路径都测；按视口的读法换算出的法线正确。
+      - 取景包围盒随姿态变化，回到静止姿势时恢复成 manifest 的包围盒。
+      另补 `creative-file-import` 的 `.vrm` 用例。
+    - e2e（端口 5199，单条，GPU）：
+      - 「skinned AC-6」用 UBC 男素体的骨架（CC0），左手放一个红色发光方块。相机 A 平视拍到方块；相机 B 俯视镜面地板，方块在画面外，只能看到追踪层给出的倒影。静止和抬臂两个姿态下，lit 导出里的方块与镜中倒影都和姿态几何投影出的像素一致（误差约 1 px）；不合并部件的页面（`__sceneNoMerge`）上位置相同；编辑器视口透过相机 B，在「最终渲染」里镜中倒影的位置和导出一致。连跑 3 次都通过。
+      - 「skinned AC-2」测试时下载 pixiv three-vrm 的 VRM 1.0 扭转样例（VRM Public License 1.0，不提交进仓库；下载不到时跳过），缓存在系统临时目录。对话框显示「154 根骨骼 · 14 条节点约束」「人形映射（VRM 1.0）：54 根标准骨骼 · 手指 30 / 30」；请求里带上 `rig` 和 17 张贴图；缩略图带颜色；存储的包围盒和静止姿势下的蒙皮几何都贴地（最低点为 0）；材质预览带贴图；点一下人物能选中；白模和线框下有选中轮廓、没有报错。样例的材质本来就全是 OPAQUE，所以透明方式不需要额外检查。截图留给 owner 看。
+      - 回归：「P1 AC-2: merged parts」「asset panel: Shift+A」「a model that cannot be shown」「glb-import: with the origin moved」通过。「real-time GI: the box room bleeds…」失败（红墙旁地面红绿比 1.013 → 1.061，门槛要求至少提高 0.07）；在改动前的源码上数值完全相同，与本次无关，未处理。
+    - 观察到的现象，没有核实是否本来就有：编辑器直接以「最终渲染」打开、追踪层还在初次构建时，视口可能画到 3/12 帧就停下（镜中还没有新段），要等下一次重画才补上。换姿态的路径会完整收敛，e2e 已覆盖。
 
 ## 6. 内置素体与收尾
 

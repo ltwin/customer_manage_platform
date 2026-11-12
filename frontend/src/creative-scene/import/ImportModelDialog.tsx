@@ -7,7 +7,7 @@ import { discardCandidate, readableFileName, uploadGenerated } from '../../creat
 import StudioDialog from '../../creative-canvas/editor/StudioDialog.tsx'
 import { renderMaterialThumbnail } from '../library/thumbnail.ts'
 import { forgetLocalImage, provideLocalImage } from '../materials/images.ts'
-import { partsOf } from '../models/cache.ts'
+import { modelParts } from '../models/cache.ts'
 import { parseModelGLB } from '../sandbox/gltf.ts'
 import { convert, toBottomCenter, type Conversion, type ReportItem } from './convert.ts'
 import { bundledDecoders } from './decoders.ts'
@@ -219,8 +219,7 @@ export default function ImportModelDialog({
           provided.push(revision)
         }
         try {
-          const { scene, identities } = await parseModelGLB(written.glb)
-          return await renderMaterialThumbnail(partsOf(scene, identities), written.manifest, materials)
+          return await renderMaterialThumbnail(modelParts(await parseModelGLB(written.glb)), written.manifest, materials)
         } finally {
           provided.forEach(forgetLocalImage)
         }

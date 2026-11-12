@@ -111,8 +111,8 @@ class Precision {
   blocked = false
   /** Which layer this is, over the page's life. */
   readonly serial = ++layers
-  /** The top level's meshes, in setInstances' order, with the segment each drew and its matrix then. */
-  order: { mesh: Mesh; segment: string; matrix: number[] }[] = []
+  /** The top level's meshes, in setInstances' order, with the segment each drew, where it stands (Traced.matrixWorld) and its matrix then. */
+  order: { mesh: Mesh; segment: string; matrixWorld: Matrix4; matrix: number[] }[] = []
 
   constructor(kind: Kind, maxBinding: number, release: (attribute: object) => void) {
     this.kind = kind
@@ -500,13 +500,13 @@ export class TraceBase {
     let changed = committed
     for (const t of traced) {
       const was = this.placedAt.get(t.mesh)
-      const m = t.mesh.matrixWorld.elements
+      const m = t.matrixWorld.elements
       if (was && was.geometry === t.geometry && was.matrix.every((v, i) => v === m[i])) {
         next.set(t.mesh, was)
         continue
       }
       if (!t.geometry.boundingBox) t.geometry.computeBoundingBox()
-      const box = t.geometry.boundingBox!.clone().applyMatrix4(t.mesh.matrixWorld)
+      const box = t.geometry.boundingBox!.clone().applyMatrix4(t.matrixWorld)
       next.set(t.mesh, { geometry: t.geometry, matrix: [...m], box, ground: isGround(t) })
       if (was) this.edited.union(was.box)
       this.edited.union(box)
@@ -537,7 +537,7 @@ export class TraceBase {
   /** Each geometry's proxy level, by the largest scale an instance of it has; a finer level asks for a new build. */
   private updateLevels(traced: readonly Traced[]) {
     const need = new Map<string, number>()
-    for (const t of traced) need.set(t.key, Math.max(need.get(t.key) ?? -Infinity, levelFor(t.mesh.matrixWorld.getMaxScaleOnAxis())))
+    for (const t of traced) need.set(t.key, Math.max(need.get(t.key) ?? -Infinity, levelFor(t.matrixWorld.getMaxScaleOnAxis())))
     for (const [key, level] of need) if ((this.levels.get(key) ?? -Infinity) < level) this.levels.set(key, level)
   }
 
@@ -644,7 +644,7 @@ export class TraceBase {
     const same = !changed && !p.layer.needsTop && live.length === p.order.length && live.every((l, i) => p.order[i].mesh === l.t.mesh && p.order[i].segment === l.segment)
     if (!same) {
       // Each root drawn with its own group's slot (one material: its one slot).
-      const instances: Instance[] = live.map((l) => ({ matrixWorld: l.t.mesh.matrixWorld, segment: l.segment, rows: p.layer.placed.get(l.segment)!.groups.map((g) => l.row + Math.min(g, l.t.slots.length - 1)) }))
+      const instances: Instance[] = live.map((l) => ({ matrixWorld: l.t.matrixWorld, segment: l.segment, rows: p.layer.placed.get(l.segment)!.groups.map((g) => l.row + Math.min(g, l.t.slots.length - 1)) }))
       try {
         p.layer.setInstances(instances)
       } catch (e) {
@@ -654,15 +654,15 @@ export class TraceBase {
         p.blocked = true
         return
       }
-      p.order = live.map((l) => ({ mesh: l.t.mesh, segment: l.segment, matrix: l.t.mesh.matrixWorld.toArray() }))
+      p.order = live.map((l) => ({ mesh: l.t.mesh, segment: l.segment, matrixWorld: l.t.matrixWorld, matrix: l.t.matrixWorld.toArray() }))
       return
     }
     const moved: { at: number; matrixWorld: Matrix4 }[] = []
     p.order.forEach((o, at) => {
-      const m = o.mesh.matrixWorld.elements
+      const m = o.matrixWorld.elements
       if (o.matrix.every((v, i) => v === m[i])) return
-      o.matrix = o.mesh.matrixWorld.toArray()
-      moved.push({ at, matrixWorld: o.mesh.matrixWorld })
+      o.matrix = o.matrixWorld.toArray()
+      moved.push({ at, matrixWorld: o.matrixWorld })
     })
     p.layer.move(moved)
   }

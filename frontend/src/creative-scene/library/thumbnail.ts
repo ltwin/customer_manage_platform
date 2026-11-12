@@ -7,7 +7,7 @@ import { mapInputLabel, mapInputs } from '../materials/slotEdits.ts'
 import { ThumbnailError } from '../saveModel.ts'
 import { drawnGeometries, keyOf, materialFor } from '../materials/instances.ts'
 import { onGeometry, resolvePart, resolveSlot } from '../materials/resolve.ts'
-import type { ModelParts } from '../models/cache.ts'
+import { stillMeshes, type ModelParts } from '../models/cache.ts'
 import { roomEnvironment } from '../render/sky.ts'
 import { drawThumbnail, frame, onThumbnailGPU } from '../sandbox/thumbnail.ts'
 import type { WebGPURenderer } from 'three/webgpu'
@@ -88,7 +88,8 @@ function shoot(scene: THREE.Scene, bounds: Manifest['bounds']): Promise<Blob> {
 function draw(parts: ModelParts, manifest: Manifest, materials: Slots): Promise<Blob> {
   const scene = lit()
   const hints = new Map(manifest.slots.map((s) => [s.id, s.hint]))
-  for (const m of parts.meshes) {
+  // A skinned model at rest.
+  for (const m of stillMeshes(parts)) {
     const resolved = resolvePart(m, materials, hints).material
     // The geometries belong to the model cache: drawn here, never disposed.
     // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).

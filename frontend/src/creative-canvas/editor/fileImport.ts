@@ -7,14 +7,14 @@ import {
 import { defaultNodeSize } from './outbox.ts'
 
 // 拖入画布或资产库的一批文件：可导入的按顺序建节点或资产，其余逐项说明原因。
-// GLB 模型要先换算（导入模型对话框），只有资产库收：models 为 true 时单列出来。
+// GLB 模型（VRM 也是 GLB）要先换算（导入模型对话框），只有资产库收：models 为 true 时单列出来。
 export type ImportPlan = {
   accepted: { file: File; kind: MediaKind }[]
   rejected: { file: File; message: string }[]
   models: File[]
 }
 
-export const isModelFile = (file: File) => /\.glb$/i.test(file.name)
+export const isModelFile = (file: File) => /\.(glb|vrm)$/i.test(file.name)
 
 export function importPlan(
   files: File[],

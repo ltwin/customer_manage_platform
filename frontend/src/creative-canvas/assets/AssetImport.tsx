@@ -342,7 +342,7 @@ export function useAssetImport({
         <input
           ref={modelInput}
           type="file"
-          accept=".glb"
+          accept=".glb,.vrm"
           hidden
           aria-label="选择模型文件"
           onChange={(e) => {

@@ -99,18 +99,68 @@ export type Character = {
 
 export const characters = JSON.parse(readFileSync(new URL('skeletons.json', import.meta.url), 'utf8')) as Record<string, Character>
 
+/** A cube of side `size` centred on p, a face's four corners and normal each (24 vertices, 36 indices). */
+function cubeAt(p: Vector3, size: number): { position: Float32Array; normal: Float32Array; index: Uint16Array } {
+  const h = size / 2
+  const position: number[] = []
+  const normal: number[] = []
+  const index: number[] = []
+  for (const axis of [0, 1, 2])
+    for (const sign of [1, -1]) {
+      const n = [0, 0, 0]
+      n[axis] = sign
+      const [u, v] = [(axis + 1) % 3, (axis + 2) % 3]
+      const base = position.length / 3
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const q = [0, 0, 0]
+        q[axis] = sign * h
+        q[u] = a * h
+        q[v] = b * h
+        position.push(p.x + q[0], p.y + q[1], p.z + q[2])
+        normal.push(...n)
+      }
+      // Counter-clockwise seen from outside.
+      index.push(...(sign > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]).map((i) => base + i))
+    }
+  return { position: new Float32Array(position), normal: new Float32Array(normal), index: new Uint16Array(index) }
+}
+
 /**
  * A character's node tree with one skin over all its joints and a triangle
  * at node `at`, skinned wholly to it: enough of a model for the loader, the
- * converter and the exporter, the file's extensions kept.
+ * converter and the exporter, the file's extensions kept. With a size, a cube
+ * of that side instead, large enough to find in a picture, drawn with
+ * material when given (glTF material JSON).
  */
-export function characterGLB(c: Character, at: number): ArrayBuffer {
+export function characterGLB(c: Character, at: number, size?: number, material?: Record<string, unknown>): ArrayBuffer {
   const joints = [...new Set(c.skins.flatMap((s) => s.joints))].sort((a, b) => a - b)
   const roots = c.scenes[c.scene].nodes
   const nodes: NodeJSON[] = [...structuredClone(c.nodes), { name: 'Mark', mesh: 0, skin: 0 }]
   const g = globals(nodes, roots)
   const p = new Vector3().setFromMatrixPosition(g[at])
   const j = joints.indexOf(at)
+  if (size !== undefined) {
+    const cube = cubeAt(p, size)
+    const count = cube.position.length / 3
+    return glbOf(
+      {
+        scenes: [{ nodes: [...roots, nodes.length - 1] }],
+        nodes,
+        meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1, JOINTS_0: 2, WEIGHTS_0: 3 }, indices: 5, ...(material ? { material: 0 } : {}) }] }],
+        ...(material ? { materials: [material] } : {}),
+        skins: [{ joints, inverseBindMatrices: 4 }],
+        ...(c.extensions ? { extensions: c.extensions, extensionsUsed: Object.keys(c.extensions) } : {}),
+      },
+      [
+        { array: cube.position, type: 'VEC3' },
+        { array: cube.normal, type: 'VEC3' },
+        { array: new Uint16Array(count * 4).map((_, i) => (i % 4 === 0 ? j : 0)), type: 'VEC4' },
+        { array: new Float32Array(count * 4).map((_, i) => (i % 4 === 0 ? 1 : 0)), type: 'VEC4' },
+        { array: inverses(joints.map((n) => g[n])), type: 'MAT4' },
+        { array: cube.index, type: 'SCALAR' },
+      ],
+    )
+  }
   return glbOf(
     {
       scenes: [{ nodes: [...roots, nodes.length - 1] }],

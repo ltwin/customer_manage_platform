@@ -31,6 +31,14 @@ export function poseHash(pose: Pose | null): string {
   return Array.from(sum.subarray(0, 8), (x) => x.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * What a skinned mesh is traced and picked as, on its userData.posed, set by
+ * the model drawing it (objects/SkinnedModel.tsx): its static geometry in the
+ * current pose, in the model root's space, and that root, whose world matrix
+ * places it. Unset while the pose is being worked out.
+ */
+export type Posed = { geometry: BufferGeometry; root: Object3D }
+
 /** The world-space layer's key for a part in a pose: <model key>#n<node>p<primitive>#<pose hash>. */
 export const traceKeyOf = (modelKey: string, part: SkinnedPart, hash: string) => `${modelKey}#${part.id}#${hash}`
 

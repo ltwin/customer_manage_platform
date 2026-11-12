@@ -294,3 +294,169 @@ test('a test pose moves the skin of every instance the same way, and null is the
   assert.ok(positions(staticGeometry(plain.instance.skinned[0], plain.instance.root)).every((x, k) => Math.abs(x - rest[k]) < 1e-6))
   testPoses.setState({}, true)
 })
+
+// --- Skinned rendering (task 5.2) -------------------------------------------
+
+import { Box3, Group, Matrix3, Raycaster } from 'three'
+import { ModelCache, modelCache, modelParts, stillMeshes, type SceneModel } from '../src/creative-scene/models/cache.ts'
+import { posableOf, posedGeometries, skeletonBounds } from '../src/creative-scene/rig/pose.ts'
+import { staticGeometries, type Posed } from '../src/creative-scene/rig/skin.ts'
+import { collectMeshes, type SlotOf } from '../src/creative-scene/render/trace/collect.ts'
+import { raycastPosed } from '../src/creative-scene/placement/raycast.ts'
+import type { SlotMaterial } from '../src/creative-scene/materials/resolve.ts'
+import type { Scene, SceneObject } from '../src/creative-scene/api.ts'
+import { sceneBounds } from '../src/creative-scene/host/framing.ts'
+import { docToView } from '../src/creative-scene/space.ts'
+
+const near = (a: readonly number[], b: readonly number[], eps = 1e-5) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < eps)
+
+test('a skinned model’s skinned meshes and the meshes riding its joints are its skeleton’s, never merged into parts (AC-7)', async () => {
+  const parts = modelParts(await parseModelGLB(strip.glb()))
+  // Static alone is a part; Body, Body2 and Tip are skinned, Rider rides B.
+  assert.equal(parts.meshes.length, 1)
+  assert.ok(parts.skeleton)
+  assert.deepEqual([...parts.skeleton.rest.keys()], ['n1p0', 'n5p0', 'n7p0'])
+  assert.equal(parts.skeleton.still.length, 4)
+  assert.equal(stillMeshes(parts).length, 5)
+  // Static and Rider draw one mesh (GLTFLoader shares its geometry): Static's transform went into a copy.
+  const fresh = await parseModelGLB(strip.glb())
+  const original = positions((fresh.scene.getObjectByName('Rider') as Mesh).geometry)
+  assert.deepEqual(positions((parts.skeleton.template.root.getObjectByName('Rider') as Mesh).geometry), original)
+  // Still parts are the template at rest in model space: the rest geometries and Rider baked where it hangs.
+  const rider = parts.skeleton.template.root.getObjectByName('Rider')!
+  const baked = positions(parts.skeleton.still[3].geometry)
+  const expected = original.flatMap((_, i, a) => (i % 3 === 0 ? new Vector3(a[i], a[i + 1], a[i + 2]).applyMatrix4(rider.matrixWorld).toArray() : []))
+  assert.ok(near(baked, expected))
+  assert.equal(parts.skeleton.still[0].geometry, parts.skeleton.rest.get('n1p0'))
+
+  // Loaded under a revision, the rest geometries take its trace keys; the parts theirs.
+  const cache = new ModelCache(async () => strip.glb())
+  const loaded = await cache.load('rev_strip', null)
+  assert.deepEqual(
+    [...loaded.skeleton!.rest.values()].map((g) => g.userData.traceKey),
+    ['rev_strip#n1p0#rest', 'rev_strip#n5p0#rest', 'rev_strip#n7p0#rest'],
+  )
+  assert.equal(loaded.meshes[0].geometry.userData.traceKey, 'model:rev_strip#0')
+  cache.clear()
+})
+
+test('only a posed instance’s trace keys change; instances in one pose share its geometries (AC-7)', async () => {
+  const parts = modelParts(await parseModelGLB(xbotGLB()))
+  const { template, rest } = parts.skeleton!
+  const skeleton = vectors.skeletons.xbot
+  const a = posableOf(template, xbotRig, skeleton)
+  const b = posableOf(template, xbotRig, skeleton)
+  const c = posableOf(template, xbotRig, skeleton)
+  assert.notEqual(a.instance.root, b.instance.root)
+  const raised = { leftUpperArm: turn([0, 1, 0], -90) }
+  const atRest = posedGeometries(a, 'rev_x', rest, null)
+  const posed = posedGeometries(b, 'rev_x', rest, raised)
+  const again = posedGeometries(c, 'rev_x', rest, { leftUpperArm: turn([0, 1, 0], -90) })
+  const id = template.skinned[0].id
+  assert.equal(atRest.geometries, rest)
+  assert.equal(posed.geometries.get(id)!.userData.traceKey, `rev_x#${id}#${poseHash(raised)}`)
+  assert.equal(again.geometries.get(id), posed.geometries.get(id), 'one pose, one geometry')
+  // Bounds follow the pose: the raised arm reaches further forward than at rest.
+  const restBox = skeletonBounds(a, atRest.geometries)
+  const posedBox = skeletonBounds(b, posed.geometries)
+  assert.ok(!restBox.equals(posedBox))
+  // Released, the pose's entry is no longer pinned (the cache may drop it).
+  posed.release()
+  posed.release()
+  again.release()
+  assert.ok(staticGeometries.has(`rev_x#${id}#${poseHash(raised)}`))
+  staticGeometries.clear()
+  assert.ok(!staticGeometries.has(`rev_x#${id}#${poseHash(raised)}`))
+})
+
+/** A strip instance under a scene object, its skinned meshes drawn with a slot material, posed as SkinnedModel sets them. */
+async function stripScene() {
+  const parts = modelParts(await parseModelGLB(strip.glb()))
+  const p = posableOf(parts.skeleton!.template, undefined, undefined)
+  const paint: SlotMaterial = { kind: 'pattern', id: 'paint@1', params: {} }
+  const slots = new Map<object, SlotMaterial>()
+  for (const s of p.instance.skinned) slots.set(s.mesh.material as object, paint)
+  const slotOf: SlotOf = (m) => slots.get(m)
+  const object = new Group()
+  object.userData = { objectID: 'sobj_strip' }
+  object.position.set(3, 1, -2)
+  object.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), 0.7)
+  object.scale.setScalar(1.5)
+  const view = new Group()
+  view.quaternion.copy(docToView)
+  object.add(view)
+  view.add(p.instance.root)
+  const scene = new Group()
+  scene.add(object)
+  scene.updateMatrixWorld(true)
+  return { parts, p, slotOf, scene }
+}
+
+test('the layer traces a skinned mesh as its posed geometry placed by the model root, and leaves it out without one', async () => {
+  const { parts, p, slotOf, scene } = await stripScene()
+  assert.deepEqual(collectMeshes(scene, slotOf).filter((t) => t.mesh instanceof SkinnedMesh), [], 'no pose yet: not traced in another one')
+  const held = posedGeometries(p, 'rev_strip', parts.skeleton!.rest, null)
+  for (const s of p.instance.skinned) s.mesh.userData.posed = { geometry: held.geometries.get(s.id)!, root: p.instance.root } satisfies Posed
+  scene.updateMatrixWorld(true)
+  const traced = collectMeshes(scene, slotOf).filter((t) => t.mesh instanceof SkinnedMesh)
+  assert.equal(traced.length, 3)
+  for (const t of traced) {
+    const s = p.instance.skinned.find((x) => x.mesh === t.mesh)!
+    assert.equal(t.geometry, held.geometries.get(s.id))
+    assert.equal(t.matrixWorld, p.instance.root.matrixWorld, 'the root’s matrix, not the mesh node’s')
+  }
+  // What the layer places is what three draws, vertex by vertex.
+  for (const s of p.instance.skinned) assert.ok(rasterGap(s, p.instance.root) < 1e-5)
+})
+
+test('a skinned mesh is picked on its posed geometry, the hit naming it, the normal in its space', async () => {
+  const { parts, p, scene } = await stripScene()
+  const held = posedGeometries(p, 'rev_strip', parts.skeleton!.rest, null)
+  for (const s of p.instance.skinned) {
+    s.mesh.userData.posed = { geometry: held.geometries.get(s.id)!, root: p.instance.root } satisfies Posed
+    s.mesh.raycast = raycastPosed
+  }
+  scene.updateMatrixWorld(true)
+  const body = p.instance.skinned.find((s) => s.id === 'n1p0')!
+  const g = held.geometries.get('n1p0')!
+  // The first triangle's centre and normal in the world.
+  const corner = (i: number) => new Vector3().fromBufferAttribute(g.getAttribute('position'), g.index!.getX(i)).applyMatrix4(p.instance.root.matrixWorld)
+  const [v0, v1, v2] = [corner(0), corner(1), corner(2)]
+  const centre = v0.clone().add(v1).add(v2).divideScalar(3)
+  const normal = v1.clone().sub(v0).cross(v2.clone().sub(v0)).normalize()
+  for (const tree of [false, true]) {
+    if (tree) g.boundsTree = new MeshBVH(g, { indirect: true })
+    const raycaster = new Raycaster(centre.clone().addScaledVector(normal, 1), normal.clone().negate())
+    const hit = raycaster.intersectObject(body.mesh, false)[0]
+    assert.ok(hit, tree ? 'through the BVH' : 'three’s own test')
+    assert.equal(hit.object, body.mesh)
+    assert.ok(Math.abs(hit.distance - 1) < 1e-4)
+    // As the viewport reads it: the face normal by the hit object's matrix.
+    const world = hit.face!.normal.clone().applyNormalMatrix(new Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize()
+    assert.ok(Math.abs(Math.abs(world.dot(normal)) - 1) < 1e-5, `${world.toArray()} vs ${normal.toArray()}`)
+  }
+  delete body.mesh.userData.posed
+  assert.equal(new Raycaster(centre.clone().addScaledVector(normal, 1), normal.clone().negate()).intersectObject(body.mesh, false).length, 0)
+})
+
+test('the framed bounds of a posed model follow its pose (render_view, export)', async () => {
+  const glb = xbotGLB()
+  const parsed = await parseModelGLB(glb)
+  const bounds = new Box3()
+  parsed.scene.updateMatrixWorld(true)
+  for (const g of modelParts(parsed).skeleton!.rest.values()) bounds.union((g.computeBoundingBox(), g.boundingBox!))
+  const summary = { content_id: 'c', content_revision_id: 'rev_framed', usable: true, rig: xbotRig, manifest: { bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() }, skeleton: vectors.skeletons.xbot, slots: [] } } as unknown as SceneModel
+  modelCache.register('rev_framed', { glb, summary })
+  await modelCache.load('rev_framed', null)
+  const o = { id: 'sobj_x', name: 'x', kind: 'model_instance', parent_id: null, order: 0, visible: true, locked: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, model: { content_revision_id: 'rev_framed' } } as unknown as SceneObject
+  const scene = { environment: {}, render: { mode: 'clay' }, objects: [o] } as unknown as Scene
+  const models = { rev_framed: summary }
+  const atRest = sceneBounds(scene, models)
+  setPose('sobj_x', { leftUpperArm: turn([0, 1, 0], -90).toArray() as [number, number, number, number] })
+  const posed = sceneBounds(scene, models)
+  setPose('sobj_x', null)
+  assert.ok(atRest.equals(sceneBounds(scene, models)), 'back at rest: the manifest’s bounds')
+  assert.ok(!posed.equals(atRest), 'the raised arm moves the bounds')
+  modelCache.clear()
+  staticGeometries.clear()
+})

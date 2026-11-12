@@ -1,10 +1,10 @@
-import { Mesh, type BufferGeometry, type Material, type Object3D } from 'three'
+import { Matrix4, Mesh, SkinnedMesh, type BufferGeometry, type Material, type Object3D } from 'three'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { readModelGenerator, type ModelGenerator } from '../api.ts'
 import { authorizedFetch } from '../../auth/session.ts'
 import { mediaTicket } from '../../creative-canvas/editor/media.ts'
-import { parseModelGLB, type MeshIdentity } from '../sandbox/gltf.ts'
+import { parseModelGLB, type MeshIdentity, type ParsedModel } from '../sandbox/gltf.ts'
 import { inspect } from '../sandbox/inspect.ts'
 import { parsePlaceholder } from '../state/apply.ts'
 import { disposePieceViews } from '../render/pieces.ts'
@@ -13,6 +13,8 @@ import { applyFaces, fingerprints, fingerprintsNow, flipWinding, namedIn, ownedM
 import type { SceneSession } from '../state/sync.ts'
 import { builtinModel, builtinModelURL, builtinSummaries } from './catalog.ts'
 import { builtinOf } from './key.ts'
+import { templateOf, type SkeletonTemplate } from '../rig/template.ts'
+import { staticGeometry, traceKeyOf } from '../rig/skin.ts'
 
 // Model GLBs by model key (models/key.ts: a content revision, or builtin:<id>):
 // one download, one inspection and one parse each. Instances draw the cached
@@ -46,11 +48,28 @@ export type ModelMeshPart = {
 }
 
 /**
+ * A skinned model's skeleton (rig/template.ts), which each instance clones
+ * and poses (objects/SkinnedModel.tsx), and what it draws at rest.
+ */
+export type ModelSkeleton = {
+  template: SkeletonTemplate
+  /** Each skinned part's static geometry at rest (rig/skin.ts), by its id: what an instance at rest traces and picks. */
+  rest: ReadonlyMap<string, BufferGeometry>
+  /** The template at rest in model space, as parts: the rest geometries and the meshes riding joints, baked. What draws no pose: previews, thumbnails. */
+  still: ModelMeshPart[]
+}
+
+/**
  * What a model draws: shared geometries in model space, parts that draw alike
  * merged (models/merge.ts). stale counts face assignment entries that no
- * longer fit their mesh and were not applied (models/faces.ts).
+ * longer fit their mesh and were not applied (models/faces.ts). A skinned
+ * model's skinned meshes, and the meshes riding its joints, are not parts:
+ * they are its skeleton's.
  */
-export type ModelParts = { meshes: ModelMeshPart[]; stale?: number }
+export type ModelParts = { meshes: ModelMeshPart[]; stale?: number; skeleton?: ModelSkeleton }
+
+/** Everything a model draws at rest: its parts, and its skeleton's still parts. */
+export const stillMeshes = (parts: ModelParts): ModelMeshPart[] => (parts.skeleton ? [...parts.meshes, ...parts.skeleton.still] : parts.meshes)
 
 /**
  * A model baked in this editor. It is drawn from these bytes under its
@@ -98,15 +117,24 @@ function constantsOf(m: StandardLike): MeshConstants {
   }
 }
 
+/** A part drawing geometry with the slot and constants of material, as the GLB has them. */
+export function meshPart(geometry: BufferGeometry, material: Material | Material[]): ModelMeshPart {
+  const m = (Array.isArray(material) ? material[0] : material) as StandardLike
+  const slot = /^slot:(.+)$/.exec(m.name)?.[1] ?? null
+  const hint = typeof m.userData.hint === 'string' ? m.userData.hint : null
+  return { geometry, slot, hint, constants: constantsOf(m) }
+}
+
 /**
  * The model's parts, split by its face assignment when it has one. Without
  * one the loaded geometries take their transforms in place, as before face
  * assignments; with one each mesh is copied first (models/faces.ts
  * ownedMeshes), so pieces never share arrays a transform could hit twice.
  * topologies: the fingerprints of the meshes the assignment names, when
- * taken already (load takes them by the browser's own SHA-256).
+ * taken already (load takes them by the browser's own SHA-256). Skinned
+ * meshes are never parts, nor what skip names (a skeleton's: modelParts).
  */
-export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null, topologies?: ReadonlyMap<Mesh, string>): ModelParts {
+export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdentity>, faces?: Faces | null, topologies?: ReadonlyMap<Mesh, string>, skip?: ReadonlySet<Mesh>): ModelParts {
   if (faces && identities) {
     const { pieces, stale } = applyFaces(ownedMeshes(root, identities, topologies ?? fingerprintsNow(identities, namedIn(faces))), faces)
     const meshes = pieces.map((p): ModelMeshPart => {
@@ -119,23 +147,49 @@ export function partsOf(root: Object3D, identities?: ReadonlyMap<Mesh, MeshIdent
     return { meshes: mergeParts(meshes), stale: stale.length }
   }
   root.updateMatrixWorld(true)
-  const found: Mesh[] = []
+  const all: Mesh[] = []
   root.traverse((o) => {
-    if (o instanceof Mesh) found.push(o)
+    if (o instanceof Mesh) all.push(o)
   })
+  // Counted over every mesh: a skeleton's mesh may share a part's geometry, and must not see its transform.
   const uses = new Map<BufferGeometry, number>()
-  for (const o of found) uses.set(o.geometry, (uses.get(o.geometry) ?? 0) + 1)
-  const meshes = found.map((o): ModelMeshPart => {
-    // A geometry several parts share is copied before its transform goes in.
-    const geometry = (uses.get(o.geometry) ?? 0) > 1 ? o.geometry.clone() : o.geometry
-    geometry.applyMatrix4(o.matrixWorld)
-    if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
-    const material = (Array.isArray(o.material) ? o.material[0] : o.material) as StandardLike
-    const slot = /^slot:(.+)$/.exec(material.name)?.[1] ?? null
-    const hint = typeof material.userData.hint === 'string' ? material.userData.hint : null
-    return { geometry, slot, hint, constants: constantsOf(material) }
-  })
+  for (const o of all) uses.set(o.geometry, (uses.get(o.geometry) ?? 0) + 1)
+  const meshes = all
+    .filter((o) => !(o instanceof SkinnedMesh) && !skip?.has(o))
+    .map((o): ModelMeshPart => {
+      // A geometry several meshes share is copied before its transform goes in.
+      const geometry = (uses.get(o.geometry) ?? 0) > 1 ? o.geometry.clone() : o.geometry
+      geometry.applyMatrix4(o.matrixWorld)
+      if (o.matrixWorld.determinant() < 0) flipWinding(geometry)
+      return meshPart(geometry, o.material)
+    })
   return { meshes: mergeParts(meshes) }
+}
+
+/** The template at rest: each skinned part's static geometry, and the meshes riding joints baked into model space (copies: instances draw the originals). */
+function skeletonOf(template: SkeletonTemplate): ModelSkeleton {
+  const rest = new Map(template.skinned.map((p) => [p.id, staticGeometry(p, template.root)]))
+  const still = template.skinned.map((p) => meshPart(rest.get(p.id)!, p.mesh.material))
+  const toRoot = template.root.matrixWorld.clone().invert()
+  template.root.traverse((o) => {
+    if (!(o instanceof Mesh) || o instanceof SkinnedMesh) return
+    const m = new Matrix4().multiplyMatrices(toRoot, o.matrixWorld)
+    const geometry = o.geometry.clone().applyMatrix4(m)
+    if (m.determinant() < 0) flipWinding(geometry)
+    still.push(meshPart(geometry, o.material))
+  })
+  return { template, rest, still }
+}
+
+/**
+ * A parsed model's parts and, when it has skins, its skeleton
+ * (rig/template.ts): the skeleton takes the skinned meshes and the meshes
+ * riding joints; the other meshes are parts as before.
+ */
+export function modelParts({ scene, identities, nodes }: ParsedModel, faces?: Faces | null, topologies?: ReadonlyMap<Mesh, string>): ModelParts {
+  const template = templateOf(scene, nodes, identities)
+  const parts = partsOf(scene, identities, faces, topologies, template?.taken)
+  return template ? { ...parts, skeleton: skeletonOf(template) } : parts
 }
 
 export class ModelCache {
@@ -239,8 +293,8 @@ export class ModelCache {
       if (!local && parsePlaceholder(revision)) throw new Error('本机模型已不在，请重新生成')
       const glb = local ? local.glb : await this.download(revision)
       inspect(glb)
-      const { scene, identities } = await parseModelGLB(glb)
-      const parts = partsOf(scene, identities, faces, faces ? await fingerprints(identities, namedIn(faces)) : undefined)
+      const parsed = await parseModelGLB(glb)
+      const parts = modelParts(parsed, faces, faces ? await fingerprints(parsed.identities, namedIn(faces)) : undefined)
       if (!parsePlaceholder(revision)) traceKeys(parts, revision)
       return parts
     })()
@@ -332,6 +386,8 @@ export class ModelCache {
  * same places.
  */
 function traceKeys(parts: ModelParts, revision: string) {
+  // A skeleton's rest geometries are not merged: named alike either way (rig/skin.ts traceKeyOf).
+  for (const p of parts.skeleton?.template.skinned ?? []) parts.skeleton!.rest.get(p.id)!.userData.traceKey = traceKeyOf(revision, p, 'rest')
   if (noMerge()) return
   parts.meshes.forEach((m, i) => (m.geometry.userData.traceKey = `model:${revision}#${i}`))
 }
@@ -341,12 +397,17 @@ function disposeParts(parts: Promise<ModelParts>[]) {
   const seen = new Set<BufferGeometry>()
   for (const p of parts)
     void p.then(
-      ({ meshes }) => {
-        for (const m of meshes) {
-          if (seen.has(m.geometry)) continue
-          seen.add(m.geometry)
-          disposePieceViews(m.geometry)
-          m.geometry.dispose()
+      (parts) => {
+        // A skeleton's own geometries too, which its instances share.
+        const skeleton: BufferGeometry[] = []
+        parts.skeleton?.template.root.traverse((o) => {
+          if (o instanceof Mesh) skeleton.push(o.geometry)
+        })
+        for (const g of [...stillMeshes(parts).map((m) => m.geometry), ...skeleton]) {
+          if (seen.has(g)) continue
+          seen.add(g)
+          disposePieceViews(g)
+          g.dispose()
         }
       },
       () => {},

@@ -315,14 +315,14 @@ worker（上传 model）：
 | `frontend/src/creative-scene/models/cache.ts:ModelCache.load`、`downloadGLB`、`partsOf` | 修改 | 分出骨架模板；`builtin:` 键走新接口；合并时跳过蒙皮网格 |
 | `frontend/src/creative-scene/models/catalog.ts` | 新增 | 内置模型清单副本与摘要 |
 | `frontend/src/creative-scene/models/key.ts` | 新增 | `modelKey(ref)` |
-| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | 按模型键分发；有骨架时渲染 `SkinnedModel` |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx`、`objects/ModelMesh.tsx` | 修改 | 按模型键分发；`ModelMesh` 在部件加载后、有骨架时于静态部件旁渲染 `SkinnedModel`（`SceneObjects` 传物件 ID），加载、占位与换修订的处理不重复 |
 | `frontend/src/creative-scene/objects/SkinnedModel.tsx` | 新增 | 每个实例的骨架、求值、`SkinnedMesh`，向追踪层与拾取提供静态化几何 |
 | `frontend/src/creative-scene/objects/Outline.tsx` | 修改 | 蒙皮网格的轮廓用静态化几何 |
 | `frontend/src/creative-scene/render/trace/collect.ts:collectMeshes` | 修改 | 蒙皮网格取（静态化几何, 模型根矩阵）与带姿态的 `traceKey` |
 | `frontend/src/creative-scene/render/trace/base.ts:TraceBase.instances` | 修改 | 显式的实例矩阵优先于网格节点的 `matrixWorld` |
 | `frontend/src/creative-scene/faceEdit/` 入口、`panels/MaterialSlots.tsx` | 修改 | 带骨骼的模型不显示面分配 |
-| `frontend/src/creative-scene/placement/raycast.ts`、`placement/snap.ts`、`host/framing.ts:sceneBounds` | 修改 | 按模型键取摘要；带骨骼的用静态化几何的包围盒和 BVH |
-| `frontend/src/creative-scene/host/render.ts`、`host/pageExecutor.ts` | 修改 | 按模型键加载；导出等待静态化几何与段重建 |
+| `frontend/src/creative-scene/placement/raycast.ts`、`host/framing.ts:sceneBounds` | 修改 | 按模型键取摘要；带骨骼的用静态化几何的包围盒和 BVH（`raycastPosed`）；`placement/snap.ts` 只用 manifest 的包围盒放新模型，无需改 |
+| `frontend/src/creative-scene/host/render.ts` | 修改 | 按模型键加载；静态化几何在挂载的 layout effect 里同步算出，段重建由现有的 `base.ready()` 等待，`host/pageExecutor.ts` 无需改 |
 | `frontend/src/creative-scene/preview/cache.ts`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 修改 | 带骨骼的模型按静止姿势显示与出缩略图 |
 | `frontend/src/creative-scene/sandbox/inspect.ts` | 修改 | 蒙皮子集预检与骨架摘要 |
 | `frontend/src/creative-scene/sandbox/gltf.ts:parseModelGLB` | 修改 | 解析结果带上对象到 GLB 节点下标的对照，供骨架模板定部件 ID |
@@ -331,6 +331,7 @@ worker（上传 model）：
 | `frontend/src/creative-scene/import/convert.ts:convert`、`dequantize`、`toBottomCenter` | 修改 | 保留关节；保留并换算权重；带骨骼时平移祖先节点 |
 | `frontend/src/creative-scene/import/write.ts:writeGLB` | 修改 | 节点下标回写、删去标记 |
 | `frontend/src/creative-scene/import/run.ts` | 修改 | 提交带 `rig` |
+| `frontend/src/creative-scene/SceneEditor.tsx`（文件选择）、`frontend/src/creative-canvas/assets/AssetImport.tsx`、`frontend/src/creative-canvas/editor/fileImport.ts:isModelFile` | 修改 | 接受 `.vrm`（VRM 是 GLB 容器，走同一条导入） |
 | `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增）、`import/mapping.ts`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入；`mapping.ts` 放校验与提交的纯逻辑，供单测直接调用 |
 | `frontend/src/creative-scene/SceneEditor.tsx`、`editing.ts:newModelInstance` | 修改 | 「添加 > 素体」；放置改为接收模型引用；查表改用模型键 |
 | `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 模型类的「我的 / 内置」切换，内置模型可拖入、双击放置 |
@@ -373,5 +374,5 @@ worker（上传 model）：
 
 | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|
-| 导出的线稿从哪里取几何：屏幕空间的边缘检测会自动随光栅，用几何的路径要改为静态化几何 | 挂载点是否要加线稿模块 | 实现蒙皮渲染时先读线稿通道的代码确认 | 蒙皮渲染任务开始 |
+| ~~导出的线稿从哪里取几何~~ 已解决（5.2）：`render/lineArt.ts` 用 `overrideMaterial` 画屏幕空间的法线与深度，节点材质对蒙皮网格照样蒙皮，自动随姿态，不加挂载点 | — | — | — |
 | 夹具素材里哪些能提交进仓库（Xbot、Michelle 来自 three 示例；RobotExpressive 是 CC0；VRM 样例按 VRM Public License） | 单测的夹具位置 | 逐个核对许可；不能再分发的在测试里下载，下载失败时跳过并标注 | 导入任务开始 |

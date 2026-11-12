@@ -126,7 +126,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
           <PrimitiveMesh builtin={o.primitive.builtin} params={o.primitive.params} faces={o.primitive.faces ?? null} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {o.kind === 'model_instance' && modelKey(o.model) && (
-          <ModelMesh revision={modelKey(o.model)!} summary={summaryOf(models, o.model)} edge={edge} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
+          <ModelMesh revision={modelKey(o.model)!} summary={summaryOf(models, o.model)} edge={edge} objectId={o.id} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
         {/* The viewport, the one place with helpers, warms new lights; a shot compiles before shooting. */}
         {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} casts={tree.shadows.get(o.id) === 'on'} />}

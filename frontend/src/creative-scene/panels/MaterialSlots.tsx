@@ -8,7 +8,7 @@ import type { ParamSpec } from '../builtins/catalog.ts'
 import { builtinSource, materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
 import { imageStatus, textureSources, type TextureKey } from '../materials/images.ts'
 import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
-import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
+import { modelCache, stillMeshes, type MeshConstants, type SceneModel } from '../models/cache.ts'
 import { summaryOf } from '../models/catalog.ts'
 import { modelKey } from '../models/key.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
@@ -118,7 +118,8 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   const slotNames = (o: SceneObject) => slotsOf(o, summaryOf(models, o.model)).map((s) => s.slot)
   const constantsOf = (o: SceneObject, slot: string): MeshConstants | null => {
     const rev = modelKey(o.model)
-    return (rev && modelCache.peek(rev)?.meshes.find((m) => m.slot === slot)?.constants) || null
+    const parts = rev ? modelCache.peek(rev) : null
+    return (parts && stillMeshes(parts).find((m) => m.slot === slot)?.constants) || null
   }
   // A slot a face assignment brought draws as the slot its faces came from
   // until it has a material of its own (materials/resolve.ts resolvePart).
@@ -156,7 +157,9 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   /** Whether a slot's geometry has UVs: a primitive's always; a model's once its parts are in. */
   const hasUV = (slot: string): boolean | null => {
     if (object.kind === 'primitive') return true
-    const parts = revision ? modelCache.peek(revision)?.meshes.filter((p) => p.slot === slot) : undefined
+    const loaded = revision ? modelCache.peek(revision) : null
+    // A skinned model's skin too (models/cache.ts stillMeshes).
+    const parts = loaded ? stillMeshes(loaded).filter((p) => p.slot === slot) : undefined
     return parts?.length ? parts.every((p) => 'uv' in p.geometry.attributes) : null
   }
   /** A material asset's slot, copied onto this slot (and the selection's slots of the same name). */

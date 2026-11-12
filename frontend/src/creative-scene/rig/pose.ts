@@ -1,10 +1,11 @@
-import { Quaternion, type Object3D } from 'three'
+import { Box3, Matrix4, Mesh, Quaternion, SkinnedMesh, type BufferGeometry, type Object3D } from 'three'
 import { createStore } from 'zustand/vanilla'
 import type { components } from '../../api/schema'
 import { isHumanBone } from './bones.ts'
 import { bindConstraints, jointParents, resetConstraints, runConstraints, type BoundConstraint } from './constraints.ts'
 import { apply, prepare, type Mapping, type Pose, type Prepared } from './retarget.ts'
-import type { SkeletonInstance, SkeletonTemplate } from './template.ts'
+import { poseHash, staticGeometries, staticGeometry, traceKeyOf } from './skin.ts'
+import { instantiate, type SkeletonInstance, type SkeletonTemplate } from './template.ts'
 
 // The current pose of each skinned object (design「领域模型与业务规则」): until
 // bone channels (scene-pose-system 子项 4) there are two, the rest by default
@@ -88,4 +89,54 @@ export function pose(p: Posable, q: Pose | null) {
     runConstraints(p.constraints)
   }
   p.instance.root.updateWorldMatrix(true, true)
+}
+
+const prepared = new WeakMap<SkeletonTemplate, Prepared | null>()
+const noSkeleton: Skeleton = { joints: [], fingerprint: '' }
+
+/** A fresh instance of a model's template, made posable; the humanoid's preparation is worked out once per template (a template is one model's, its rig fixed). */
+export function posableOf(t: SkeletonTemplate, rig: Rig | undefined, skeleton: Skeleton | undefined): Posable {
+  if (!prepared.has(t)) prepared.set(t, prepareTemplate(t, rig))
+  return posable(instantiate(t), rig, skeleton ?? noSkeleton, prepared.get(t)!)
+}
+
+/** Posed geometries, held from the cache until released. */
+export type Held = { geometries: ReadonlyMap<string, BufferGeometry>; release(): void }
+
+/**
+ * Puts a pose on the instance and gives each skinned part's static geometry
+ * in it, by part id (rig/skin.ts): rest, the model's rest geometries as
+ * loaded; any other pose, the cache's under its trace key, held till release.
+ */
+export function posedGeometries(p: Posable, modelKey: string, rest: ReadonlyMap<string, BufferGeometry>, q: Pose | null): Held {
+  pose(p, q)
+  const hash = q && p.prepared ? poseHash(q) : 'rest'
+  if (hash === 'rest') return { geometries: rest, release: () => {} }
+  const keys = p.instance.skinned.map((part) => traceKeyOf(modelKey, part, hash))
+  const geometries = new Map(p.instance.skinned.map((part, i) => [part.id, staticGeometries.acquire(keys[i], () => staticGeometry(part, p.instance.root))]))
+  let held = true
+  return {
+    geometries,
+    release: () => {
+      if (held) for (const k of keys) staticGeometries.release(k)
+      held = false
+    },
+  }
+}
+
+/** What the posed instance covers in its root's space: its skinned parts' geometries and the meshes riding its joints. */
+export function skeletonBounds(p: Posable, geometries: ReadonlyMap<string, BufferGeometry>): Box3 {
+  const box = new Box3()
+  for (const g of geometries.values()) {
+    if (!g.boundingBox) g.computeBoundingBox()
+    box.union(g.boundingBox!)
+  }
+  const toRoot = p.instance.root.matrixWorld.clone().invert()
+  const m = new Matrix4()
+  p.instance.root.traverse((o) => {
+    if (!(o instanceof Mesh) || o instanceof SkinnedMesh) return
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+    box.union(o.geometry.boundingBox!.clone().applyMatrix4(m.multiplyMatrices(toRoot, o.matrixWorld)))
+  })
+  return box
 }
