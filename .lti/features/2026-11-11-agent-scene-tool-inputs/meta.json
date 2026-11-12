@@ -1,0 +1,80 @@
+{
+  "uid": "81e909da-aa58-4459-abd0-66fdffe3fac2",
+  "revision": 5,
+  "id": "agent-scene-tool-inputs",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "in-progress",
+  "createdAt": "2026-11-11T13:36:01.350Z",
+  "updatedAt": "2026-11-11T13:38:49.899Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "concurrency"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:49.513Z",
+      "contentHash": "4ab27f7ec4aa59c9"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:49.513Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "de4e5925aeedc7a5"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:37:31.632Z",
+      "contentHash": "4ab27f7ec4aa59c9",
+      "role": "proposal"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:37:31.632Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "c4e2f2395086655d",
+      "role": "design"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:09.979Z",
+      "contentHash": "4ab27f7ec4aa59c9",
+      "role": "proposal"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:09.979Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "c4e2f2395086655d",
+      "role": "design"
+    }
+  ],
+  "revisions": [],
+  "baseline": {
+    "commit": "63331bbcc76cc4b3b212eddb3c9cc735ffa1d227",
+    "at": "2026-11-11T13:38:12.914Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "1ee2e3634c9ee86acee2d56652df0ee45ffeee096e39f6a53bb11fda79552cfd"
+    },
+    "preExisting": [
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/contracts.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/design.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/diagnosis.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/meta.json",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/proposal.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/specs.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/tasks.md",
+      ".lti/snapshots/1ee2e3634c9ee86acee2d56652df0ee45ffeee096e39f6a53bb11fda79552cfd.json"
+    ]
+  },
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "develop"
+}
