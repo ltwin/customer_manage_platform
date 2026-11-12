@@ -45,7 +45,7 @@ ENTRYPOINT ["/usr/local/bin/creative-worker"]
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata ffmpeg=6.1.2-r2 \
     && adduser -D app \
-    && mkdir -p /var/lib/crm/avatars /var/lib/crm/planning-media \
+    && mkdir -p /var/lib/crm/avatars /var/lib/crm/planning-media /var/lib/crm/scene-textures /var/lib/crm/scene-models \
     && chown -R app:app /var/lib/crm
 USER app
 COPY --from=backend /out/server /usr/local/bin/server

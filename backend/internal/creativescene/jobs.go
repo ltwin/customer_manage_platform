@@ -827,6 +827,9 @@ func replaceTarget(ctx context.Context, tx store.TxAccountScope, scene Scene, id
 	if o.Kind != KindModelInstance || o.Model == nil {
 		return BakeTarget{}, nil, invalid("物件 %s 不是模型实例，只能替换模型实例", r.ObjectID)
 	}
+	if o.Model.Builtin != "" {
+		return BakeTarget{}, nil, invalid("物件 %s 是内置模型 %s，不能用代码替换：换模型用 edit_scene 的 set_instance_model，换材质改 material_slots", r.ObjectID, o.Model.Builtin)
+	}
 	scope := r.Scope
 	if scope == "" {
 		scope = "this"

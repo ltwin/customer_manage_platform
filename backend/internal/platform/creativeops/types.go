@@ -52,12 +52,15 @@ func Explain(err error, format string, args ...any) error {
 // (details.field). Path is inside operation Op of the batch a document type
 // was handed, which the document layer turns into the request's position; an
 // Op below 0 makes Path the whole field. ContentRevisionID names the content
-// the field points at, when that content is what was refused.
+// the field points at, when that content is what was refused. Reason is a
+// machine-readable cause (details.reason), set only where the contract names
+// one: a model's rig.
 type FieldError struct {
 	Err               error
 	Op                int
 	Path              string
 	ContentRevisionID string
+	Reason            string
 	Message           string
 }
 

@@ -4,7 +4,9 @@
 // Run against the Vite dev server: node scripts/creative-assets.e2e.mjs.
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
@@ -15,6 +17,8 @@ const webm = readFileSync(fileURLToPath(new URL('../../backend/internal/creative
 const mp3 = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.mp3', import.meta.url)))
 const glb = readFileSync(fileURLToPath(new URL('../../backend/internal/creativeglb/testdata/exported-template.glb', import.meta.url)))
 // 内置贴图的读取接口：每个文件都回这张小图，查看浮窗的材质球照常画出来。
+// 素体文件（scene-skinned-humanoid）：convert.mjs 的输出，models/ 与 textures/。
+const bodiesDir = [process.env.SCENE_E2E_BUILTIN_DIR, join(tmpdir(), 'creative-scene-e2e', 'bodies')].find((d) => d && existsSync(join(d, 'models')))
 const textureJPEG = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.jpg', import.meta.url)))
 // 模型预览用 WebGL：和场景编辑器的 e2e 一样走 SwiftShader。
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
@@ -84,7 +88,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], textures: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), digests: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], textures: [], models: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), digests: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -131,8 +135,20 @@ function mockServer(assets) {
     const path = url.pathname
     // 页面已经放弃的请求（条件变了被中止）再回应会报错，忽略即可。
     const json = (value, status = 200) => route.fulfill({ status, json: value }).catch(() => {})
+    // 内置模型的 GLB：素体文件在本机时照常给出（同 creative-scene.e2e.mjs 的 bodyFiles），否则未导入（503）。
+    if (path.includes('/creative/scene-models/')) {
+      const name = path.split('/').at(-1)
+      s.models.push(name)
+      const at = bodiesDir && join(bodiesDir, 'models', name)
+      if (!at || !existsSync(at)) return route.fulfill({ status: 503, json: { error: { code: 'creative_model_file_unavailable', message: '内置模型的文件还没有导入', details: { file: name } } } }).catch(() => {})
+      return route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: readFileSync(at) }).catch(() => {})
+    }
     if (path.includes('/creative/scene-textures/')) {
-      s.textures.push(path.split('/').at(-1))
+      const name = path.split('/').at(-1)
+      s.textures.push(name)
+      // 素体自己的贴图在本机时给真文件，查看浮窗里才看得出皮肤。
+      const own = bodiesDir && join(bodiesDir, 'textures', name)
+      if (own && existsSync(own)) return route.fulfill({ status: 200, contentType: 'image/png', body: readFileSync(own) }).catch(() => {})
       return route.fulfill({ status: 200, contentType: 'image/jpeg', body: textureJPEG }).catch(() => {})
     }
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
@@ -1789,6 +1805,57 @@ await check('C5c2-builtin', async () => {
   await settled()
   assert.equal(params().get('source'), null)
   assert.equal(await row('全部').getAttribute('aria-current'), 'page')
+})
+
+// scene-skinned-humanoid：资产库的「内置模型」只读、本地筛选；查看浮窗画 3D 预览并列出骨骼与来源。
+await check('skinned-builtin-models', async () => {
+  await fresh({ layout: 'grid' })
+  await open()
+  const reads = server.reads.length
+  await row('内置模型').click()
+  assert.equal(params().get('source'), 'builtin-models')
+  await until(async () => (await row('内置模型').getAttribute('aria-current')) === 'page', 'the built-in models row is current')
+  assert.equal(await row('内置材质').getAttribute('aria-current'), null)
+  assert.equal(await row('全部').getAttribute('aria-current'), null, 'no account view is current')
+  const builtin = page.getByRole('region', { name: '内置模型' })
+  await builtin.waitFor()
+  assert.deepEqual(await builtin.locator('.al-tile').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['女素体', '男素体'])
+  assert.equal(await page.getByRole('complementary', { name: '检查器' }).count(), 0, 'nothing to inspect or organize')
+  assert.equal(server.reads.length, reads, 'the built-in grid asks the server nothing')
+  await builtin.getByRole('searchbox', { name: '搜索内置模型' }).fill('男')
+  assert.deepEqual(await builtin.locator('.al-tile').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['男素体'])
+  await builtin.getByRole('searchbox', { name: '搜索内置模型' }).fill('机器人')
+  await builtin.getByText('没有符合条件的内置模型').waitFor()
+  await builtin.getByRole('searchbox', { name: '搜索内置模型' }).fill('')
+  await until(() => builtin.locator('.al-tile img').evaluateAll((imgs) => imgs.every((i) => i.complete && i.naturalWidth === 256)), 'the thumbnails are the rendered bodies')
+  await page.screenshot({ path: `${output}/builtin-models-grid.png` })
+  await noHorizontalScroll('builtin-models')
+
+  await builtin.locator('.al-tile[data-builtin="body_female@1"]').dblclick()
+  const v = page.getByRole('dialog', { name: '查看内置模型：女素体' })
+  await v.waitFor()
+  for (const [label, value] of [['品类', '人形'], ['骨骼', '人形，52 根标准骨骼'], ['来源', 'Quaternius · Universal Base Characters'], ['作者', 'Quaternius']]) {
+    const dd = await v.locator('dt', { hasText: new RegExp(`^${label}$`) }).locator('xpath=following-sibling::dd[1]').innerText()
+    assert.equal(dd, value, label)
+  }
+  assert.equal(await v.locator('.al-rating').count(), 0, 'a built-in has no rating')
+  await until(() => server.models.length > 0, 'the preview reads the GLB', 10000)
+  if (bodiesDir) {
+    await v.locator('.v-model canvas').waitFor()
+    await until(() => server.textures.length >= 3, 'its textures are read', 10000)
+    await page.waitForTimeout(1000)
+    await page.screenshot({ path: `${output}/builtin-models-viewer.png` })
+  } else console.log('  no body files: the 3D preview is not drawn')
+  await page.keyboard.press('ArrowRight')
+  await page.getByRole('dialog', { name: '查看内置模型：男素体' }).waitFor()
+  await page.keyboard.press('Escape')
+  await until(async () => (await page.getByRole('dialog').count()) === 0, 'viewer closed')
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-builtin')), 'body_female@1', 'focus returns to the card it opened from')
+
+  await row('全部').click()
+  await board().waitFor()
+  await settled()
+  assert.equal(params().get('source'), null)
 })
 
 await context?.close()

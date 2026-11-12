@@ -87,4 +87,8 @@ func TestSceneTextureRead(t *testing.T) {
 	if w := get("GET", present, token, etag); w.Code != 304 || w.Body.Len() != 0 || w.Header().Get("ETag") != etag {
 		t.Fatalf("not modified: %d", w.Code)
 	}
+	// A PNG name is well formed; one the catalog does not list is not found.
+	if w := get("GET", strings.TrimSuffix(present, ".jpg")+".png", token, ""); w.Code != 404 {
+		t.Fatalf("unlisted png: %d", w.Code)
+	}
 }

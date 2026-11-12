@@ -33,3 +33,38 @@
   justify-content: flex-end;
   gap: 8px;
 }
+/* 骨骼：映射结果、手动指定的表。 */
+.cc-import-rig {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.cc-import-rig h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cc-import-rig ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.cc-import-rig-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.cc-rig-mapping {
+  max-height: 280px;
+  margin-top: 8px;
+  overflow: auto;
+}
+.cc-rig-mapping summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.cc-form label.cc-rig-bone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}

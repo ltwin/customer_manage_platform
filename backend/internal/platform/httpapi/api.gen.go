@@ -1928,6 +1928,78 @@ func (e CreativeModelCodeGeneratorMount) Valid() bool {
 	}
 }
 
+// Defines values for CreativeModelConstraintAimAxis.
+const (
+	NegativeX CreativeModelConstraintAimAxis = "NegativeX"
+	NegativeY CreativeModelConstraintAimAxis = "NegativeY"
+	NegativeZ CreativeModelConstraintAimAxis = "NegativeZ"
+	PositiveX CreativeModelConstraintAimAxis = "PositiveX"
+	PositiveY CreativeModelConstraintAimAxis = "PositiveY"
+	PositiveZ CreativeModelConstraintAimAxis = "PositiveZ"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelConstraintAimAxis enum.
+func (e CreativeModelConstraintAimAxis) Valid() bool {
+	switch e {
+	case NegativeX:
+		return true
+	case NegativeY:
+		return true
+	case NegativeZ:
+		return true
+	case PositiveX:
+		return true
+	case PositiveY:
+		return true
+	case PositiveZ:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelConstraintKind.
+const (
+	Aim      CreativeModelConstraintKind = "aim"
+	Roll     CreativeModelConstraintKind = "roll"
+	Rotation CreativeModelConstraintKind = "rotation"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelConstraintKind enum.
+func (e CreativeModelConstraintKind) Valid() bool {
+	switch e {
+	case Aim:
+		return true
+	case Roll:
+		return true
+	case Rotation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeModelConstraintRollAxis.
+const (
+	X CreativeModelConstraintRollAxis = "X"
+	Y CreativeModelConstraintRollAxis = "Y"
+	Z CreativeModelConstraintRollAxis = "Z"
+)
+
+// Valid indicates whether the value is a known member of the CreativeModelConstraintRollAxis enum.
+func (e CreativeModelConstraintRollAxis) Valid() bool {
+	switch e {
+	case X:
+		return true
+	case Y:
+		return true
+	case Z:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeModelGeneratorInputContractVersion.
 const (
 	CreativeModelGeneratorInputContractVersionN1 CreativeModelGeneratorInputContractVersion = 1
@@ -5692,7 +5764,10 @@ type CreativeAssetFromGLBPayload struct {
 	// Materials 缺省等同于空对象。
 	Materials CreativeSceneMaterialSlots        `json:"materials"`
 	Mount     *CreativeAssetFromGLBPayloadMount `json:"mount,omitempty"`
-	Target    CreativeUploadAssetTarget         `json:"target"`
+
+	// Rig 可选，只在 GLB 带骨架时允许：标准人形映射与节点约束（节点下标指向上传的 GLB）。带骨架而不传时按非人形骨架保存。
+	Rig    *CreativeModelRig         `json:"rig,omitempty"`
+	Target CreativeUploadAssetTarget `json:"target"`
 
 	// TextureUploadIds 拆出的图片的暂存上传（声明类型 image）；每一项的内容修订都必须被 materials 引用，导入成功时全部消费。
 	TextureUploadIds []string `json:"texture_upload_ids"`
@@ -6415,10 +6490,11 @@ type CreativeEmptyTrashResult struct {
 	PurgedCount     int              `json:"purged_count"`
 }
 
-// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。
+// CreativeFieldDetails 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 reason 是不成立的原因，目前只用于骨骼映射与约束（rig.humanoid.leftFoot 的上级不是 leftLowerLeg 等）。
 type CreativeFieldDetails struct {
 	ContentRevisionId *string `json:"content_revision_id,omitempty"`
 	Field             string  `json:"field"`
+	Reason            *string `json:"reason,omitempty"`
 }
 
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
@@ -6950,6 +7026,28 @@ type CreativeModelCodeGeneratorLibVersion int
 // CreativeModelCodeGeneratorMount defines model for CreativeModelCodeGenerator.Mount.
 type CreativeModelCodeGeneratorMount string
 
+// CreativeModelConstraint 节点约束，语义同 VRMC_node_constraint 1.0；node 与 source 都是关节，依赖无环。
+type CreativeModelConstraint struct {
+	// AimAxis kind = aim 时必有
+	AimAxis *CreativeModelConstraintAimAxis `json:"aim_axis,omitempty"`
+	Kind    CreativeModelConstraintKind     `json:"kind"`
+	Node    int                             `json:"node"`
+
+	// RollAxis kind = roll 时必有
+	RollAxis *CreativeModelConstraintRollAxis `json:"roll_axis,omitempty"`
+	Source   int                              `json:"source"`
+	Weight   float32                          `json:"weight"`
+}
+
+// CreativeModelConstraintAimAxis kind = aim 时必有
+type CreativeModelConstraintAimAxis string
+
+// CreativeModelConstraintKind defines model for CreativeModelConstraint.Kind.
+type CreativeModelConstraintKind string
+
+// CreativeModelConstraintRollAxis kind = roll 时必有
+type CreativeModelConstraintRollAxis string
+
 // CreativeModelFaceMesh defines model for CreativeModelFaceMesh.
 type CreativeModelFaceMesh struct {
 	// Assign 槽位 ID（同 GLB 材质名 slot:<id> 的 id）到三角形区间 [start, end) 的列表；区间按这个 primitive 自己的三角形顺序，升序且互不重叠。
@@ -7046,7 +7144,10 @@ type CreativeModelManifest struct {
 		Min []float32 `json:"min"`
 	} `json:"bounds"`
 	Parts []string `json:"parts"`
-	Slots []struct {
+
+	// Skeleton 骨架摘要（data: 模型内容「骨架与人形映射」），GLB 有 skins 时由服务端算出。joints 是所有 skin 的关节的并集，按节点下标升序； fingerprint 只看结构（关节与父关节），不含名称和静止姿势。
+	Skeleton *CreativeModelSkeleton `json:"skeleton,omitempty"`
+	Slots    []struct {
 		Hint *string `json:"hint,omitempty"`
 		Id   string  `json:"id"`
 	} `json:"slots"`
@@ -7090,6 +7191,9 @@ type CreativeModelPayload struct {
 		Materials *CreativeSceneMaterialSlots `json:"materials,omitempty"`
 		NameHint  *string                     `json:"name_hint,omitempty"`
 
+		// Rig 骨骼的标准人形映射与节点约束（data: 模型内容「骨架与人形映射」、patterns: 标准人形骨骼），只在 manifest 有 skeleton 时允许。 humanoid 缺省表示非人形骨架。
+		Rig *CreativeModelRig `json:"rig,omitempty"`
+
 		// SourceRevisionId 库副本复制自哪个模型修订；有它就是库副本
 		SourceRevisionId *string `json:"source_revision_id,omitempty"`
 	} `json:"model"`
@@ -7123,6 +7227,9 @@ type CreativeModelPreviewPayload struct {
 		Materials *CreativeSceneMaterialSlots `json:"materials,omitempty"`
 		NameHint  *string                     `json:"name_hint,omitempty"`
 
+		// Rig 骨骼的标准人形映射与节点约束（data: 模型内容「骨架与人形映射」、patterns: 标准人形骨骼），只在 manifest 有 skeleton 时允许。 humanoid 缺省表示非人形骨架。
+		Rig *CreativeModelRig `json:"rig,omitempty"`
+
 		// SourceRevisionId 库副本复制自哪个模型修订；有它就是库副本
 		SourceRevisionId *string `json:"source_revision_id,omitempty"`
 	} `json:"model"`
@@ -7130,6 +7237,29 @@ type CreativeModelPreviewPayload struct {
 
 // CreativeModelPreviewPayloadModelFormat defines model for CreativeModelPreviewPayload.Model.Format.
 type CreativeModelPreviewPayloadModelFormat string
+
+// CreativeModelRig 骨骼的标准人形映射与节点约束（data: 模型内容「骨架与人形映射」、patterns: 标准人形骨骼），只在 manifest 有 skeleton 时允许。 humanoid 缺省表示非人形骨架。
+type CreativeModelRig struct {
+	Constraints *[]CreativeModelConstraint `json:"constraints,omitempty"`
+
+	// Humanoid 标准骨骼名（VRM 1.0 humanoid，如 leftUpperArm）到关节的节点下标；必需骨骼齐全、互不重复、满足层级嵌入。
+	Humanoid *map[string]int `json:"humanoid,omitempty"`
+}
+
+// CreativeModelSkeleton 骨架摘要（data: 模型内容「骨架与人形映射」），GLB 有 skins 时由服务端算出。joints 是所有 skin 的关节的并集，按节点下标升序； fingerprint 只看结构（关节与父关节），不含名称和静止姿势。
+type CreativeModelSkeleton struct {
+	Fingerprint string `json:"fingerprint"`
+	Joints      []struct {
+		// Name 节点名（GLB JSON 原文，可为空串），只作显示
+		Name string `json:"name"`
+
+		// Node 关节的节点下标
+		Node int `json:"node"`
+
+		// Parent 最近的、也是关节的祖先节点下标；没有时为 null
+		Parent nullable.Nullable[int] `json:"parent"`
+	} `json:"joints"`
+}
 
 // CreativeMoveNodePayload defines model for CreativeMoveNodePayload.
 type CreativeMoveNodePayload struct {
@@ -7985,12 +8115,17 @@ type CreativeSceneModel struct {
 	Manifest nullable.Nullable[CreativeModelManifest] `json:"manifest"`
 	NameHint nullable.Nullable[string]                `json:"name_hint"`
 
+	// Rig 带骨骼的模型的人形映射与节点约束；没有骨架或没有 rig 时省略。
+	Rig *CreativeModelRig `json:"rig,omitempty"`
+
 	// Usable false 时 manifest、generator、name_hint 为 null，编辑器显示「模型不可用」占位。
 	Usable bool `json:"usable"`
 }
 
-// CreativeSceneModelRef model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。
+// CreativeSceneModelRef model_instance 引用的模型。快照里是 content_revision_id（账号的模型修订）或 builtin（data: 内置模型库的条目 ID，如 body_female@1）； 提交时还可以写 ref，指向本批之前的 commit_model。三者只能有一个。
 type CreativeSceneModelRef struct {
+	// Builtin 内置模型的条目 ID；不进引用表，实例不能做面级材质分配、不能存入资产库。
+	Builtin           *string `json:"builtin,omitempty"`
 	ContentRevisionId *string `json:"content_revision_id,omitempty"`
 	Ref               *string `json:"ref,omitempty"`
 }
@@ -8039,7 +8174,7 @@ type CreativeSceneObject struct {
 	// MaterialSlots 缺省等同于空对象。
 	MaterialSlots *CreativeSceneMaterialSlots `json:"material_slots,omitempty"`
 
-	// Model model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。
+	// Model model_instance 引用的模型。快照里是 content_revision_id（账号的模型修订）或 builtin（data: 内置模型库的条目 ID，如 body_female@1）； 提交时还可以写 ref，指向本批之前的 commit_model。三者只能有一个。
 	Model *CreativeSceneModelRef `json:"model,omitempty"`
 	Name  string                 `json:"name"`
 
@@ -8232,7 +8367,7 @@ type CreativeSceneTexture struct {
 	ContentRevisionId string `json:"content_revision_id"`
 }
 
-// CreativeSceneTextureDetails 读不到的内置贴图文件名（creative_texture_unavailable）。
+// CreativeSceneTextureDetails 读不到的内置贴图或内置模型文件名（creative_texture_unavailable、creative_model_file_unavailable）。
 type CreativeSceneTextureDetails struct {
 	File string `json:"file"`
 }
@@ -10484,6 +10619,11 @@ type RestoreCreativeProjectParams struct {
 // CompleteCreativeSceneJobParams defines parameters for CompleteCreativeSceneJob.
 type CompleteCreativeSceneJobParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GetCreativeSceneModelParams defines parameters for GetCreativeSceneModel.
+type GetCreativeSceneModelParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
 // GetCreativeSceneTextureParams defines parameters for GetCreativeSceneTexture.
@@ -14010,6 +14150,9 @@ type ServerInterface interface {
 	// 续租：把租约延长到现在加 30 秒，不超过 deadline
 	// (POST /creative/scene-jobs/{job_id}/lease)
 	LeaseCreativeSceneJob(c *gin.Context, jobId string)
+	// 内置模型的 GLB 文件（内置模型库）；支持 HEAD
+	// (GET /creative/scene-models/{file})
+	GetCreativeSceneModel(c *gin.Context, file string, params GetCreativeSceneModelParams)
 	// 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
 	// (GET /creative/scene-textures/{file})
 	GetCreativeSceneTexture(c *gin.Context, file string, params GetCreativeSceneTextureParams)
@@ -18647,6 +18790,57 @@ func (siw *ServerInterfaceWrapper) LeaseCreativeSceneJob(c *gin.Context) {
 	siw.Handler.LeaseCreativeSceneJob(c, jobId)
 }
 
+// GetCreativeSceneModel operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeSceneModel(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "file" -------------
+	var file string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "file", c.Param("file"), &file, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter file: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeSceneModelParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeSceneModel(c, file, params)
+}
+
 // GetCreativeSceneTexture operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeSceneTexture(c *gin.Context) {
 
@@ -21217,6 +21411,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/scene-jobs/claim", wrapper.ClaimCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/complete", wrapper.CompleteCreativeSceneJob)
 	router.POST(options.BaseURL+"/creative/scene-jobs/:job_id/lease", wrapper.LeaseCreativeSceneJob)
+	router.GET(options.BaseURL+"/creative/scene-models/:file", wrapper.GetCreativeSceneModel)
 	router.GET(options.BaseURL+"/creative/scene-textures/:file", wrapper.GetCreativeSceneTexture)
 	router.GET(options.BaseURL+"/creative/tag-categories", wrapper.ListCreativeCategories)
 	router.POST(options.BaseURL+"/creative/tag-categories", wrapper.CreateCreativeCategory)

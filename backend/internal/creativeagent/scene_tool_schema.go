@@ -29,7 +29,7 @@ func sceneEditOperation() *schema.ParameterInfo {
 		"iso": number(), "shutter_s": number(), "exposure_mode": str(), "exposure_compensation": number(),
 	})
 	primitive := object(map[string]*schema.ParameterInfo{"builtin": str(), "params": object(nil), "faces": object(nil)})
-	model := object(map[string]*schema.ParameterInfo{"content_revision_id": str()})
+	model := object(map[string]*schema.ParameterInfo{"content_revision_id": str(), "builtin": str()})
 	placement := func() map[string]*schema.ParameterInfo {
 		return map[string]*schema.ParameterInfo{
 			"name": str(), "visible": boolean(), "locked": boolean(),
@@ -53,7 +53,7 @@ func sceneEditOperation() *schema.ParameterInfo {
 		"objects": array(object(add)), "updates": array(object(update)), "object_ids": array(str()),
 		"moves": array(object(nil)), "create_groups": array(object(nil)), "remove_groups": array(str()),
 		"environment": object(nil), "render": object(nil),
-		"object_id": str(), "scope": str(), "model": model,
+		"object_id": str(), "scope": str(), "model": model, "material_slots": object(nil),
 		"id": str(), "name": str(), "frame": {Type: schema.Integer}, "camera_object_id": str(), "copy_from": str(),
 		"run_id": str(),
 	})

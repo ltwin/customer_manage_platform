@@ -1,12 +1,12 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 4,
+  "revision": 11,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
   "epic": "scene-pose-system",
   "designBinding": {
-    "version": 7,
+    "version": 8,
     "uses": [
       "design:设计上下文",
       "design:领域模型与业务规则",
@@ -54,9 +54,9 @@
       "api:读取内置贴图"
     ]
   },
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-10T09:15:44.276Z",
+  "updatedAt": "2026-11-12T09:51:06.751Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -68,19 +68,89 @@
   "approvals": {
     "proposal": {
       "by": "samson",
-      "at": "2026-11-10T09:15:43.902Z",
-      "contentHash": "77dd6f08e052b3ca"
+      "at": "2026-11-11T02:49:48.267Z",
+      "contentHash": "20c8db317cf5f14e"
     },
     "design": {
       "by": "samson",
-      "at": "2026-11-10T09:15:43.902Z",
-      "contentHash": "36ef1b38caca80ce"
+      "at": "2026-11-11T02:49:48.267Z",
+      "contentHash": "6c29ac6538076a41"
     }
   },
-  "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-11-10T09:15:43.902Z",
+      "contentHash": "77dd6f08e052b3ca",
+      "role": "proposal"
+    },
+    {
+      "by": "samson",
+      "at": "2026-11-10T09:15:43.902Z",
+      "contentHash": "36ef1b38caca80ce",
+      "role": "design"
+    }
+  ],
+  "revisions": [
+    {
+      "at": "2026-11-11T01:57:18.110Z",
+      "summary": "AC-4 修正：RobotExpressive 的脚挂在根骨骼下，任何手动映射都不成立，只能按非人形骨架导入；「手动修改后成立」改用 Xbot 错映射一根骨骼的夹具验证（owner 2026-11-10 同意）",
+      "contentHash": "bd7d45fbcba3d502",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-11T02:44:00.072Z",
+      "summary": "Epic 修订 v8：素体的入口改为资产库页面与场景资产面板模型类的「内置」来源（同内置材质），「添加 > 素体」保留为快捷入口；AC-1 加资产库与资产面板的检查（owner 2026-11-10 同意）",
+      "contentHash": "20c8db317cf5f14e",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "b8296d834be189ba3e52ac2a4d97b11744fa7ab3",
+    "at": "2026-11-10T09:17:43.494Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "a7458fc8fa9278c8f69db66365730b9400d4553a83fc90238b4d809e46db9da4"
+    },
+    "preExisting": [
+      ".lti/snapshots/a7458fc8fa9278c8f69db66365730b9400d4553a83fc90238b4d809e46db9da4.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-12T09:50:47.655Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "按项目约定只跑定向测试，没有跑全量 make check；性能只有单机实测（M4 Pro，见 design「AC-8 实测」），接近上限角色的 worker 段重建没有单独测；Docker 卷属主只用最小镜像验证，完整镜像没有重新构建。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contract-delta",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 验收通过：内置素体、VRM/Mixamo 导入、按姿态渲染与 AC-8 实测材料已看；代码评审 10 项中 9 项已修、1 项（静止几何不计入缓存预算）按设计保留并写入 design。验证：受影响 Go 包（creativeagent、creativescene、creativeglb、httpapi、creativecanvas、creativectl、config）、前端定向单测 186 项、蒙皮 e2e AC-1/2/6/12 与资产库、角色卡 e2e 逐条通过。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e3cf40a1717bf5d32b9ab485846215b43f5dccb6187c2ef0fb92395df4a19c7e"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-12T09:51:06.329Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

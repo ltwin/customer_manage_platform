@@ -1,7 +1,8 @@
-import { Color, DoubleSide, type BufferGeometry, type Light, type Material, type Mesh, type Object3D } from 'three'
+import { Color, DoubleSide, type BufferGeometry, type Light, type Material, type Matrix4, type Mesh, type Object3D } from 'three'
 import { renderPolicy } from '../../materials/principled.ts'
 import type { SlotMaterial } from '../../materials/resolve.ts'
 import { SceneAreaLight } from '../lightModel/lights.ts'
+import type { Posed } from '../../rig/skin.ts'
 
 // What the world-space layer traces, read off the mounted three scene each
 // frame (S1 design「收集与比对」, L4): the meshes the opaque prepass draws,
@@ -24,6 +25,8 @@ export type Traced = {
   /** Its place among that object's traced meshes, in the scene graph's order. */
   part: number
   geometry: BufferGeometry
+  /** Where the geometry stands: the mesh's world matrix, or a skinned mesh's model root's (posedOf). */
+  matrixWorld: Matrix4
   /**
    * What is built of the geometry: its traceKey, or its uuid for this session
    * alone, marked +groups when the mesh draws a material a group (a root a
@@ -38,6 +41,9 @@ export type Traced = {
   slots: Slot[]
   triangles: number
 }
+
+/** A skinned mesh traces its posed geometry by its model root (rig/skin.ts Posed); without one it is left out, never traced in another pose. */
+const posedOf = (mesh: Mesh): Posed | null | undefined => ((mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh ? ((mesh.userData.posed as Posed | undefined) ?? null) : undefined)
 
 /** The material a mesh draws its slot with (materials/instances.ts slotOf): none for clay, ghosts, placeholders and helpers. */
 export type SlotOf = (material: Material) => SlotMaterial | undefined
@@ -88,8 +94,9 @@ export function collectMeshes(scene: Object3D, slotOf: SlotOf): Traced[] {
     const mesh = o as Mesh
     if (id !== null && mesh.isMesh && !(mesh as { isInstancedMesh?: boolean }).isInstancedMesh && !(mesh as { isBatchedMesh?: boolean }).isBatchedMesh && o.layers.isEnabled(0)) {
       const slots = slotsOf(mesh, slotOf)
-      const g = mesh.geometry
-      if (slots && g?.attributes.position && drawnWhole(g)) {
+      const posed = posedOf(mesh)
+      const g = posed ? posed.geometry : mesh.geometry
+      if (slots && posed !== null && g?.attributes.position && drawnWhole(g)) {
         const part = parts.get(id) ?? 0
         parts.set(id, part + 1)
         const traceKey = g.userData.traceKey
@@ -99,6 +106,7 @@ export function collectMeshes(scene: Object3D, slotOf: SlotOf): Traced[] {
           objectID: id,
           part,
           geometry: g,
+          matrixWorld: posed ? posed.root.matrixWorld : mesh.matrixWorld,
           key: `${typeof traceKey === 'string' ? traceKey : `uuid:${g.uuid}`}${grouped ? '+groups' : ''}`,
           cacheable: typeof traceKey === 'string',
           grouped,

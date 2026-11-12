@@ -83,6 +83,7 @@ export function saveTarget(input: SaveInput): SaveTarget | { error: string } {
   if (input.selected.length !== 1) return { error: '选一个模型' }
   const o = input.objects.find((x) => x.id === input.selected[0])
   if (!o) return { error: '这个物件已不在场景里' }
+  if (o.kind === 'model_instance' && o.model?.builtin) return { error: '内置模型不能存入资产库' }
   const revision = o.kind === 'model_instance' ? o.model?.content_revision_id : undefined
   if (!revision) return { error: '只有代码模型能存入资产库' }
   if (parsePlaceholder(revision)) return { error: '模型还在生成' }

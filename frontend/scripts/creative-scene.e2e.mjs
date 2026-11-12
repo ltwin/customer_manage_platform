@@ -186,7 +186,11 @@ class SceneServer {
     // Built-in texture files read (C5c2), and whether the library is imported: if not, each read is a 503.
     this.textureReads = []
     this.texturesImported = true
-    // A directory of the real files (<sha256>.jpg, or a local store's <sha256>.jpg/content): served instead of the checker.
+    // Built-in model files read (scene-pose-system), and whether they are imported: if not, each read is a 503.
+    this.modelReads = []
+    this.modelsImported = true
+    // A directory of the real files (<sha256>.jpg, or a local store's <sha256>.jpg/content, or convert.mjs's
+    // textures/ and models/): served instead of the checker. Without it a built-in model is not there (503).
     this.builtinDir = null
     // Milliseconds an image takes to arrive: later than a picture would be drawn without waiting for it.
     this.imageDelayMs = 0
@@ -327,7 +331,7 @@ class SceneServer {
     const rev = `ccrv_imp${++this.modelSeq}`
     const content_id = `ccnt_imp${this.modelSeq}`
     const model = { format: 'glb', manifest: inspect(glb), generator: { language: 'imported', mount: p.mount ?? 'floor' }, name_hint: [...p.target.title].slice(0, 80).join(''), materials: p.materials, import: p.import }
-    this.models.set(rev, { content_id, glb, generator: model.generator, manifest: model.manifest, name_hint: model.name_hint, materials: p.materials, import: p.import, thumbnail: this.uploadBytes.get(p.thumbnail_upload_id) })
+    this.models.set(rev, { content_id, glb, generator: model.generator, manifest: model.manifest, name_hint: model.name_hint, materials: p.materials, import: p.import, thumbnail: this.uploadBytes.get(p.thumbnail_upload_id), ...(p.rig ? { rig: p.rig } : {}) })
     const id = `ccas_imp${this.modelSeq}`
     this.library.push({
       id, title: p.target.title, description: '', kind: 'model', revision: '1', content_id, content_revision_id: rev,
@@ -367,7 +371,7 @@ class SceneServer {
         continue
       }
       const { code: _code, ...generator } = m.generator
-      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null, ...(m.import ? { import: m.import } : {}) }
+      out[rev] = { content_id: m.content_id, usable: true, manifest: m.manifest, generator, name_hint: m.name_hint ?? null, faces: m.faces ?? null, ...(m.import ? { import: m.import } : {}), ...(m.rig ? { rig: m.rig } : {}) }
     }
     return out
   }
@@ -406,6 +410,7 @@ class SceneServer {
     }
     const real = (m) => {
       if (m?.ref !== undefined) return { content_revision_id: models[m.ref].content_revision_id }
+      if (m?.builtin !== undefined) return m
       if (m) assert.ok(this.models.has(m.content_revision_id) || m.content_revision_id.startsWith('ccrv_gone'), `a model sent is real: ${m.content_revision_id}`)
       return m
     }
@@ -720,11 +725,20 @@ async function route(page, server) {
       if (!server.texturesImported) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
       if (server.builtinDir) {
         // Downloaded files, or a local store's root: as render-texture-thumbnails.mjs reads them.
-        const at = [join(server.builtinDir, builtinFile[1]), join(server.builtinDir, 'scene-textures', builtinFile[1], 'content')].find((p) => existsSync(p))
+        const at = [join(server.builtinDir, builtinFile[1]), join(server.builtinDir, 'scene-textures', builtinFile[1], 'content'), join(server.builtinDir, 'textures', builtinFile[1])].find((p) => existsSync(p))
         if (!at) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
-        return r.fulfill({ status: 200, contentType: 'image/jpeg', body: readFileSync(at) })
+        return r.fulfill({ status: 200, contentType: builtinFile[1].endsWith('.png') ? 'image/png' : 'image/jpeg', body: readFileSync(at) })
       }
       return r.fulfill({ status: 200, contentType: 'image/png', body: textures.ccr_checker })
+    }
+    // A built-in model's GLB (api: 读取内置模型文件), from builtinDir as the textures are.
+    const builtinModelFile = path.match(/^\/scene-models\/([^/]+)$/)
+    if (builtinModelFile) {
+      const name = builtinModelFile[1]
+      server.modelReads.push(name)
+      const at = server.modelsImported && server.builtinDir ? [join(server.builtinDir, name), join(server.builtinDir, 'scene-models', name, 'content'), join(server.builtinDir, 'models', name)].find((p) => existsSync(p)) : undefined
+      if (!at) return json(503, { error: { code: 'creative_model_file_unavailable', message: '内置模型的文件还没有导入', details: { file: name } } })
+      return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: readFileSync(at) })
     }
     if (path === '/media-capabilities')
       return json(200, { schema_version: 1, formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 50 * 2 ** 20, av_max_bytes: 2 ** 30, part_size: 8 * 2 ** 20, batch_limit: 20 })
@@ -8422,6 +8436,74 @@ window.__picture = async (scene, kind, side, points = []) => {
     shooter.close();
   }
 };
+// scene-skinned-humanoid AC-6: a skinned model, given as a local model, in a test pose. Each camera's lit picture:
+// its red blobs (connected, at least 6 pixels: the model's mark and what mirrors it) and where the mark and its
+// image in a mirror at document height mirrorY should be, from the pose's static geometry (null off the picture).
+window.__posed = async (scene, rev, glb64, summary, objectID, pose, cameras, side, mirrorY) => {
+  const THREE = await import('three');
+  const { positionToView } = await import('/src/creative-scene/space.ts');
+  const { modelCache } = await import('/src/creative-scene/models/cache.ts');
+  const { setPose, poseOf, posableOf, posedGeometries, skeletonBounds } = await import('/src/creative-scene/rig/pose.ts');
+  modelCache.register(rev, { glb: Uint8Array.from(atob(glb64), (c) => c.charCodeAt(0)).buffer, summary });
+  const parts = await modelCache.load(rev, null);
+  setPose(objectID, pose);
+  const p = posableOf(parts.skeleton.template, summary.rig, summary.manifest.skeleton);
+  const held = posedGeometries(p, rev, parts.skeleton.rest, poseOf(objectID));
+  const mark = skeletonBounds(p, held.geometries).getCenter(new THREE.Vector3()).toArray();
+  held.release();
+  const image = [mark[0], 2 * mirrorY - mark[1], mark[2]];
+  const shooter = await openShooter(scene, { [rev]: summary }, 'lit');
+  try {
+    const out = [];
+    for (const id of cameras) {
+      const framing = cameraFraming(scene, id, side);
+      const blob = await shooter.shoot(framing, { kind: 'lit', type: 'image/png' });
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const c2d = canvas.getContext('2d');
+      c2d.drawImage(bitmap, 0, 0);
+      const w = bitmap.width, h = bitmap.height;
+      const d = c2d.getImageData(0, 0, w, h).data;
+      const camera = new THREE.PerspectiveCamera(framing.fov, framing.width / framing.height, framing.near, framing.far);
+      camera.position.fromArray(framing.position);
+      camera.quaternion.fromArray(framing.quaternion);
+      camera.updateMatrixWorld();
+      const at = (q) => {
+        const v = new THREE.Vector3(...positionToView(q)).project(camera);
+        const xy = [((v.x + 1) / 2) * w, ((1 - v.y) / 2) * h];
+        return v.z < 1 && xy[0] >= 0 && xy[0] < w && xy[1] >= 0 && xy[1] < h ? xy : null;
+      };
+      const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+      const bytes = new Uint8Array(await jpeg.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      out.push({ camera: id, width: w, height: h, blobs: window.__redBlobs(d, w, h), mark: at(mark), image: at(image), jpeg: btoa(binary) });
+    }
+    return { mark, out };
+  } finally {
+    shooter.close();
+    setPose(objectID, null);
+  }
+};
+// Red blobs in RGBA pixels: connected, at least 6 pixels each, their centres and sizes.
+window.__redBlobs = (d, w, h) => {
+  const red = (i) => d[4 * i] >= 90 && d[4 * i] > 2 * d[4 * i + 1] && d[4 * i] > 2 * d[4 * i + 2];
+  const seen = new Uint8Array(w * h);
+  const blobs = [];
+  for (let i = 0; i < w * h; i++) {
+    if (seen[i] || !red(i)) continue;
+    const stack = [i];
+    seen[i] = 1;
+    let n = 0, sx = 0, sy = 0;
+    while (stack.length) {
+      const j = stack.pop();
+      n++; sx += j % w; sy += Math.floor(j / w);
+      for (const k of [j - 1, j + 1, j - w, j + w]) if (k >= 0 && k < w * h && !seen[k] && Math.abs((k % w) - (j % w)) <= 1 && red(k)) { seen[k] = 1; stack.push(k); }
+    }
+    if (n >= 6) blobs.push({ x: sx / n, y: sy / n, n });
+  }
+  return blobs;
+};
 window.__ready = true;
 </script></body></html>`,
 )
@@ -9610,6 +9692,431 @@ await check('glb-import: with the origin moved, a double click on 导入 imports
   assert.equal(server.imports.size, 1, 'one asset')
   assert.deepEqual(errors, [])
   await context.close()
+})
+
+// scene-skinned-humanoid AC-2: pixiv's VRM 1.0 twist sample (three-vrm examples, VRM Public License 1.0), committed
+// with the other characters in fixtures/rig/characters.
+const vrmSample = () => readFileSync(new URL('./fixtures/rig/characters/VRM1_Constraint_Twist_Sample.vrm', import.meta.url))
+
+/** The share of a PNG's pixels (in the box, as fractions) with colour, as clay never has: their channels spread by more than 30. */
+async function colourful(page, png, box = [0, 0, 1, 1]) {
+  return page.evaluate(async ([src, box]) => {
+    const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+    const c = document.createElement('canvas')
+    c.width = img.width
+    c.height = img.height
+    const x = c.getContext('2d')
+    x.drawImage(img, 0, 0)
+    const [x0, y0, x1, y1] = [box[0] * c.width, box[1] * c.height, box[2] * c.width, box[3] * c.height].map(Math.round)
+    const d = x.getImageData(x0, y0, x1 - x0, y1 - y0).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 30) n++
+    return n / (d.length / 4)
+  }, [`data:image/png;base64,${Buffer.from(png).toString('base64')}`, box])
+}
+
+await check('skinned AC-2: the VRM 1.0 sample imports with its mapping and constraints, its thumbnail textured; in the scene it stands on the ground, textured', async () => {
+  const vrm = vrmSample()
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('menuitem', { name: '导入模型…' }).click()
+  await (await chooser).setFiles({ name: 'VRM1_Constraint_Twist_Sample.vrm', mimeType: 'model/gltf-binary', buffer: vrm })
+  const dialog = page.getByRole('dialog', { name: '导入模型' })
+  const rig = dialog.getByLabel('骨骼')
+  await rig.waitFor({ timeout: 60_000 })
+  const said = await rig.textContent()
+  console.log(`  ${said}`)
+  assert.match(said, /条节点约束/, 'the constraints are counted')
+  assert.match(said, /人形映射（VRM 1\.0）：\d+ 根标准骨骼/, 'the mapping comes from the VRM extension')
+  await dialog.getByRole('checkbox', { name: '原点移到底面中心' }).check()
+  await dialog.getByRole('button', { name: '导入', exact: true }).click()
+  await dialog.waitFor({ state: 'detached', timeout: 120_000 })
+  await saved(page)
+  const [sent] = server.importRequests
+  const { humanoid, constraints } = sent.payload.rig
+  assert.ok(humanoid.hips !== undefined && humanoid.leftHand !== undefined && humanoid.rightFoot !== undefined, 'mapped')
+  assert.ok(constraints.length > 0, 'its constraints go with it')
+  assert.ok(sent.payload.texture_upload_ids.length > 0, 'its textures go with it')
+  console.log(`  ${Object.keys(humanoid).length} bones, ${constraints.length} constraints, ${sent.payload.texture_upload_ids.length} textures; alpha: ${JSON.stringify(Object.fromEntries(Object.entries(sent.payload.materials).map(([k, m]) => [k, m.alpha_mode ?? 'opaque'])))}`)
+  const thumb = server.uploadBytes.get(sent.payload.thumbnail_upload_id)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/vrm1-thumbnail.png`, thumb)
+  const tinted = await colourful(page, thumb)
+  console.log(`  thumbnail: ${(tinted * 100).toFixed(1)}% of it has colour`)
+  assert.ok(tinted > 0.005, 'the thumbnail has its textures')
+
+  // In the scene: the stored model's rest bounds and the skin drawn at rest both stand on the ground.
+  const rev = server.imports.values().next().value.content_revision_id
+  await waitFor(() => server.scene.objects.some((o) => o.model?.content_revision_id === rev), 'placed')
+  const stored = server.models.get(rev).manifest.bounds
+  assert.ok(Math.abs(stored.min[1]) < 1e-3, `the stored bounds stand on the ground: ${stored.min[1]}`)
+  assert.ok(server.models.get(rev).rig?.constraints?.length === constraints.length, 'the model keeps its rig')
+  const drawn = await page.evaluate(async (rev) => {
+    const { modelCache } = await import('/src/creative-scene/models/cache.ts')
+    const parts = await modelCache.load(rev, null)
+    let low = Infinity
+    for (const g of [...parts.skeleton.rest.values(), ...parts.meshes.map((m) => m.geometry)]) {
+      g.computeBoundingBox()
+      low = Math.min(low, g.boundingBox.min.y)
+    }
+    return { low, skinned: parts.skeleton.template.skinned.length }
+  }, rev)
+  assert.ok(drawn.skinned > 0 && Math.abs(drawn.low) < 1e-3, `the skin at rest stands on the ground: ${JSON.stringify(drawn)}`)
+  await shading(page, '材质预览')
+  await page.getByRole('treeitem', { name: /VRM1_Constraint_Twist_Sample/ }).click()
+  await page.keyboard.press('Period')
+  await page.keyboard.press('Escape')
+  const { box } = await viewportCenter(page)
+  const png = await settledShot(page, box)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/vrm1-material-preview.png`, png)
+  const share = await colourful(page, png, [0.3, 0.1, 0.7, 0.9])
+  console.log(`  material preview: ${(share * 100).toFixed(1)}% of the model's area has colour`)
+  assert.ok(share > 0.005, 'the material preview draws its textures')
+  // Picked on its skin (placement/raycast.ts raycastPosed): a click on the shorts selects it; outlined in clay and
+  // in wireframe.
+  const item = page.getByRole('treeitem', { name: /VRM1_Constraint_Twist_Sample/ })
+  assert.equal(await item.getAttribute('aria-selected'), 'false')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await waitFor(async () => (await item.getAttribute('aria-selected')) === 'true', 'picked')
+  for (const look of ['白模', '线框']) {
+    await shading(page, look)
+    const shown = await settledShot(page, box)
+    if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/vrm1-${look}.png`, shown)
+  }
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// The built-in bodies' files (scene-skinned-humanoid 6.2): SCENE_E2E_BUILTIN_DIR, or convert.mjs's output
+// (models/ and textures/) copied to <tmp>/creative-scene-e2e/bodies. They are made from a pack downloaded by
+// hand (docs/dev/builtin-models.md), so without them the checks that draw a body are skipped.
+const bodyCatalog = () => JSON.parse(readFileSync(new URL('../src/creative-scene/builtinModels.gen.json', import.meta.url), 'utf8')).models
+function bodyFiles() {
+  const dir = process.env.SCENE_E2E_BUILTIN_DIR ?? join(tmpdir(), 'creative-scene-e2e', 'bodies')
+  return bodyCatalog().every((m) => existsSync(join(dir, 'models', m.glb.name)) || existsSync(join(dir, m.glb.name))) ? dir : null
+}
+const bodyObject = (name, order, builtin, materials, position = [0, 0, 0]) => ({ id: gid(name), kind: 'model_instance', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false, model: { builtin }, material_slots: materials })
+
+await check('skinned AC-1: a body from 内置 in the asset panel and from 添加 > 素体, drawn with its textures; no face edit or save; 换成男素体 brings its materials, Cmd+Z back', async () => {
+  const dir = bodyFiles()
+  if (!dir) {
+    console.log('  skipped: no built-in body files (SCENE_E2E_BUILTIN_DIR, or convert.mjs output in <tmp>/creative-scene-e2e/bodies)')
+    return
+  }
+  const [female, male] = ['body_female@1', 'body_male@1'].map((id) => bodyCatalog().find((m) => m.id === id))
+  const server = new SceneServer()
+  server.builtinDir = dir
+  const { context, page, errors } = await open(server)
+  await shading(page, '材质预览')
+  const { box: clip } = await viewportCenter(page)
+
+  // 内置 in the asset panel's models: the two bodies, dragged in where let go.
+  await page.getByRole('tab', { name: '资产' }).click()
+  const panel = page.locator('.cc-scene-assets')
+  // 我的 has the import button and the filters beside the switch: the row wraps in a narrow sidebar.
+  if (process.env.SCENE_E2E_EVIDENCE) await panel.screenshot({ path: `${process.env.SCENE_E2E_EVIDENCE}/body-asset-panel-mine.png` })
+  await panel.getByRole('tablist', { name: '模型来源' }).getByRole('tab', { name: '内置' }).click()
+  const cards = panel.getByRole('listbox', { name: '内置模型' }).getByRole('option')
+  assert.deepEqual(await cards.allInnerTexts(), ['女素体', '男素体'])
+  const card = panel.getByRole('option', { name: '女素体' })
+  await card.click()
+  await panel.getByText('内置模型 · 人形 · Quaternius，CC0').waitFor()
+  await card.locator('img').evaluate((img) => img.complete || new Promise((r) => (img.onload = r)))
+  if (process.env.SCENE_E2E_EVIDENCE) await panel.screenshot({ path: `${process.env.SCENE_E2E_EVIDENCE}/body-asset-panel.png` })
+  await card.dragTo(page.locator('.cc-scene-editor canvas'), { targetPosition: { x: clip.width / 2, y: clip.height / 2 } })
+  await waitFor(() => server.commands.length === 1, 'dropped')
+  await saved(page)
+  const placed = server.scene.objects.find((o) => o.model?.builtin)
+  assert.deepEqual(placed.model, { builtin: 'body_female@1' })
+  assert.equal(placed.name, '女素体')
+  assert.deepEqual(placed.material_slots, female.materials, 'the entry’s materials')
+  assert.ok(Math.abs(placed.transform.position[1]) < 1e-6, `on the ground: ${placed.transform.position}`)
+  await waitFor(() => server.modelReads.includes(female.glb.name), 'its GLB is read', 30_000)
+
+  // Drawn with its own textures: skin, not clay.
+  const textures = new Set(JSON.parse(readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')).materials.filter((m) => Object.values(female.materials).some((s) => s.preset === m.id)).flatMap((m) => m.files.map((f) => f.name)))
+  await waitFor(() => [...textures].every((f) => server.textureReads.includes(f)), 'its textures are read', 30_000)
+  await page.getByRole('tab', { name: '大纲' }).click()
+  await page.getByRole('treeitem', { name: /女素体/ }).click()
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press('Period')
+  const body = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-female-material-preview.png`, body)
+  const skin = await colourful(page, body, [0.3, 0.1, 0.7, 0.9])
+  console.log(`  material preview: ${(skin * 100).toFixed(1)}% of the body’s area has colour`)
+  assert.ok(skin > 0.05, 'drawn with its textures')
+
+  // The properties: what it is and where from; no parameters, no face edit, no 存入资产库.
+  const info = page.getByRole('group', { name: '内置模型' })
+  await info.getByText('Quaternius · Universal Base Characters').waitFor()
+  await page.locator('.cc-scene-model-info').filter({ hasText: '内置模型：女素体' }).waitFor()
+  const save = page.getByRole('button', { name: '存入资产库…' })
+  if (await save.count()) assert.ok(await save.isDisabled(), 'not saved to the library')
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press('Tab')
+  await page.getByText('带骨骼的模型和内置模型不能面编辑', { exact: false }).waitFor()
+
+  // Its body slot changed, then 换成男素体: the male body with his materials, renamed; one Cmd+Z back to hers as changed.
+  const slot = page.getByLabel('槽位 body')
+  await slot.getByRole('combobox', { name: 'body 的材质' }).selectOption({ label: '原理化 BSDF' })
+  await waitFor(() => server.commands.length === 2, 'material changed')
+  await saved(page)
+  const changed = structuredClone(server.object(placed.id).material_slots)
+  assert.notEqual(changed.body.preset, female.materials.body.preset)
+  await info.getByRole('button', { name: '换成男素体' }).click()
+  await waitFor(() => server.commands.length === 3, 'swapped')
+  await saved(page)
+  const swapped = server.object(placed.id)
+  assert.deepEqual([swapped.model, swapped.name], [{ builtin: 'body_male@1' }, '男素体'])
+  assert.deepEqual(swapped.material_slots, male.materials, 'his materials replace the changed slots')
+  await waitFor(() => server.modelReads.includes(male.glb.name), 'his GLB is read', 30_000)
+  const him = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-male-material-preview.png`, him)
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 4, 'undo')
+  await saved(page)
+  const back = server.object(placed.id)
+  assert.deepEqual([back.model, back.name, back.material_slots], [{ builtin: 'body_female@1' }, '女素体', changed])
+
+  // 添加 > 素体 > 男素体, where the menu opened.
+  await page.mouse.move(clip.x + clip.width * 0.75, clip.y + clip.height * 0.7)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '男素体' }).click()
+  await waitFor(() => server.commands.length === 5, 'added')
+  await saved(page)
+  const added = server.scene.objects.filter((o) => o.model?.builtin === 'body_male@1')
+  assert.equal(added.length, 1)
+  assert.deepEqual(added[0].material_slots, male.materials)
+  assert.ok(added[0].transform.position[0] > 0.1, `right of the centre: ${added[0].transform.position}`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('skinned AC-12: a body whose GLB is not imported is a grey block with a notice, the box beside it unaffected; the export fails naming it', async () => {
+  const female = bodyCatalog().find((m) => m.id === 'body_female@1')
+  const server = new SceneServer()
+  server.modelsImported = false
+  const cam = gid('cam')
+  seed(server, [
+    bodyObject('女素体', 5, 'body_female@1', female.materials),
+    boxOf('方块', 6, { position: [1.5, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({})),
+    cameraObject(cam, '机位', 7, { focal_mm: 50 }, [0, 1, 5]),
+  ])
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.modelReads.length > 0, 'a read', 10_000)
+  await page.getByRole('treeitem', { name: /女素体/ }).click()
+  await page.getByRole('group', { name: '内置模型' }).getByRole('alert').filter({ hasText: '文件暂时读不到' }).waitFor({ timeout: 10_000 })
+  // The grey block stands in at the body's size; the box draws as ever.
+  const { box: clip } = await viewportCenter(page)
+  const shown = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-not-imported.png`, shown)
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  server.claimable = [{ id: 'csj_body', document_id: DOC, kind: 'render_view', request: { camera_object_id: cam, mode: 'clay' }, attempt: 0, claim_token: 'tok_body', lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.completes.some((c) => c.id === 'csj_body'), 'render_view done', 120_000)
+  const done = server.completes.find((c) => c.id === 'csj_body').payload
+  assert.equal(done.outcome, 'failed')
+  assert.match(done.error.message, /内置模型「女素体」的文件暂时读不到/)
+  assert.doesNotMatch(done.error.message, /503/, 'no status code')
+  assert.deepEqual(errors.filter((e) => !/503/.test(e)), [])
+  await context.close()
+})
+
+// scene-skinned-humanoid 6.3, for the owner: the two bodies before a mirror wall in material preview, in the
+// real-time GI and in the lit export, at rest and posed; AC-8's timings of a pose change under the real-time GI;
+// and a near-limit imported character (the female body copied up to ~1.9 M triangles) loaded and posed. Only with
+// the body files and SCENE_E2E_EVIDENCE; the numbers go to the console and <evidence>/skinned-timings.json.
+const armsDown = { leftUpperArm: [0, 0, Math.sin(-Math.PI * 7 / 36), Math.cos(Math.PI * 7 / 36)], rightUpperArm: [0, 0, Math.sin(Math.PI * 7 / 36), Math.cos(Math.PI * 7 / 36)] }
+// The left arm reaching forward, the right one down.
+const reach = { leftUpperArm: [0, Math.sin(-Math.PI / 4), 0, Math.cos(Math.PI / 4)], rightUpperArm: armsDown.rightUpperArm }
+await check('skinned 6.3 evidence: the bodies in the real-time GI and the lit export; AC-8 timings; a near-limit character', async () => {
+  const dir = bodyFiles()
+  if (!dir || !process.env.SCENE_E2E_EVIDENCE) return
+  const out = process.env.SCENE_E2E_EVIDENCE
+  const [female, male] = ['body_female@1', 'body_male@1'].map((id) => bodyCatalog().find((m) => m.id === id))
+  const her = gid('her')
+  const cam = gid('cam')
+  const server = new SceneServer()
+  server.builtinDir = dir
+  server.scene = {
+    environment: { sky: { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null },
+    render: { mode: 'lit', exposure_ev: 0, engine: 'realtime_gi', resolution: '2k', exposure_ev100: 15, exposure_mode: 'ambient', exposure_compensation: 0 },
+    objects: [
+      { id: gid('floor'), kind: 'primitive', name: '地面', parent_id: null, order: 1, transform: { ...identity(), position: [0, -0.01, 0] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 8, height: 0.02, depth: 8 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#b8b2a8', roughness: 0.7 } } } },
+      { id: gid('mirror'), kind: 'primitive', name: '镜墙', parent_id: null, order: 2, transform: { ...identity(), position: [0, 1.2, -1.2] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 3.6, height: 2.4, depth: 0.02 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0.02 } } } },
+      bodyObject('女素体', 3, 'body_female@1', female.materials, [-0.9, 0, 0]),
+      bodyObject('男素体', 4, 'body_male@1', male.materials, [0.9, 0, 0]),
+      cameraObject(cam, '机位', 5, { focal_mm: 28, exposure_mode: 'manual', exposure_compensation: 0 }, [0, 1.0, 4.6]),
+    ],
+  }
+  server.scene.objects[2].id = her
+  server.history[0] = server.record(['*'], [], null)
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const timings = { machine: machineInfo(), chromium: gpu.version() }
+  try {
+    const { context, page, errors } = await open(server, { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }), query: '?host=1' })
+    await page.getByRole('treeitem', { name: /机位/ }).click()
+    await page.keyboard.press('Digit0')
+    const frame = page.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    await page.mouse.move(5, 5)
+    const fb = await frame.boundingBox()
+    const clip = { x: Math.round(fb.x), y: Math.round(fb.y), width: Math.round(fb.width), height: Math.round(fb.height) }
+    await shading(page, '材质预览')
+    await waitFor(() => [female, male].every((m) => server.modelReads.includes(m.glb.name)), 'both GLBs read', 30_000)
+    await sleep(2000)
+    await writeFile(`${out}/body-preview.png`, await settledShot(page, clip))
+
+    await shading(page, '最终渲染')
+    // The switch reaches the renderer a few frames on: before then the preview's counts still read as settled.
+    await sleep(3000)
+    const ready = (v) => page.evaluate((v) => {
+      const g = window.__sceneGPU
+      const s = g.traceStats
+      return g.compiling === 0 && s?.state === 'ready' && s.pending === 0 && s.geometryVersion > v && g.viewportFrames >= g.viewportSettle
+    }, v)
+    await waitFor(async () => (await ready(-1)) || (await page.evaluate(() => window.__sceneGPU.invalidateViewport?.()), false), 'the real-time GI converges', 120_000)
+    await writeFile(`${out}/body-rendered-rest.png`, await settledShot(page, clip))
+
+    // AC-8: from the pose set to the layer packing it, and on to the viewport converged again (frames counted
+    // from the reset the new layer brings). The live path: React's effect skins on the CPU, the worker builds.
+    const exportLit = async (name) => {
+      const id = `csj_${name}`
+      const started = Date.now()
+      server.claimable = [{ id, document_id: DOC, kind: 'render_view', request: { camera_object_id: cam, mode: 'lit' }, attempt: 0, claim_token: `tok_${name}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+      await page.evaluate(() => window.__invalidate())
+      await waitFor(() => server.completes.some((c) => c.id === id), `${name}: render_view done`, 180_000)
+      const done = server.completes.find((c) => c.id === id).payload
+      assert.equal(done.outcome, 'succeeded', JSON.stringify(done.error))
+      await writeFile(`${out}/body-lit-${name}.jpg`, server.uploadBytes.get(done.render.image_upload_id))
+      return Date.now() - started
+    }
+    await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+    timings.export_rest_ms = await exportLit('rest')
+    timings.pose_changes = []
+    for (const [name, q] of [['arms-down', armsDown], ['reach', reach], ['arms-down-again', armsDown]]) {
+      const before = await page.evaluate(() => window.__sceneGPU.traceStats?.geometryVersion ?? -1)
+      const t = await page.evaluate(([id, q, before]) => new Promise((resolve) => {
+        const g = window.__sceneGPU
+        const start = performance.now()
+        let packed = null
+        // The viewport starts over once the packed layer reaches it; settled again, it has converged.
+        let restarted = false
+        window.__scenePose.set(id, q)
+        const tick = () => {
+          const s = g.traceStats
+          const now = performance.now() - start
+          if (packed === null && s && s.state === 'ready' && s.geometryVersion > before && s.pending === 0) packed = now
+          if (packed !== null && g.viewportFrames < g.viewportSettle) restarted = true
+          if (packed !== null && restarted && g.compiling === 0 && g.viewportFrames >= g.viewportSettle)
+            return resolve({ packed_ms: Math.round(packed), converged_ms: Math.round(now), commit_ms: Math.round(s.commitMs), settle_frames: g.viewportSettle })
+          // Settled at the packing and never starting over: the layer came in with frames already counted.
+          if (packed !== null && !restarted && now - packed > 5000)
+            return resolve({ packed_ms: Math.round(packed), converged_ms: null, note: 'no restart after packing', settle_frames: g.viewportSettle })
+          if (now > 120_000) return resolve({ packed_ms: packed && Math.round(packed), converged_ms: null })
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }), [her, q, before])
+      console.log(`  ${name}: packed ${t.packed_ms} ms, converged ${t.converged_ms} ms (${t.settle_frames} frames)`)
+      timings.pose_changes.push({ pose: name, ...t })
+      if (name !== 'arms-down-again') await writeFile(`${out}/body-rendered-${name}.png`, await settledShot(page, clip))
+      if (name === 'reach') timings.export_posed_ms = await exportLit('reach')
+    }
+
+    // The CPU's part, on its own: the skeleton posed (bones, constraints), each skinned part skinned into its static
+    // geometry, and the picking BVH a first click builds; median of 9 poses each, none of them cached.
+    const bvhURL = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).find((n) => /three-mesh-bvh\.js/.test(n)))
+    const cpu = async (key, glbB64, summary, n = 9) => page.evaluate(async ([key, glbB64, summary, bvhURL, n]) => {
+      const { ModelCache } = await import('/src/creative-scene/models/cache.ts')
+      const { posableOf, pose, poseOf, setPose } = await import('/src/creative-scene/rig/pose.ts')
+      const { staticGeometry } = await import('/src/creative-scene/rig/skin.ts')
+      const { MeshBVH } = await import(bvhURL)
+      // The near-limit file stays in the page (window.__nearLimit): too big to pass about.
+      const bytes = glbB64 === null ? window.__nearLimit : Uint8Array.from(atob(glbB64), (c) => c.charCodeAt(0)).buffer
+      const cache = new ModelCache(async () => bytes)
+      let t = performance.now()
+      const parts = await cache.load(key, null)
+      const load = performance.now() - t
+      const p = posableOf(parts.skeleton.template, summary.rig, summary.manifest.skeleton)
+      const runs = { pose: [], skin: [], bvh: [] }
+      let triangles = 0
+      for (let i = 0; i < n; i++) {
+        const a = (i + 1) * 0.07
+        // As __scenePose.set takes it: the arrays made rotations.
+        setPose('timing', { leftUpperArm: [0, 0, Math.sin(-a), Math.cos(a)], rightLowerArm: [0, Math.sin(a), 0, Math.cos(a)] })
+        const q = poseOf('timing')
+        t = performance.now()
+        pose(p, q)
+        runs.pose.push(performance.now() - t)
+        t = performance.now()
+        const gs = p.instance.skinned.map((part) => staticGeometry(part, p.instance.root))
+        runs.skin.push(performance.now() - t)
+        t = performance.now()
+        for (const g of gs) new MeshBVH(g, { indirect: true })
+        runs.bvh.push(performance.now() - t)
+        triangles = gs.reduce((n, g) => n + (g.index ? g.index.count : g.getAttribute('position').count) / 3, 0)
+        for (const g of gs) g.dispose()
+      }
+      const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+      const vertices = p.instance.skinned.reduce((n, part) => n + part.mesh.geometry.getAttribute('position').count, 0)
+      return { vertices, load_ms: Math.round(load), pose_ms: +med(runs.pose).toFixed(2), skin_ms: +med(runs.skin).toFixed(2), bvh_ms: +med(runs.bvh).toFixed(2), skinned_triangles: triangles, joints: summary.manifest.skeleton.joints.length }
+    }, [key, glbB64, summary, bvhURL, n])
+    const herGLB = readFileSync(existsSync(join(dir, 'models', female.glb.name)) ? join(dir, 'models', female.glb.name) : join(dir, female.glb.name))
+    timings.body_cpu = await cpu('ccrv_bodytiming', herGLB.toString('base64'), { manifest: female.manifest, rig: female.rig })
+    console.log(`  body CPU: ${JSON.stringify(timings.body_cpu)}`)
+
+    // Near the import budget (200 MiB, 2 M triangles): her body mesh copied, slightly apart, to ~1.9 M triangles,
+    // written as the import writes, with her mapping followed onto the written nodes.
+    const big = await page.evaluate(async ([glbB64, humanoid]) => {
+      const { parseModelGLB } = await import('/src/creative-scene/sandbox/gltf.ts')
+      const { writeGLB } = await import('/src/creative-scene/import/write.ts')
+      const parsed = await parseModelGLB(Uint8Array.from(atob(glbB64), (c) => c.charCodeAt(0)).buffer)
+      const meshes = []
+      parsed.scene.traverse((o) => o.isSkinnedMesh && meshes.push(o))
+      const body = meshes.reduce((a, b) => (b.geometry.index.count > a.geometry.index.count ? b : a))
+      for (const m of meshes) if (m !== body) m.removeFromParent()
+      const src = body.geometry
+      const copies = Math.floor(1_900_000 / (src.index.count / 3))
+      const n = src.getAttribute('position').count
+      const BufferAttribute = src.index.constructor
+      const g = new src.constructor()
+      for (const [name, a] of Object.entries(src.attributes)) {
+        const arr = new a.array.constructor(a.array.length * copies)
+        for (let k = 0; k < copies; k++) arr.set(a.array, k * a.array.length)
+        if (name === 'position') for (let k = 1; k < copies; k++) for (let i = 0; i < n; i++) arr[(k * n + i) * 3 + 2] += k * 1e-4
+        g.setAttribute(name, new BufferAttribute(arr, a.itemSize, a.normalized))
+      }
+      const index = new Uint32Array(src.index.count * copies)
+      for (let k = 0; k < copies; k++) for (let i = 0; i < src.index.count; i++) index[k * src.index.count + i] = src.index.array[i] + k * n
+      g.setIndex(new BufferAttribute(index, 1))
+      body.geometry = g
+      // Its textures left out: what is timed is the mesh.
+      body.material = body.material.clone()
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap']) body.material[k] = null
+      const byNode = new Map([...parsed.nodes].map(([o, i]) => [i, o]))
+      const bones = Object.entries(humanoid).map(([b, i]) => [b, byNode.get(i)])
+      const t = performance.now()
+      const written = await writeGLB(parsed.scene, bones.map(([, o]) => o))
+      const write = performance.now() - t
+      const mapped = Object.fromEntries(bones.map(([b, o]) => [b, written.nodes.get(o)]))
+      window.__nearLimit = written.glb
+      return { manifest: written.manifest, rig: { humanoid: mapped }, write_ms: Math.round(write), bytes: written.glb.byteLength, copies }
+    }, [herGLB.toString('base64'), female.rig.humanoid])
+    console.log(`  near-limit written: ${JSON.stringify({ bytes: big.bytes, triangles: big.manifest.triangles, write_ms: big.write_ms })}`)
+    const near = await cpu('ccrv_nearlimit', null, { manifest: big.manifest, rig: big.rig }, 3)
+    timings.near_limit = { bytes: big.bytes, triangles: big.manifest.triangles, copies: big.copies, write_ms: big.write_ms, ...near }
+    console.log(`  near-limit: ${JSON.stringify(timings.near_limit)}`)
+    await writeFile(`${out}/skinned-timings.json`, `${JSON.stringify(timings, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n').slice(0, 2000))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
 })
 
 if (process.env.SCENE_E2E_TRACE) await check('glb-import AC-1/AC-9: an imported GLB glows and is cut in the preview and the mirror of the lit export; its source shows; one undo', async () => {
@@ -12066,6 +12573,140 @@ await check('real-time GI: the box room bleeds red beside the red wall, mirrors 
     assert.ok(measured.lit_ball_difference >= 10, 'the ball mirrors more than the workbench’s environment')
     assert.ok(measured.lit_floor_by_green_wall_green_red[1] > measured.lit_floor_by_green_wall_green_red[0], 'the glossy floor mirrors the green wall')
     assert.ok(measured.lit_cube_front_foot_grey[1] > measured.lit_cube_front_foot_grey[0], 'the cube’s front takes the floor’s bounce')
+  } finally {
+    await gpu.close()
+  }
+})
+
+// --- scene-skinned-humanoid: skinned rendering -----------------------------------------------------------------
+
+// UBC's male body's skeleton (CC0) with a red glowing cube on its left hand, mapped as the shared vectors map it.
+// Camera A looks at the cube; camera B looks down at a mirror floor, the cube above its picture: what it sees of
+// the cube is only the world-space layer's reflection of it.
+const { characterGLB, characters } = await import('./fixtures/rig/glb.ts')
+const rigVectors = JSON.parse(readFileSync(new URL('../src/creative-scene/rig/humanoid_rig.gen.json', import.meta.url), 'utf8'))
+const ubcRig = { humanoid: rigVectors.cases.find((c) => c.name.startsWith('ubc_male')).rig.humanoid }
+const markGLB = Buffer.from(characterGLB(characters.ubc_male, ubcRig.humanoid.leftHand, 0.15, { name: 'slot:mark', pbrMetallicRoughness: { baseColorFactor: [1, 0.1, 0.1, 1], metallicFactor: 0, roughnessFactor: 0.8 }, emissiveFactor: [1, 0, 0] }))
+const markRev = 'ccrv_posedmark'
+const markModel = { content_id: 'ccnt_posedmark', glb: markGLB, generator: { language: 'imported', mount: 'floor' }, manifest: inspect(markGLB), name_hint: '素体', rig: ubcRig }
+const markSummary = { content_id: markModel.content_id, usable: true, manifest: markModel.manifest, generator: markModel.generator, name_hint: markModel.name_hint, faces: null, rig: ubcRig }
+// The left arm turned forward.
+const raisedArm = { leftUpperArm: [0, Math.sin(-Math.PI / 4), 0, Math.cos(Math.PI / 4)] }
+const posedBody = gid('body')
+const posedCamA = gid('cama')
+const posedCamB = gid('camb')
+const mirrorTop = 0.02
+const posedScene = () => ({
+  environment: { sky: { kind: 'color', color: '#0b0c0e' }, ambient: { color: '#ffffff', intensity: 0.05 }, fog: null },
+  render: { mode: 'lit', exposure_ev: 0, engine: 'realtime_gi', resolution: '2k', exposure_ev100: 15, exposure_mode: 'ambient', exposure_compensation: 0 },
+  objects: [
+    { id: posedBody, kind: 'model_instance', name: '素体', parent_id: null, order: 1, transform: identity(), visible: true, locked: false, model: { content_revision_id: markRev }, material_slots: {} },
+    { id: gid('mirror'), kind: 'primitive', name: '镜面', parent_id: null, order: 2, transform: { ...identity(), position: [0, 0, 0.5] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 6, height: mirrorTop, depth: 6 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0.02 } } } },
+    { ...cameraObject(posedCamA, '平视', 3, { focal_mm: 24, exposure_mode: 'manual', exposure_compensation: 0 }, [0.45, 1.45, 3]) },
+    { ...cameraObject(posedCamB, '俯视镜面', 4, { focal_mm: 24, exposure_mode: 'manual', exposure_compensation: 0 }, [0.45, 1, 2.6]), transform: { position: [0.45, 1, 2.6], rotation: [Math.sin(-Math.PI / 8), 0, 0, Math.cos(Math.PI / 8)], scale: [1, 1, 1] } },
+  ],
+})
+const nearest = (blobs, at) => blobs.reduce((best, b) => (!best || Math.hypot(b.x - at[0], b.y - at[1]) < Math.hypot(best.x - at[0], best.y - at[1]) ? b : best), null)
+const apart = (b, at) => (b ? Math.hypot(b.x - at[0], b.y - at[1]) : Infinity)
+
+await check('skinned AC-6: a test pose moves the hand alike in the lit export, in the real-time GI’s mirror and in the viewport’s', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const { page, errors } = await shooterPage(gpu)
+    const scene = posedScene()
+    const shots = {}
+    for (const [name, pose] of [['rest', null], ['raised', raisedArm]]) {
+      const r = await page.evaluate(([s, rev, glb, summary, id, q, cams, y]) => window.__posed(s, rev, glb, summary, id, q, cams, 1024, y), [scene, markRev, markGLB.toString('base64'), markSummary, posedBody, pose, [posedCamA, posedCamB], mirrorTop])
+      shots[name] = r
+      for (const o of r.out) {
+        if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/skinned-${name}-${o.camera === posedCamA ? 'a' : 'b'}.jpg`, Buffer.from(o.jpeg, 'base64'))
+        console.log(`skinned ${name} ${o.camera === posedCamA ? 'A' : 'B'}: mark ${JSON.stringify(o.mark?.map(Math.round))} image ${JSON.stringify(o.image?.map(Math.round))} blobs ${JSON.stringify(o.blobs.map((b) => [Math.round(b.x), Math.round(b.y), b.n]))}`)
+      }
+      const [a, b] = r.out
+      assert.ok(a.mark && !b.mark && b.image, `${name}: A sees the cube, B only its image in the mirror`)
+      assert.ok(apart(nearest(a.blobs, a.mark), a.mark) < 4, `${name}: the export draws the cube where the pose puts it`)
+      assert.ok(apart(nearest(b.blobs, b.image), b.image) < 5, `${name}: the mirror shows the cube where the pose puts it`)
+    }
+    const moved = (k) => Math.hypot(shots.raised.out[k].image?.[0] - shots.rest.out[k].image?.[0], shots.raised.out[k].image?.[1] - shots.rest.out[k].image?.[1])
+    assert.ok(moved(1) > 40, `the pose moves the hand’s image by ${moved(1).toFixed(0)} px`)
+    assert.deepEqual(errors, [])
+    await page.close()
+
+    // Every part drawn on its own (?nomerge, models/merge.ts): the skin is never merged, the pictures alike.
+    const unmerged = await gpu.newPage()
+    await unmerged.addInitScript(() => { window.__sceneNoMerge = true })
+    await unmerged.goto(`${base}/.scene-gi-qa.html`)
+    await unmerged.waitForFunction(() => window.__ready === true)
+    const apartRun = await unmerged.evaluate(([s, rev, glb, summary, id, q, cams, y]) => window.__posed(s, rev, glb, summary, id, q, cams, 1024, y), [scene, markRev, markGLB.toString('base64'), markSummary, posedBody, raisedArm, [posedCamA, posedCamB], mirrorTop])
+    for (const [i, o] of apartRun.out.entries()) {
+      const merged = shots.raised.out[i]
+      const at = o.mark ?? o.image
+      assert.ok(apart(nearest(o.blobs, at), [nearest(merged.blobs, at).x, nearest(merged.blobs, at).y]) < 1, `unmerged: camera ${i ? 'B' : 'A'} draws the hand where the merged scene does`)
+    }
+    await unmerged.close()
+
+    // The viewport in the rendered view through camera B, the same pose set while it draws.
+    const server = new SceneServer()
+    server.scene = posedScene()
+    server.models.set(markRev, markModel)
+    server.history[0] = server.record(['*'], [], null)
+    const { context, page: editor, errors: editorErrors } = await open(server, { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+    await shading(editor, '最终渲染')
+    await editor.getByRole('treeitem', { name: /俯视镜面/ }).click()
+    await editor.keyboard.press('Digit0')
+    const frame = editor.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    await editor.mouse.move(5, 5)
+    const fb = await frame.boundingBox()
+    const clip = { x: Math.round(fb.x), y: Math.round(fb.y), width: Math.round(fb.width), height: Math.round(fb.height) }
+    // Ready and converged: the layer packed, the viewport drawn its frames. (Opened straight into the rendered view,
+    // the viewport can stop short of its frames while the layer is first built; that is not what this checks.)
+    const converged = (v) => editor.evaluate((v) => {
+      const g = window.__sceneGPU
+      const s = g.traceStats
+      return g.compiling === 0 && s?.state === 'ready' && s.pending === 0 && s.meshes === 2 && s.geometryVersion > v && g.viewportFrames >= g.viewportSettle
+    }, v)
+    await waitFor(async () => (await converged(-1)) || (await editor.evaluate(() => window.__sceneGPU.invalidateViewport?.()), false), 'the viewport’s layer packs the scene', 60_000)
+    for (const [name, pose] of [['raised', raisedArm], ['rest', null]]) {
+      // The layer has packed the new pose: its geometry changed and nothing waits to be built or committed.
+      const before = await editor.evaluate(() => window.__sceneGPU.traceStats?.geometryVersion ?? -1)
+      await editor.evaluate(([id, q]) => window.__scenePose.set(id, q), [posedBody, pose])
+      await waitFor(() => converged(before), `${name}: the viewport’s layer packs the pose and the viewport draws it`, 60_000)
+      const png = await settledShot(editor, clip)
+      if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/skinned-${name}-viewport.png`, png)
+      const blobs = await editor.evaluate(async (src) => {
+        const img = await new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.src = src })
+        const c = document.createElement('canvas')
+        c.width = img.width
+        c.height = img.height
+        const x = c.getContext('2d')
+        x.drawImage(img, 0, 0)
+        const d = x.getImageData(0, 0, c.width, c.height).data
+        // As the shooter page finds them.
+        const red = (i) => d[4 * i] >= 90 && d[4 * i] > 2 * d[4 * i + 1] && d[4 * i] > 2 * d[4 * i + 2]
+        const w = c.width, h = c.height, seen = new Uint8Array(w * h), out = []
+        for (let i = 0; i < w * h; i++) {
+          if (seen[i] || !red(i)) continue
+          const stack = [i]
+          seen[i] = 1
+          let n = 0, sx = 0, sy = 0
+          while (stack.length) {
+            const j = stack.pop()
+            n++; sx += j % w; sy += Math.floor(j / w)
+            for (const k of [j - 1, j + 1, j - w, j + w]) if (k >= 0 && k < w * h && !seen[k] && Math.abs((k % w) - (j % w)) <= 1 && red(k)) { seen[k] = 1; stack.push(k) }
+          }
+          if (n >= 6) out.push({ x: sx / n, y: sy / n, n })
+        }
+        return { blobs: out, width: w, height: h }
+      }, `data:image/png;base64,${png.toString('base64')}`)
+      const b = shots[name].out[1]
+      const at = [(b.image[0] / b.width) * blobs.width, (b.image[1] / b.height) * blobs.height]
+      const found = nearest(blobs.blobs, at)
+      console.log(`skinned ${name} viewport: expected ${at.map(Math.round)} found ${found && [Math.round(found.x), Math.round(found.y), found.n]} of ${blobs.width}×${blobs.height}`)
+      assert.ok(apart(found, at) < 0.01 * blobs.width + 3, `${name}: the viewport’s mirror shows the cube where the export does`)
+    }
+    assert.deepEqual(editorErrors, [])
+    await context.close()
   } finally {
     await gpu.close()
   }

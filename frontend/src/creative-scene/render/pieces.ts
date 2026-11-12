@@ -1,5 +1,6 @@
 import { Box3, BufferAttribute, BufferGeometry, type Mesh, type Object3D, type Sphere } from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import type { Posed } from '../rig/skin.ts'
 
 // The pieces of a merged geometry (scene-performance「合并 part」): a model's
 // parts of one slot are drawn as one geometry, and each part it was made of
@@ -129,7 +130,12 @@ const box = /*@__PURE__*/ new Box3()
 export function expandByPieces(bounds: Box3, object: Object3D): Box3 {
   object.updateWorldMatrix(false, false)
   const geometry = (object as Mesh).geometry as BufferGeometry | undefined
-  if (geometry) {
+  // A skinned mesh bounds as its current pose (rig/skin.ts Posed): three's box is the first pose it saw.
+  const posed = object.userData.posed as Posed | undefined
+  if (posed) {
+    if (posed.geometry.boundingBox === null) posed.geometry.computeBoundingBox()
+    bounds.union(box.copy(posed.geometry.boundingBox!).applyMatrix4(posed.root.matrixWorld))
+  } else if (geometry) {
     // An instanced or batched mesh has a box of its own.
     const own = object as Object3D & { boundingBox?: Box3 | null; computeBoundingBox?(): void }
     const pieces = registry.get(geometry)

@@ -1,26 +1,41 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Group } from 'three'
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { currentAccount, send } from '../../creative-canvas/editor/api.ts'
 import { fileTitle } from '../../creative-canvas/editor/fileImport.ts'
 import { discardCandidate, readableFileName, uploadGenerated } from '../../creative-canvas/editor/media.ts'
 import StudioDialog from '../../creative-canvas/editor/StudioDialog.tsx'
 import { renderMaterialThumbnail } from '../library/thumbnail.ts'
 import { forgetLocalImage, provideLocalImage } from '../materials/images.ts'
-import { partsOf } from '../models/cache.ts'
+import { modelParts } from '../models/cache.ts'
 import { parseModelGLB } from '../sandbox/gltf.ts'
 import { convert, toBottomCenter, type Conversion, type ReportItem } from './convert.ts'
 import { bundledDecoders } from './decoders.ts'
 import { browserCodec, prepareImages, type PreparedImage } from './images.ts'
-import { ImportRejected, parseImport } from './parse.ts'
+import { checkMapping, fileConstraints, fingerCount, followClone, jointObjects, submittedRig } from './mapping.ts'
+import { ImportRejected, parseImport, type ImportRig } from './parse.ts'
+import RigMapping from './RigMapping.tsx'
 import { ImportRun, type ImportJob, type ImportNetwork, type ImportPayload, type ImportResult, type RunState } from './run.ts'
-import { writeGLB, type Written } from './write.ts'
+import { writeGLB, writtenRig, type Written } from './write.ts'
 import './import.css'
 
 // 导入模型（GLB）到资产库：读文件、换算、给摄影师看换算报告，确认后上传并提交
 // （import/run.ts 管提交边界）。资产库页面和场景编辑器共用；画布页按需加载它，
-// three.js 不进画布页的主包。
+// three.js 不进画布页的主包。带骨骼的模型另外给出人形映射的结果，不成立时可以
+// 手动指定或按非人形骨架导入（import/mapping.ts）。
 
 type Mount = ImportPayload['mount']
-type Prepared = { conversion: Conversion; written: Written; images: PreparedImage[]; report: ReportItem[]; copyright: string }
+type Prepared = {
+  conversion: Conversion
+  /** The joints tracked: any mapping, found or set by hand, follows them into the GLB. */
+  written: Written
+  images: PreparedImage[]
+  report: ReportItem[]
+  copyright: string
+  rig: ImportRig | null
+}
+
+const vias = { vrm1: 'VRM 1.0', vrm0: 'VRM 0.x', mixamo: 'Mixamo 命名', ue: 'UE 小白人命名', generic: '通用命名' } as const
 
 const mounts: { value: NonNullable<Mount>; label: string }[] = [
   { value: 'floor', label: '放在地面上' },
@@ -39,11 +54,11 @@ async function prepare(file: File, onStage: (s: string) => void): Promise<Prepar
   onStage('正在换算材质和几何…')
   const conversion = convert(parsed, { originToBottomCenter: false })
   await breathe()
-  const written = await writeGLB(conversion.scene)
+  const written = await writeGLB(conversion.scene, parsed.rig ? jointObjects(parsed.rig) : [])
   await breathe()
   onStage('正在检查贴图…')
   const { images, report } = await prepareImages(conversion.images, parsed.images, browserCodec)
-  return { conversion, written, images, report: [...conversion.report, ...report], copyright: parsed.json.asset?.copyright ?? '' }
+  return { conversion, written, images, report: [...conversion.report, ...report], copyright: parsed.json.asset?.copyright ?? '', rig: parsed.rig }
 }
 
 const network: ImportNetwork = {
@@ -100,6 +115,11 @@ export default function ImportModelDialog({
   const [sourceURL, setSourceURL] = useState('')
   const [mount, setMount] = useState<NonNullable<Mount>>('floor')
   const [origin, setOrigin] = useState(false)
+  const [humanoid, setHumanoid] = useState<Record<string, number>>({})
+  // false：按非人形骨架导入。
+  const [asHumanoid, setAsHumanoid] = useState(true)
+  const [mapping, setMapping] = useState(false)
+  const [manual, setManual] = useState(false)
   const [run, setRun] = useState<{ run: ImportRun; state: RunState } | null>(null)
   const [message, setMessage] = useState('')
   // 点了「导入」、还在按原点重写 GLB：已经锁定，关闭就放弃，没有东西要清理。
@@ -113,6 +133,7 @@ export default function ImportModelDialog({
       (p) => {
         if (!live) return
         setPrepared(p)
+        if (p.rig) setHumanoid(p.rig.detection.humanoid)
         setAttribution((a) => a || [...p.copyright].slice(0, 2000).join(''))
       },
       (e: unknown) => live && setRefused(e instanceof ImportRejected ? e.message : `无法读取这个模型：${e instanceof Error ? e.message : String(e)}`),
@@ -121,6 +142,12 @@ export default function ImportModelDialog({
       live = false
     }
   }, [file])
+
+  const rig = prepared?.rig ?? null
+  const constraints = useMemo(() => (rig ? fileConstraints(rig) : null), [rig])
+  const check = useMemo(() => (prepared?.rig && asHumanoid ? checkMapping(prepared.rig, prepared.conversion.scene, humanoid) : null), [prepared, asHumanoid, humanoid])
+  // 只有成立的映射才能提交；非人形骨架照常导入。
+  const rigReady = !check || check.problem === null
 
   const state = run?.state
   const working = state !== undefined && ['uploading', 'thumbnail', 'committing', 'unknown'].includes(state.phase)
@@ -159,21 +186,25 @@ export default function ImportModelDialog({
     const name = title.trim()
     if (!name) return setMessage('请填写资产名称')
     if (sourceURL.trim() && !validURL(sourceURL.trim())) return setMessage('来源页面须是 http 或 https 开头的网址')
+    if (!rigReady) return setMessage('人形映射还不成立：请手动指定，或按非人形骨架导入')
     setMessage('')
     setStarting(true)
     let written = prepared.written
+    let objects = rig?.objects
     if (origin) {
-      // 换算结果保持原样，下次不勾时还能用。
-      const moved = prepared.conversion.scene.clone()
+      // 换算结果保持原样，下次不勾时还能用。带骨骼的网格要连骨架一起复制。
+      const moved = clone(prepared.conversion.scene) as Group
       toBottomCenter(moved)
+      objects = rig ? followClone(rig.objects, prepared.conversion.scene, moved) : undefined
       try {
-        written = await writeGLB(moved)
+        written = await writeGLB(moved, rig && objects ? jointObjects(rig, objects) : [])
       } catch (e) {
         setStarting(false)
         return setMessage(e instanceof Error ? e.message : String(e))
       }
       if (abandoned.current) return
     }
+    const fileRig = rig ? submittedRig(check ? check.humanoid : null, constraints?.constraints ?? []) : undefined
     const job: ImportJob = {
       glb: written.glb,
       fileName: [...readableFileName(file.name)].slice(0, 255).join(''),
@@ -188,14 +219,14 @@ export default function ImportModelDialog({
           provided.push(revision)
         }
         try {
-          const { scene, identities } = await parseModelGLB(written.glb)
-          return await renderMaterialThumbnail(partsOf(scene, identities), written.manifest, materials)
+          return await renderMaterialThumbnail(modelParts(await parseModelGLB(written.glb)), written.manifest, materials)
         } finally {
           provided.forEach(forgetLocalImage)
         }
       },
       fields: {
         mount,
+        ...(fileRig && objects ? { rig: writtenRig(fileRig, objects, written.nodes) } : {}),
         import: {
           file_name: [...readableFileName(file.name)].slice(0, 255).join('') || 'model.glb',
           ...(attribution.trim() ? { attribution: attribution.trim() } : {}),
@@ -215,6 +246,7 @@ export default function ImportModelDialog({
   const ignored = prepared?.report.filter((r) => r.level === 'ignored') ?? []
   const line = (r: ReportItem, i: number) => <li key={i}>{r.slot ? `${r.slot}：${r.text}` : r.text}</li>
   const editable = !starting && !working && state?.phase !== 'done'
+  const rigNotes = [...(check?.dropped.map((d) => `${d.message}，已从映射里去掉`) ?? []), ...(constraints?.notes ?? [])]
 
   return (
     <StudioDialog title="导入模型" onClose={close}>
@@ -251,6 +283,66 @@ export default function ImportModelDialog({
                     <h3>没有导入的</h3>
                     <ul>{ignored.map(line)}</ul>
                   </>
+                )}
+              </div>
+            )}
+            {rig && (
+              <div className="cc-import-rig" aria-label="骨骼">
+                <h3>骨骼</h3>
+                <p>
+                  {rig.skeleton.joints.length} 根骨骼
+                  {constraints && constraints.constraints.length > 0 && ` · ${constraints.constraints.length} 条节点约束`}
+                </p>
+                {!check ? (
+                  <p>按非人形骨架导入：姿态只能在同一套骨骼上复用</p>
+                ) : check.problem === null ? (
+                  <p>
+                    人形映射（{manual || !rig.detection.via ? '手动指定' : vias[rig.detection.via]}）：{Object.keys(check.humanoid).length} 根标准骨骼 ·{' '}
+                    {fingerCount(check.humanoid) > 0 ? `手指 ${fingerCount(check.humanoid)} / 30` : '没有手指'}
+                  </p>
+                ) : (
+                  <p className="cc-import-refused" role="alert">
+                    人形映射不成立：{check.problem}
+                  </p>
+                )}
+                {rigNotes.length > 0 && <ul>{rigNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+                {check && check.nonUniform.length > 0 && <p className="cc-muted">这些骨骼带非均匀缩放，摆姿态时可能变形：{check.nonUniform.join('、')}</p>}
+                <div className="cc-import-rig-actions">
+                  {asHumanoid ? (
+                    <>
+                      <button type="button" className="btn" disabled={!editable} onClick={() => setMapping((m) => !m)}>
+                        {mapping ? '收起手动指定' : '手动指定'}
+                      </button>
+                      {check?.problem && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={!editable}
+                          onClick={() => {
+                            setAsHumanoid(false)
+                            setMapping(false)
+                          }}
+                        >
+                          按非人形骨架导入
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <button type="button" className="btn" disabled={!editable} onClick={() => setAsHumanoid(true)}>
+                      改回人形映射
+                    </button>
+                  )}
+                </div>
+                {asHumanoid && mapping && (
+                  <RigMapping
+                    skeleton={rig.skeleton}
+                    humanoid={humanoid}
+                    disabled={!editable}
+                    onChange={(h) => {
+                      setManual(true)
+                      setHumanoid(h)
+                    }}
+                  />
                 )}
               </div>
             )}
@@ -308,7 +400,7 @@ export default function ImportModelDialog({
                 {starting || working ? '取消导入' : '关闭'}
               </button>
               {!refused && (
-                <button className="btn btn-primary" disabled={!prepared || !editable}>
+                <button className="btn btn-primary" disabled={!prepared || !editable || !rigReady}>
                   {starting || working ? '正在导入…' : '导入'}
                 </button>
               )}

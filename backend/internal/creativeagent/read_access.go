@@ -42,7 +42,7 @@ func (a runReadAccess) libraryAllowed(ctx context.Context, metadata bool) error 
 	// run-ending egress request. A grant revoked mid-run still ends it.
 	err := a.h.requireLibrary(ctx, metadata)
 	if errors.Is(err, ErrEgressRequired) && !a.h.libraryEnabled {
-		return refuseTool("这个对话没有资产库授权，查不了账号里的素材；内置材质用 source: \"builtin\" 查")
+		return refuseTool("这个对话没有资产库授权，查不了账号里的素材；内置材质和内置模型（素体）用 source: \"builtin\" 查")
 	}
 	return err
 }

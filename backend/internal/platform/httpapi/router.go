@@ -84,7 +84,9 @@ type RouterDeps struct {
 	CreativeImageEdit         *creativeimageedit.Service
 	CreativeMedia             *creativemedia.Service
 	// SceneTextures reads the built-in textures; nil answers 503.
-	SceneTextures      *creativescene.BuiltinTextures
+	SceneTextures *creativescene.BuiltinTextures
+	// SceneModels reads the built-in models' files; nil answers 503.
+	SceneModels        SceneModelFiles
 	CreativeGeneration *creativegeneration.Product
 	CreativeAgent      *creativeagent.Service
 	// OAuth is the external agents' authorization server. Nil (MCP_ENABLED
@@ -141,6 +143,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		anonymousShare:      deps.AnonymousShare,
 		creativeMedia:       deps.CreativeMedia,
 		sceneTextures:       deps.SceneTextures,
+		sceneModels:         deps.SceneModels,
 		creativeImageEdit:   deps.CreativeImageEdit,
 		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,

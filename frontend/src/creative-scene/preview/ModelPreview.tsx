@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { AgXToneMapping, DoubleSide, MeshStandardMaterial } from 'three'
 import type { components } from '../../api/schema'
-import type { ModelParts } from '../models/cache.ts'
+import { stillMeshes, type ModelParts } from '../models/cache.ts'
 import type { Faces } from '../models/faces.ts'
 import { clay } from '../objects/look.ts'
 import { RoomLighting, StudioLights, previewBackground } from '../objects/Lighting.tsx'
@@ -97,7 +97,8 @@ function Meshes({ parts, manifest, materials, look }: { parts: ModelParts; manif
   const hints = useMemo(() => new Map(manifest.slots.map((s) => [s.id, s.hint])), [manifest])
   return (
     <group>
-      {parts.meshes.map((m, i) => {
+      {/* A skinned model at rest. */}
+      {stillMeshes(parts).map((m, i) => {
         if (look === 'clay') return <mesh key={i} geometry={m.geometry} material={clayMaterial} />
         const material = resolvePart(m, materials, hints).material
         // See-through: piece by piece, as the editor draws it (objects/ModelMesh.tsx).

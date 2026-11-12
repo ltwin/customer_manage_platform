@@ -8,7 +8,9 @@ import type { ParamSpec } from '../builtins/catalog.ts'
 import { builtinSource, materialCatalog, materialEntry, principledID } from '../materials/catalog.ts'
 import { imageStatus, textureSources, type TextureKey } from '../materials/images.ts'
 import { assignmentOf, readClipboard, setSlot, shownSlot, slotsOf, toPrincipled, writeClipboard, type MaterialSlot } from '../materials/slotEdits.ts'
-import { modelCache, type MeshConstants, type SceneModel } from '../models/cache.ts'
+import { modelCache, stillMeshes, type MeshConstants, type SceneModel } from '../models/cache.ts'
+import { summaryOf } from '../models/catalog.ts'
+import { modelKey } from '../models/key.ts'
 import { applyBuiltinFaces } from '../models/faces.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
@@ -76,7 +78,7 @@ export function MaterialSlots({ object, model, objects, selected, models, images
 }) {
   const slots = slotsOf(object, model)
   const builtinKey = object.kind === 'primitive' ? JSON.stringify([object.primitive?.builtin, object.primitive?.params, object.primitive?.faces]) : ''
-  const revision = object.model?.content_revision_id
+  const revision = modelKey(object.model)
   // A model whose parts come in after the panel: stale is read again then.
   const [partsIn, setPartsIn] = useState<string | null>(null)
   useEffect(() => {
@@ -113,21 +115,22 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   // In face edit a model without slots still needs 「+ 新槽位」 for its first.
   if (!slots.length && !faces) return null
   const name = object.name || '物件'
-  const slotNames = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((s) => s.slot)
+  const slotNames = (o: SceneObject) => slotsOf(o, summaryOf(models, o.model)).map((s) => s.slot)
   const constantsOf = (o: SceneObject, slot: string): MeshConstants | null => {
-    const rev = o.model?.content_revision_id
-    return (rev && modelCache.peek(rev)?.meshes.find((m) => m.slot === slot)?.constants) || null
+    const rev = modelKey(o.model)
+    const parts = rev ? modelCache.peek(rev) : null
+    return (parts && stillMeshes(parts).find((m) => m.slot === slot)?.constants) || null
   }
   // A slot a face assignment brought draws as the slot its faces came from
   // until it has a material of its own (materials/resolve.ts resolvePart).
   const originOf = (o: SceneObject, slot: string): { slot: string | null; hint: string | null } | null => {
     if (o.kind === 'primitive') return { slot: 'main', hint: null }
-    const rev = o.model?.content_revision_id
+    const rev = modelKey(o.model)
     return (rev && modelCache.peek(rev)?.meshes.find((m) => m.slot === slot && m.origin)?.origin) || null
   }
   /** A slot of o as it draws, shown and edited alike (slotEdits.ts shownSlot). */
   const drawn = (o: SceneObject, slot: string) => {
-    const s = slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).find((x) => x.slot === slot) ?? { slot, hint: null, faces: false }
+    const s = slotsOf(o, summaryOf(models, o.model)).find((x) => x.slot === slot) ?? { slot, hint: null, faces: false }
     return shownSlot(o, s, s.faces ? originOf(o, slot) : null, constantsOf(o, slot))
   }
   const edit = (slot: string, label: string, next: (o: SceneObject, current: MaterialSlot | null) => MaterialSlot | null, merge?: string) => {
@@ -154,7 +157,9 @@ export function MaterialSlots({ object, model, objects, selected, models, images
   /** Whether a slot's geometry has UVs: a primitive's always; a model's once its parts are in. */
   const hasUV = (slot: string): boolean | null => {
     if (object.kind === 'primitive') return true
-    const parts = revision ? modelCache.peek(revision)?.meshes.filter((p) => p.slot === slot) : undefined
+    const loaded = revision ? modelCache.peek(revision) : null
+    // A skinned model's skin too (models/cache.ts stillMeshes).
+    const parts = loaded ? stillMeshes(loaded).filter((p) => p.slot === slot) : undefined
     return parts?.length ? parts.every((p) => 'uv' in p.geometry.attributes) : null
   }
   /** A material asset's slot, copied onto this slot (and the selection's slots of the same name). */

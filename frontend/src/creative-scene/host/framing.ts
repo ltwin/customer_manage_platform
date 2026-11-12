@@ -3,8 +3,11 @@ import type { Scene, SceneObject } from '../api.ts'
 import { primitiveGeometry } from '../builtins/geometry.ts'
 import { aspectOf, clampFocus, fullFrame, verticalFov, type DepthOfField } from '../cameraOptics.ts'
 import { cameraDefaults } from '../state/apply.ts'
-import type { SceneModel } from '../models/cache.ts'
+import { modelCache, type SceneModel } from '../models/cache.ts'
+import { summaryOf } from '../models/catalog.ts'
+import { modelKey } from '../models/key.ts'
 import { ev100, type ViewerExposure } from '../world/exposure.ts'
+import { poseOf, posableOf, posedGeometries, skeletonBounds } from '../rig/pose.ts'
 import { docToView, positionToView, type Quat, type Vec3 } from '../space.ts'
 
 // Where render_view's and the export's camera stands. Everything here is in
@@ -162,6 +165,31 @@ function viewpointFraming(v: NonNullable<RenderRequest['viewpoint']>, side: numb
   return { position: vec(position), quaternion: lookFrom(position, target, Z), fov: verticalFov(v.focal_mm, fullFrame, presetAspect), near, far, ...pictureSize(presetAspect, side) }
 }
 
+/**
+ * A posed skinned model's bounds in model space, as its instances draw it
+ * (rig/pose.ts): its parts and its skeleton in the object's pose. null at
+ * rest, or before the model is loaded: the manifest's bounds are the rest's.
+ */
+function posedBounds(o: SceneObject, models: Readonly<Record<string, SceneModel>>): Box3 | null {
+  const q = poseOf(o.id)
+  const key = modelKey(o.model)
+  const parts = q && key ? modelCache.peek(key) : null
+  if (!parts?.skeleton || !key) return null
+  const summary = summaryOf(models, o.model)
+  const p = posableOf(parts.skeleton.template, summary?.rig, summary?.manifest?.skeleton ?? undefined)
+  const held = posedGeometries(p, key, parts.skeleton.rest, q)
+  try {
+    const box = skeletonBounds(p, held.geometries)
+    for (const m of parts.meshes) {
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox()
+      box.union(m.geometry.boundingBox!)
+    }
+    return box
+  } finally {
+    held.release()
+  }
+}
+
 /** World bounds of what the scene draws, in view space; the ground, groups, lights and cameras do not count. */
 export function sceneBounds(scene: Scene, models: Readonly<Record<string, SceneModel>>): Box3 {
   const objects = new Map(scene.objects.map((o) => [o.id, o]))
@@ -169,9 +197,9 @@ export function sceneBounds(scene: Scene, models: Readonly<Record<string, SceneM
   for (const o of scene.objects) {
     if (!o.visible) continue
     let local: Box3 | null = null
-    if (o.kind === 'model_instance' && o.model?.content_revision_id) {
-      const b = models[o.model.content_revision_id]?.manifest?.bounds ?? modelFallback
-      local = new Box3(new Vector3().fromArray(b.min), new Vector3().fromArray(b.max))
+    if (o.kind === 'model_instance' && modelKey(o.model)) {
+      const b = summaryOf(models, o.model)?.manifest?.bounds ?? modelFallback
+      local = posedBounds(o, models) ?? new Box3(new Vector3().fromArray(b.min), new Vector3().fromArray(b.max))
     } else if (o.kind === 'primitive' && o.primitive && o.primitive.builtin !== 'ground@1') {
       const geometry = primitiveGeometry(o.primitive.builtin, o.primitive.params)
       if (geometry) {

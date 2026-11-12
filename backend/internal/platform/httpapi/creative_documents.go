@@ -179,6 +179,9 @@ func abortFieldError(c *gin.Context, status int, code, message string, err error
 	if field.ContentRevisionID != "" {
 		d.ContentRevisionId = &field.ContentRevisionID
 	}
+	if field.Reason != "" {
+		d.Reason = &field.Reason
+	}
 	var details ErrorDetails
 	if e := details.FromCreativeFieldDetails(d); e != nil {
 		abortError(c, 500, CodeInternal, "内部错误")

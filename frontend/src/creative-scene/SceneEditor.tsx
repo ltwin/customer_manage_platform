@@ -40,11 +40,14 @@ import { useFaceMeshes } from './faceEdit/useFaceMeshes.ts'
 import { newIntentID, newMarkerID } from './ids.ts'
 import { forkPlan, ModelEdits, sharingInstances, withPreviews } from './modelEdits.ts'
 import { modelCache, modelSummaries } from './models/cache.ts'
+import { builtinModel, builtinModels, builtinSummaries, summaryOf, type BuiltinModel } from './models/catalog.ts'
+import { builtinKey, builtinOf, modelKey } from './models/key.ts'
 import type { SlotCount } from './models/faces.ts'
 import { codeGenerator, isImported } from './models/generator.ts'
 import { CodePanel } from './panels/CodePanel.tsx'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
+import { BuiltinModelInfo } from './panels/BuiltinModelInfo.tsx'
 import { ImportedModelInfo } from './panels/ImportedModelInfo.tsx'
 import { ModelParams } from './panels/ModelParams.tsx'
 import { Outliner } from './panels/Outliner.tsx'
@@ -141,10 +144,16 @@ function dragModel(asset: LibraryAsset): DragModel | null {
   return {
     assetID: asset.id,
     revision: asset.content_revision_id,
-    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null, ...(model.import ? { import: model.import } : {}) },
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null, ...(model.import ? { import: model.import } : {}), ...(model.rig ? { rig: model.rig } : {}) },
     mount: model.generator.mount,
     bounds: model.manifest.bounds,
   }
+}
+
+/** What the viewport needs of a built-in model to drag and place it: its key stands for both the asset and the revision. */
+function builtinDragModel(m: BuiltinModel): DragModel {
+  const key = builtinKey(m.id)
+  return { assetID: key, revision: key, summary: builtinSummaries[key]!, mount: m.mount, bounds: m.manifest.bounds }
 }
 
 /** The materials an asset was saved with; one saved before they were kept has none. */
@@ -212,6 +221,7 @@ export default function SceneEditor({
   const [libraryDrag, setLibraryDrag] = useState<LibraryAsset | null>(null)
   /** A built-in textured material dragged from the asset panel (C5c2): the slot it writes. */
   const [builtinDrag, setBuiltinDrag] = useState<{ title: string; slot: MaterialSlot } | null>(null)
+  const [builtinModelDrag, setBuiltinModelDrag] = useState<BuiltinModel | null>(null)
   const [recentAssets, setRecentAssets] = useState(() => readRecent(storage(), currentAccount()))
   const [assetFocus, setAssetFocus] = useState(0)
   // 导入模型（GLB）：place 为 true 时导入后放进场景（「添加 > 导入模型…」），否则只进资产库。
@@ -290,7 +300,7 @@ export default function SceneEditor({
   const localModels = useStore(modelCache.local)
   const knownModels = useStore(modelCache.known)
   const failedModels = useStore(modelCache.failed)
-  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels, knownModels), [u.preview, s.base, localModels, knownModels])
+  const models = useMemo(() => (u.preview ? { ...builtinSummaries, ...u.preview.models } : modelSummaries(s.base?.models, localModels, knownModels)), [u.preview, s.base, localModels, knownModels])
   // A placed asset's model is told apart once the server describes it.
   useEffect(() => {
     if (s.base) modelCache.settle(Object.keys(s.base.models ?? {}))
@@ -302,12 +312,13 @@ export default function SceneEditor({
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
   const faceObject = u.faceEdit ? byID.get(u.faceEdit.objectID) : undefined
   /** A model instance's summary, from what the editor knows of the scene's models. */
-  const modelOf = (o: SceneObject | undefined) => (o?.model?.content_revision_id ? models[o.model.content_revision_id] : undefined)
+  const modelOf = (o: SceneObject | undefined) => summaryOf(models, o?.model)
   const faceMeshes = useFaceMeshes(u.faceEdit, faceObject, modelOf(faceObject), modelCache)
   /** A model instance whose model can be drawn; anything else has no model to fail. */
   const usableModel = (o: SceneObject | undefined) => modelOf(o)?.usable !== false
   const shownActive = (active && shownObjects.find((o) => o.id === active.id)) ?? null
-  const shownModel = shownActive?.model?.content_revision_id
+  const shownModel = modelKey(shownActive?.model)
+  const shownBuiltin = shownModel ? builtinModel(builtinOf(shownModel) ?? '') : undefined
   // Selecting shows the object tab; clearing the selection goes back to the scene tab (R2「属性区选项卡」).
   const hasObject = !!shownActive || selected.length > 0
   const hadObject = useRef(false)
@@ -535,7 +546,7 @@ export default function SceneEditor({
     }
   }
 
-  const slotNamesOf = (o: SceneObject) => slotsOf(o, o.model?.content_revision_id ? models[o.model.content_revision_id] : undefined).map((x) => x.slot)
+  const slotNamesOf = (o: SceneObject) => slotsOf(o, modelOf(o)).map((x) => x.slot)
   /** 复制材质到选中物件: one update of every target, one undo step. */
   const copyMaterialsToSelected = () => {
     if (!active) return
@@ -786,7 +797,7 @@ export default function SceneEditor({
     const model = dragModel(asset)
     if (!model) return notify('这个模型不可用')
     modelCache.remember(model.revision, model.summary)
-    const o = newModelInstance(model.revision, asset.title, placed, objects, assetMaterials(asset))
+    const o = newModelInstance({ content_revision_id: model.revision }, asset.title, placed, objects, assetMaterials(asset))
     if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
     select([o.id])
     setRecentAssets(pushRecent(storage(), currentAccount(), asset.id))
@@ -811,13 +822,37 @@ export default function SceneEditor({
       const placed = view.snapAt(undefined, model)
       const [x, y, z] = placed.position
       modelCache.remember(model.revision, model.summary)
-      added.push(newModelInstance(model.revision, asset.title, { ...placed, position: [x + (offsets[i] ?? 0), y, z] }, [...objects, ...added], assetMaterials(asset)))
+      added.push(newModelInstance({ content_revision_id: model.revision }, asset.title, { ...placed, position: [x + (offsets[i] ?? 0), y, z] }, [...objects, ...added], assetMaterials(asset)))
     })
     if (!edit([{ op: 'add_objects', objects: added }], objectsLabel('添加', added.length, added[0]?.name))) return
     select(added.map((o) => o.id))
     // Newest first: the first picked ends up first in 最近使用.
     for (const { asset } of [...models].reverse()) setRecentAssets(pushRecent(storage(), currentAccount(), asset.id))
     root.current?.focus({ preventScroll: true })
+  }
+  /**
+   * A built-in model (添加 > 素体, the asset panel's 内置): where it was let
+   * go, or snapped where the menu opened or below the view's centre, with
+   * its entry's materials (design「内置模型」).
+   */
+  const placeBuiltin = (m: BuiltinModel, placed?: Placed, at?: { x: number; y: number }) => {
+    const where = placed ?? handle.current?.snapAt(at, builtinDragModel(m))
+    if (!where) return
+    const o = newModelInstance({ builtin: m.id }, m.label, where, objects, m.materials)
+    if (!edit([{ op: 'add_objects', objects: [o] }], `添加「${o.name}」`)) return
+    select([o.id])
+    root.current?.focus({ preventScroll: true })
+  }
+  /**
+   * 「换成男素体 / 女素体」: the other entry with its own materials, which
+   * replace the slots (review item 6). An instance still named after its
+   * entry takes the new one's name; one edit, undone whole.
+   */
+  const swapBuiltin = (o: SceneObject, to: BuiltinModel) => {
+    const from = o.model?.builtin ? builtinModel(o.model.builtin) : undefined
+    const ops: WireOp[] = [{ op: 'set_instance_model', object_id: o.id, model: { builtin: to.id }, material_slots: structuredClone(to.materials), scope: 'this' }]
+    if (from && o.name === from.label) ops.push({ op: 'update_objects', updates: [{ object_id: o.id, name: to.label }] })
+    if (edit(ops, `换成${to.label}（「${o.name || '物件'}」）`)) select([o.id])
   }
   /** Picks a GLB for 导入模型; place puts the imported asset into the scene as well. */
   const pickModel = (place: boolean) => {
@@ -837,7 +872,7 @@ export default function SceneEditor({
     ui.setState({ sidebar: true, sidebarTab: 'assets' })
     setAssetFocus((n) => n + 1)
   }
-  const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : null), [libraryDrag])
+  const drag = useMemo(() => (libraryDrag ? dragModel(libraryDrag) : builtinModelDrag ? builtinDragModel(builtinModelDrag) : null), [libraryDrag, builtinModelDrag])
   /** A material asset or a built-in material being dragged from the asset panel: its slot, copied to where it is let go. */
   const draggedMaterial = useMemo(() => {
     if (builtinDrag) return builtinDrag
@@ -1204,6 +1239,8 @@ export default function SceneEditor({
         { label: '代码模型…', run: () => openCode({ kind: 'new', position: handle.current?.groundPoint(at) ?? [0, 0, 0] }) },
         { label: '从资产库添加…', shortcut: k('toggle-assets'), run: showAssets },
         { label: '导入模型…', run: () => pickModel(true) },
+        { section: '素体' },
+        ...builtinModels.map((m) => ({ label: m.label, run: () => placeBuiltin(m, undefined, at) })),
         { section: '灯光' },
         ...(['directional', 'point', 'spot', 'area'] as const).map((t) => ({ label: lightLabels[t], run: () => addLight(t, at) })),
         { section: '其他' },
@@ -1305,7 +1342,7 @@ export default function SceneEditor({
       return `${count ? `已选 ${count} 个三角形 · ` : ''}单击选面片 · 拖动框选 · Shift 加选 · L 选相连 · A 全选 · Esc 清空选区 · Tab 退出`
     }
     if (s.trashed) return '场景在回收站，请先恢复后再编辑'
-    if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true) ? ' · Tab 面编辑' : ''}`
+    if (selected.length) return `G 移动 · R 旋转 · S 缩放 · Shift+D 复制 · X 删除${active && !faceEditBlock(active, true, modelOf(active)) ? ' · Tab 面编辑' : ''}`
     return '左键选择 · 拖动框选 · 中键环绕（Alt+左键） · Shift+A 添加'
   })()
   const deviceText = `导航：${u.device === 'auto' ? `${u.guessed === 'trackpad' ? '触控板' : '鼠标'}（自动）` : u.device === 'trackpad' ? '触控板' : '鼠标'}`
@@ -1403,6 +1440,8 @@ export default function SceneEditor({
                     onPlace={placeModels}
                     onDrag={setLibraryDrag}
                     onDragBuiltin={setBuiltinDrag}
+                    onPlaceBuiltinModel={(m) => placeBuiltin(m)}
+                    onDragBuiltinModel={setBuiltinModelDrag}
                     onExit={() => root.current?.focus({ preventScroll: true })}
                     onImport={() => pickModel(false)}
                   />
@@ -1520,7 +1559,10 @@ export default function SceneEditor({
                     />
                   )}
                   {shownActive?.kind === 'model_instance' && shownModel && isImported(models[shownModel]?.generator) && <ImportedModelInfo source={models[shownModel]?.import} />}
-                  {shownActive?.kind === 'model_instance' && shownModel && !isImported(models[shownModel]?.generator) && (
+                  {shownActive?.kind === 'model_instance' && shownBuiltin && (
+                    <BuiltinModelInfo key={shownActive.id} entry={shownBuiltin} readOnly={readOnly} onSwap={(to) => swapBuiltin(shownActive, to)} />
+                  )}
+                  {shownActive?.kind === 'model_instance' && shownModel && builtinOf(shownModel) === null && !isImported(models[shownModel]?.generator) && (
                     <ModelParams
                       key={shownActive.id}
                       generator={codeGenerator(models[shownModel]?.generator)}
@@ -1577,7 +1619,7 @@ export default function SceneEditor({
                 }}
                 onDragging={(dragging) => session.setDragging(dragging)}
                 libraryDrag={drag}
-                onDropModel={(placed) => libraryDrag && placeModel(libraryDrag, placed)}
+                onDropModel={(placed) => (libraryDrag ? placeModel(libraryDrag, placed) : builtinModelDrag && placeBuiltin(builtinModelDrag, placed))}
                 materialDrag={!!draggedMaterial}
                 onDropMaterial={dropMaterial}
                 faceMeshes={faceMeshes?.state === 'ready' ? faceMeshes.meshes : null}
@@ -1725,7 +1767,7 @@ export default function SceneEditor({
       <input
         ref={modelInput}
         type="file"
-        accept=".glb"
+        accept=".glb,.vrm"
         hidden
         aria-label="选择模型文件"
         onChange={(e) => {

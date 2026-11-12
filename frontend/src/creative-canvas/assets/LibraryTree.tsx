@@ -6,6 +6,7 @@ import {
   Images,
   Inbox,
   Layers,
+  PersonStanding,
   Trash2,
   Plus,
   Pencil,
@@ -48,6 +49,8 @@ export default function LibraryTree({
   importButton,
   builtin = false,
   onBuiltin,
+  builtinModels = false,
+  onBuiltinModels,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -70,6 +73,9 @@ export default function LibraryTree({
   /** 正在看「内置材质」（C5c2）：这时视图和分组都不算当前。 */
   builtin?: boolean
   onBuiltin?: () => void
+  /** 正在看「内置模型」（scene-pose-system）；没有 onBuiltinModels 时不列这一项（给槽位选材质时）。 */
+  builtinModels?: boolean
+  onBuiltinModels?: () => void
 }) {
   const [editor, setEditor] = useState<{
     group: api.Group | null
@@ -181,7 +187,7 @@ export default function LibraryTree({
                 type="button"
                 className="al-row"
                 aria-current={
-                  !builtin && !query.group && query.view === v.key
+                  !builtin && !builtinModels && !query.group && query.view === v.key
                     ? 'page'
                     : undefined
                 }
@@ -205,6 +211,17 @@ export default function LibraryTree({
               <Layers size={15} />
               <span className="al-name">内置材质</span>
             </button>
+            {onBuiltinModels && (
+              <button
+                type="button"
+                className="al-row"
+                aria-current={builtinModels ? 'page' : undefined}
+                onClick={onBuiltinModels}
+              >
+                <PersonStanding size={15} />
+                <span className="al-name">内置模型</span>
+              </button>
+            )}
           </section>
         )}
         <section className="al-sec" aria-labelledby="alGroups">

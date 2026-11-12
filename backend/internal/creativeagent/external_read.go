@@ -418,7 +418,7 @@ func (e *ExternalTools) searchAssets(ctx context.Context, p ExternalPrincipal, r
 	}
 	next := "下一步：要看图片或完整信息，用 read_asset(content_revision_id) 逐项读取。"
 	if stringArgument(raw, "source") == sourceBuiltin {
-		next = "下一步：slot 可直接写进场景的材质槽；要看缩略图和参数缺省值，用 read_asset(builtin_id)。"
+		next = "下一步：材质的 slot 可直接写进场景的材质槽，模型用 edit_scene 的 model{builtin:builtin_id} 放进场景；要看缩略图和完整信息，用 read_asset(builtin_id)。"
 	}
 	return externalPageSummary(page, "素材", next)
 }

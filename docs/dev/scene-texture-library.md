@@ -9,13 +9,16 @@
 | 内容 | 位置 | 说明 |
 |---|---|---|
 | 清单（条目、贴图引用、来源、文件大小和下载地址） | `backend/internal/creativescene/materials.json` | 权威主数据，随代码发布；`make generate` 复制到前端 `materials.gen.json` |
-| 贴图文件 | 对象存储 `scene-textures/<sha256>.jpg` | 内容寻址：文件名就是内容的 sha256，多个条目可共用一个文件 |
+| 贴图文件 | 对象存储 `scene-textures/<sha256>.jpg`（或 `.png`） | 内容寻址：文件名就是内容的 sha256，多个条目可共用一个文件 |
 | 缩略图（256 × 256 材质球 WebP） | `backend/internal/creativescene/builtin_thumbnails/<id 把 @ 换成 _>.webp` | 后端嵌入二进制给助手看；`make generate` 复制到前端 `src/creative-canvas/assets/builtin/` |
 
 存储驱动跟头像、策划素材共用 `AVATAR_STORAGE_DRIVER`：
 
 - `oss`：同一个 bucket 的 `scene-textures/` 前缀，现有 RAM 策略（整个 bucket）已覆盖。
 - `local`：`SCENE_TEXTURE_LOCAL_ROOT`，缺省为 `AVATAR_LOCAL_ROOT` 的同级目录 `scene-textures`。compose 部署挂卷 `scene_texture_data:/var/lib/crm/scene-textures`。
+  - 镜像里预建了 `/var/lib/crm/scene-textures` 并交给 `app`（UID 1000），新建的卷首次挂载时会沿用这个属主。
+  - 在这之前就创建过的卷属于 root，`creativectl` 写入时会报 `permission denied`。需要用 root 改一次属主：
+    `docker compose run --rm --no-deps --user root --entrypoint chown app -R app:app /var/lib/crm/scene-textures`
 
 贴图文件不属于任何账号：没有数据库表，不进媒体 GC 和账号配额，也不进备份——随时可以从来源站重建（见下文「导入」）。
 
@@ -31,6 +34,7 @@ docker compose run --rm --no-deps --entrypoint /usr/local/bin/creativectl app te
 ```
 
 - `import`：逐个看清单里的文件，对象已在就跳过；不在就从来源站下载（四路并发、每个文件重试三次），核对大小和 sha256 一致才写入。可以反复运行，只补缺的。输出一行 JSON：`imported`、`skipped` 和 `failed`（每项给文件、条目和原因）；有失败时退出码 1，按原因处理后重跑即可。
+- `import --dir <目录>`：清单里没有 `url` 的文件（来源站没有直链，比如内置模型自带的贴图，见 [builtin-models.md](builtin-models.md)）从这个目录读 `<sha256>.jpg` 或 `.png`，同样核对大小和 sha256；有 `url` 的照常下载。不带 `--dir` 时这些文件记为失败，原因里会提示加 `--dir`。
 - `check`：只检查不下载。全部就绪时退出码 0，`status: "ready"`；有缺失时退出码 3，`missing` 列出文件和条目。
 - 首次导入约 177 MB、72 个文件。来源站单连接较慢，本机实测顺序下载要 19 分钟，四路并发后明显缩短。
 

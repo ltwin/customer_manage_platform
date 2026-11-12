@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"sort"
 	"unicode/utf8"
@@ -100,9 +101,17 @@ func (env *opEnv) verifyExisting(ops []sceneOp) error {
 }
 
 // resolve turns {ref} into the revision committed earlier in the batch and
-// checks {content_revision_id}; afterwards m holds only a revision id.
+// checks {content_revision_id} and {builtin}; afterwards m holds only a
+// revision id or a built-in model's ID.
 func (env *opEnv) resolve(m *ModelRef) error {
 	switch {
+	case m.Builtin != "" && (m.Ref != "" || m.ContentRevisionID != ""):
+		return invalid("model 只能写 ref、content_revision_id 或 builtin 其中之一")
+	case m.Builtin != "":
+		if _, ok := builtinModels.byID[m.Builtin]; !ok {
+			return builtinModelUnavailable(m.Builtin)
+		}
+		return nil
 	case m.Ref != "" && m.ContentRevisionID != "":
 		return invalid("model 只能写 ref 或 content_revision_id 其中之一")
 	case m.Ref != "":
@@ -200,6 +209,10 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	if !glbOK || !thumbOK || thumbBlob.Mime != "image/png" {
 		return invalid("缩略图须为 PNG 图片")
 	}
+	// Code models carry no bones (scene-pose-system child 3).
+	if staged.Manifest.Skeleton != nil {
+		return invalid("代码模型不能带骨骼：上传 %s 的 GLB 有 skins", op.GLBUploadID)
+	}
 	if !op.Manifest.Matches(staged.Manifest) {
 		return invalid("manifest 与上传的 GLB 不符")
 	}
@@ -219,9 +232,10 @@ func (op *commitModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 
 // deriveModelOp writes a revision that differs from an existing one only in its
 // face assignment (data: 模型内容「写入口」): the source's generator, manifest,
-// name hint and import, its GLB and thumbnail blobs reused, nothing uploaded
-// or compiled. A library copy's or an import's materials and source stay with
-// the library.
+// name hint, import and rig, its GLB and thumbnail blobs reused, nothing
+// uploaded or compiled. A library copy's or an import's materials and source
+// stay with the library. A skinned source is refused: rigged models take no
+// face assignment yet (Epic 修订 v7).
 type deriveModelOp struct {
 	Op             string `json:"op"`
 	Ref            string `json:"ref"`
@@ -241,6 +255,9 @@ func (op *deriveModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 		return err
 	}
 	p, _ := completeModel(src)
+	if p.Manifest.Skeleton != nil {
+		return invalid("带骨骼的模型 %s 不能做面级材质分配", op.FromRevisionID)
+	}
 	if err := checkFaces(op.Faces, slotIDs(p.Manifest), false); err != nil {
 		return err
 	}
@@ -249,7 +266,7 @@ func (op *deriveModelOp) apply(env *opEnv, _ *Scene, _ *changeSet) error {
 	if !glbOK || !thumbOK {
 		return modelUnavailable(src.ID)
 	}
-	payload := ModelPayload{Format: "glb", Generator: p.Generator, Manifest: p.Manifest, NameHint: p.NameHint, Faces: op.Faces, Import: p.Import}
+	payload := ModelPayload{Format: "glb", Generator: p.Generator, Manifest: p.Manifest, NameHint: p.NameHint, Faces: op.Faces, Import: p.Import, Rig: p.Rig}
 	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: glbBlob.BlobID}, {Role: "thumbnail", BlobID: thumbBlob.BlobID}}
 	return env.writeModel(op.Ref, payload, src.DeclarationID, op.BaseContentID, objects)
 }
@@ -349,12 +366,16 @@ func mediaObject(r creativecontent.Revision, role string) (creativecontent.Media
 // content units change, so moving the same object concurrently never
 // conflicts. all_instances lists the instances explicitly: expanding them on
 // the server would miss units for instances added concurrently.
+// MaterialSlots, when given, replaces the instances' slots whole in the same
+// content unit: swapping one base body for another takes the new one's
+// materials (Epic 修订 v7).
 type setInstanceModelOp struct {
-	Op        string   `json:"op"`
-	ObjectID  string   `json:"object_id"`
-	Model     ModelRef `json:"model"`
-	Scope     string   `json:"scope,omitempty"`
-	ObjectIDs []string `json:"object_ids,omitempty"`
+	Op            string                   `json:"op"`
+	ObjectID      string                   `json:"object_id"`
+	Model         ModelRef                 `json:"model"`
+	MaterialSlots *map[string]MaterialSlot `json:"material_slots,omitempty"`
+	Scope         string                   `json:"scope,omitempty"`
+	ObjectIDs     []string                 `json:"object_ids,omitempty"`
 }
 
 func (op *setInstanceModelOp) checkScope() error {
@@ -374,7 +395,7 @@ func (op *setInstanceModelOp) checkScope() error {
 }
 
 // targets are the instances to change; with all_instances each must reference
-// the same revision as object_id in s.
+// the same model as object_id in s.
 func (op *setInstanceModelOp) targets(s Scene, byID map[string]int) ([]string, error) {
 	instance := func(id string) (*Object, error) {
 		i, ok := byID[id]
@@ -403,8 +424,8 @@ func (op *setInstanceModelOp) targets(s Scene, byID map[string]int) ([]string, e
 		if err != nil {
 			return nil, err
 		}
-		if o.Model.ContentRevisionID != base.Model.ContentRevisionID {
-			return nil, invalid("物件 %s 与 %s 引用的不是同一个模型修订", id, op.ObjectID)
+		if *o.Model != *base.Model {
+			return nil, invalid("物件 %s 与 %s 引用的不是同一个模型", id, op.ObjectID)
 		}
 	}
 	return op.ObjectIDs, nil
@@ -434,7 +455,11 @@ func (op *setInstanceModelOp) apply(env *opEnv, s *Scene, c *changeSet) error {
 	}
 	for _, id := range ids {
 		m := model
-		s.Objects[byID[id]].Model = &m
+		o := &s.Objects[byID[id]]
+		o.Model = &m
+		if op.MaterialSlots != nil {
+			o.MaterialSlots = maps.Clone(*op.MaterialSlots)
+		}
 		c.change(contentUnit(id))
 	}
 	return nil

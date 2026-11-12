@@ -82,7 +82,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: editSceneTool,
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
-				"add_objects{objects:[{kind:primitive|light|camera|group|model_instance|volume,name,transform?,parent_id?,id?,order?,visible?,locked?,material_slots?,primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}。省略 id 自动分配，结果 added_object_ids 按输入顺序返回；省略 parent_id 为根级，order 为同级末尾，visible 为 true，locked 为 false，transform 默认原点、单位旋转和缩放。" +
+				"add_objects{objects:[{kind:primitive|light|camera|group|model_instance|volume,name,transform?,parent_id?,id?,order?,visible?,locked?,material_slots?,primitive{builtin,params}|light|camera|volume|model{content_revision_id}|model{builtin}}]}。省略 id 自动分配，结果 added_object_ids 按输入顺序返回；省略 parent_id 为根级，order 为同级末尾，visible 为 true，locked 为 false，transform 默认原点、单位旋转和缩放。" +
 				"light 字段同 three.js：{type:directional|point|spot|area, color:\"#rrggbb\", intensity:0…1000（area 0…100000）, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1，只管光锥边缘羽化）；" +
 				"光源尺寸同 Blender：point 和 spot 有 radius_m（发光球半径，0…10 米，默认 0.1，不随物件缩放），directional 有 angular_diameter_deg（角直径，0…30 度，默认 0.545）；尺寸越大、遮挡物离受光面越远，影子边缘越软，高光越大越柔，强度不变；写 0 是硬影子；" +
 				"area 是面光源（同 Blender Area、three.js RectAreaLight，做柔光箱、灯板、窗户）：shape:rectangle|ellipse（默认 rectangle）、width、height（0.01…20 米，默认 0.25，随物件的世界缩放变化，含父级），沿局部 −Z 单面发光，背面不亮；intensity 是发光面亮度 cd/m²（默认 10000），法线方向的等效发光强度 = 亮度 × 面积；面光源越大影子越软、高光越大；与点光、聚光互换类型且不写 intensity 时按等效发光强度换算；" +
@@ -100,7 +100,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +
 				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_mode?:ambient|manual（物理天空下临时视点和预设取景的曝光模式，默认 ambient 环境测光）, exposure_compensation?:-5…5（它们环境测光的补偿）, exposure_ev100?:-10…20（它们手动曝光时的 EV100）, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
-				"set_instance_model{object_id, model{content_revision_id}, scope:this|all_instances, object_ids}。" +
+				"set_instance_model{object_id, model{content_revision_id}|model{builtin}, material_slots?（给出时按新模型的槽位重写这些实例的材质槽）, scope:this|all_instances, object_ids}。" +
 				"物理天空（真实的大气和太阳，调时间产生真实的光照变化）sky:{kind:physical, sun_mode:location（按地点和时间推算太阳）|manual（用 sun_elevation_deg、sun_azimuth_deg）, latitude_deg:-90…90, longitude_deg:-180…180（东经为正）, " +
 				"timezone（IANA 时区名，大小写与时区库一致，如 Asia/Shanghai、Europe/London；夏令时由时区处理）, place（显示用地名，≤80 字）, date:\"YYYY-MM-DD\"（必填）, local_time:\"HH:MM\"（当地时刻）, " +
 				"north_azimuth_deg:0…360（场景里正北的方位，与 sun_azimuth_deg 同一约定，默认 180 即 −Z 为北）, sun_elevation_deg:-10…90, sun_azimuth_deg（手动模式用）, altitude_m:0…20000（海拔，米）, air_density:0…10, dust_density:0…50, ozone_density:0…10, " +
@@ -119,6 +119,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"月亮参考：同样的情况下结果带 moon：phase（new、waxing_crescent、first_quarter、waxing_gibbous、full、waning_gibbous、last_quarter、waning_crescent）、illumination（照亮比例 0…1）、elevation_deg、compass_deg、scene_azimuth_deg、moonrise、moonset，" +
 				"以及 previous_full_moon、next_full_moon、previous_new_moon、next_new_moon（当地日期）；「满月之夜」「新月看银河」先按它选 date，再写 local_time，月亮在天上时 elevation_deg > 0。" +
 				"资产库里的模型：search_assets 按 kind:model 查到后，用它的 content_revision_id 写 add_objects 的 model{content_revision_id}，并把 model 要点里的 materials 原样写进 material_slots（资产带的材质）；可放多个实例，都引用同一版模型；size_m 与 mount 见搜索结果的 model 要点；导入的外部模型 imported 为 true，没有代码和参数，read_asset 的 import 是原文件名和授权说明。" +
+				"内置模型（男、女素体）：search_assets 用 source:builtin、kind:model 查，builtin_id 写进 model{builtin}；放入或换成它时不写 material_slots 就带上它自带的贴图材质，之后照常改 material_slots；不能用 write_model 替换。" +
 				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为摄像机的环境测光或手动曝光，见建议曝光）。" +
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
 				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +

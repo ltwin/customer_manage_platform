@@ -87,7 +87,7 @@ func imageRefs(objects []Object) []string {
 }
 
 // opImageUses are the textures the operations of a batch write, in request
-// order. Only add_objects and update_objects write slots.
+// order. add_objects, update_objects and set_instance_model write slots.
 func opImageUses(ops []sceneOp) []imageUse {
 	var out []imageUse
 	for i, op := range ops {
@@ -101,6 +101,10 @@ func opImageUses(ops []sceneOp) []imageUse {
 				if u.MaterialSlots != nil {
 					out = append(out, slotImages(*u.MaterialSlots, i, fmt.Sprintf("updates[%d].material_slots", j))...)
 				}
+			}
+		case *setInstanceModelOp:
+			if o.MaterialSlots != nil {
+				out = append(out, slotImages(*o.MaterialSlots, i, "material_slots")...)
 			}
 		}
 	}

@@ -192,6 +192,8 @@ export class SandboxHost {
         ? failure('limit', `模型超出上限：${err.detail}`)
         : failure('invalid', `模型不符合要求（${err.reason}）：${err.detail}`)
     }
+    // As commit_model (data: 模型内容): a code model has no skeleton.
+    if (manifest.skeleton) return failure('invalid', '代码模型不能带骨骼：生成的 GLB 有 skins')
     const hash = await codeSHA256(code)
     measureStage('validate', checking)
     return { ok: true, glb: reply.glb, manifest, module, codeSHA256: hash }

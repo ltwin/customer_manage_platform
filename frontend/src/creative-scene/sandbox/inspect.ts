@@ -1,12 +1,14 @@
 import type { components } from '../../api/schema'
+import { sha256 } from '../models/sha256.ts'
 
 // The editor's copy of backend/internal/creativeglb (Inspect): the same static
-// GLB subset, checked in the same order, with the manifest derived from vertex
+// GLB subset plus the skin subset, checked in the same order, with the manifest derived from vertex
 // data. The sandbox's output is untrusted, so nothing reaches GLTFLoader until
 // this passes. Both sides run the fixtures in creativeglb/testdata; keep the
 // two in step function by function.
 
 export type Manifest = components['schemas']['CreativeModelManifest']
+export type Skeleton = components['schemas']['CreativeModelSkeleton']
 
 export type GLBReason =
   | 'container'
@@ -19,6 +21,7 @@ export type GLBReason =
   | 'bounds_mismatch'
   | 'unsupported_feature'
   | 'limit'
+  | 'skin'
 
 export class GLBError extends Error {
   readonly reason: GLBReason
@@ -38,6 +41,9 @@ export type Limits = {
   maxSlots: number
   maxParts: number
   maxAnchors: number
+  maxSkins: number
+  maxJointsPerSkin: number
+  maxJoints: number
 }
 
 export const defaultLimits: Readonly<Limits> = Object.freeze({
@@ -48,6 +54,9 @@ export const defaultLimits: Readonly<Limits> = Object.freeze({
   maxSlots: 32,
   maxParts: 200,
   maxAnchors: 200,
+  maxSkins: 32,
+  maxJointsPerSkin: 256,
+  maxJoints: 512,
 })
 
 const glbMagic = 0x46546c67
@@ -64,12 +73,12 @@ const emissiveStrength = 'KHR_materials_emissive_strength'
 
 const namePattern = /^[A-Za-z0-9_-]{1,64}$/
 const componentSizes = new Map([[5120, 1], [compUByte, 1], [5122, 2], [compUShort, 2], [compUInt, 4], [compFloat, 4]])
-const typeComponents = new Map([['SCALAR', 1], ['VEC2', 2], ['VEC3', 3], ['VEC4', 4]])
+const typeComponents = new Map([['SCALAR', 1], ['VEC2', 2], ['VEC3', 3], ['VEC4', 4], ['MAT4', 16]])
 const topUnsupported = new Map([
   ['images', 'texture'], ['textures', 'texture'], ['samplers', 'texture'],
-  ['skins', 'skin'], ['animations', 'animation'], ['cameras', 'camera'],
+  ['animations', 'animation'], ['cameras', 'camera'],
 ])
-const nodeUnsupported = new Map([['camera', 'camera'], ['skin', 'skin'], ['weights', 'morph target']])
+const nodeUnsupported = new Map([['camera', 'camera'], ['weights', 'morph target']])
 const none = new Map<string, string>()
 
 function fail(reason: GLBReason, detail: string): never {
@@ -182,8 +191,11 @@ type Accessor = {
   max?: number[]
 }
 type Material = { slot: string; hint: string; isSlot: boolean }
-type Primitive = { position: number; indices: number; material: number; uv: boolean }
-type Node = { name: string; children: number[]; mesh: number; local: number[] }
+// joints and weights are the JOINTS_0 / WEIGHTS_0 accessors, -1 without.
+type Primitive = { position: number; indices: number; material: number; joints: number; weights: number; uv: boolean }
+type Node = { name: string; children: number[]; mesh: number; skin: number; local: number[] }
+// inverseBind holds one column-major matrix per joint.
+type Skin = { joints: number[]; inverseBind: number[][] }
 type Doc = {
   bin: DataView | null
   views: BufferView[]
@@ -191,6 +203,7 @@ type Doc = {
   materials: Material[]
   meshes: Primitive[][]
   nodes: Node[]
+  skins: Skin[]
   roots: number[]
 }
 
@@ -234,7 +247,7 @@ function parseDocument(jsonChunk: Uint8Array, bin: Uint8Array | null, limits: Li
     return fail('json', 'gltf is not an object')
   }
   const top = asObject(parsed, 'gltf')
-  const allowed = ['asset', 'scene', 'scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'extensionsUsed', 'extensionsRequired']
+  const allowed = ['asset', 'scene', 'scenes', 'nodes', 'meshes', 'materials', 'accessors', 'bufferViews', 'buffers', 'skins', 'extensionsUsed', 'extensionsRequired']
   checkMembers(top, 'gltf', allowed, [], topUnsupported)
   checkAsset(top)
   checkExtensionLists(top)
@@ -243,18 +256,13 @@ function parseDocument(jsonChunk: Uint8Array, bin: Uint8Array | null, limits: Li
   const accessors = parseAccessors(top, views)
   const materials = parseMaterials(top)
   const meshes = parseMeshes(top, views, accessors, materials)
-  const nodes = parseNodes(top, meshes.length, limits)
+  const nodes = parseNodes(top, meshes.length, (arrayOf(top, 'skins', 'skins') ?? []).length, limits)
+  const binView = bin ? new DataView(bin.buffer, bin.byteOffset, bin.byteLength) : null
+  const skins = parseSkins(top, nodes.length, views, accessors, binView, limits)
   const roots = parseScene(top, nodes.length)
-  const doc: Doc = {
-    bin: bin ? new DataView(bin.buffer, bin.byteOffset, bin.byteLength) : null,
-    views,
-    accessors,
-    materials,
-    meshes,
-    nodes,
-    roots,
-  }
+  const doc: Doc = { bin: binView, views, accessors, materials, meshes, nodes, skins, roots }
   checkGraph(doc)
+  checkSkins(doc, limits)
   return doc
 }
 
@@ -415,7 +423,7 @@ function parseMeshes(top: Obj, views: BufferView[], accessors: Accessor[], mater
 }
 
 // Accepted vertex attributes: component types (normalized integers only for
-// COLOR_0) and component counts.
+// COLOR_0, plain ones only for JOINTS_0) and component counts.
 const attributeFormats = new Map<string, { components: number[]; counts: number[] }>([
   ['POSITION', { components: [compFloat], counts: [3] }],
   ['NORMAL', { components: [compFloat], counts: [3] }],
@@ -423,6 +431,8 @@ const attributeFormats = new Map<string, { components: number[]; counts: number[
   ['TEXCOORD_0', { components: [compFloat], counts: [2] }],
   ['TEXCOORD_1', { components: [compFloat], counts: [2] }],
   ['COLOR_0', { components: [compFloat, compUByte, compUShort], counts: [3, 4] }],
+  ['JOINTS_0', { components: [compUByte, compUShort], counts: [4] }],
+  ['WEIGHTS_0', { components: [compFloat], counts: [4] }],
 ])
 
 function parsePrimitive(p: Obj, what: string, views: BufferView[], accessors: Accessor[], materials: Material[]): Primitive {
@@ -432,22 +442,30 @@ function parsePrimitive(p: Obj, what: string, views: BufferView[], accessors: Ac
   if (!has(p, 'attributes')) fail('json', `${what} has no attributes`)
   const attrs = asObject(p.attributes, `${what}.attributes`)
   let position = -1
+  let joints = -1
+  let weights = -1
   let count = -1
   for (const name of Object.keys(attrs).sort()) {
     const format = attributeFormats.get(name)
     if (!format) {
-      if (name.startsWith('JOINTS_') || name.startsWith('WEIGHTS_')) fail('unsupported_feature', `skin attribute ${name} (${what})`)
+      if (name.startsWith('JOINTS_') || name.startsWith('WEIGHTS_')) {
+        fail('skin', `attribute ${name}: at most four influences per vertex (${what})`)
+      }
       fail('unsupported_feature', `attribute ${name} (${what})`)
     }
     const idx = indexOf(attrs, name, `${what}.attributes`, accessors.length)
     const a = accessors[idx]
     const okFormat = format.components.includes(a.component) && format.counts.includes(a.comps)
-    if (!okFormat || (a.component !== compFloat && !a.normalized)) {
+    // Joint indices are plain integers; every other integer attribute is
+    // normalized.
+    if (!okFormat || (a.component !== compFloat && a.normalized === (name === 'JOINTS_0'))) {
       fail('accessor', `${what} attribute ${name} has an unsupported format`)
     }
     if (count >= 0 && a.count !== count) fail('accessor', `${what} attributes differ in count`)
     count = a.count
     if (name === 'POSITION') position = idx
+    if (name === 'JOINTS_0') joints = idx
+    if (name === 'WEIGHTS_0') weights = idx
   }
   const uv = has(attrs, 'TEXCOORD_0')
   if (position < 0) fail('accessor', `${what} has no POSITION`)
@@ -460,21 +478,22 @@ function parsePrimitive(p: Obj, what: string, views: BufferView[], accessors: Ac
     if (views[a.view].stride !== 0) fail('accessor', `${what} index bufferView has a stride`)
   }
   const material = indexOf(p, 'material', what, materials.length)
-  return { position, indices, material, uv }
+  return { position, indices, material, joints, weights, uv }
 }
 
-function parseNodes(top: Obj, meshes: number, limits: Limits): Node[] {
+function parseNodes(top: Obj, meshes: number, skins: number, limits: Limits): Node[] {
   const items = arrayOf(top, 'nodes', 'nodes') ?? []
   if (items.length > limits.maxNodes) fail('limit', `${items.length} nodes, limit ${limits.maxNodes}`)
-  const allowed = ['name', 'children', 'mesh', 'matrix', 'translation', 'rotation', 'scale']
+  const allowed = ['name', 'children', 'mesh', 'skin', 'matrix', 'translation', 'rotation', 'scale']
   return items.map((n, i) => {
     const what = `nodes[${i}]`
     checkMembers(n, what, allowed, [], nodeUnsupported)
     const name = strOf(n, 'name', what) ?? ''
     const children = indicesOf(n, 'children', what, items.length)
     const mesh = indexOf(n, 'mesh', what, meshes)
+    const skin = indexOf(n, 'skin', what, skins)
     const local = localMatrix(n, what)
-    return { name, children, mesh, local }
+    return { name, children, mesh, skin, local }
   })
 }
 
@@ -568,6 +587,227 @@ function checkGraph(d: Doc): void {
     }
     for (const j of chain) state[j] = 2
   }
+}
+
+// The skin subset (scene-pose-system child 3, data: 模型内容「接受的 GLB 子集」):
+// skins with inverse bind matrices, JOINTS_0 / WEIGHTS_0 on the meshes of
+// skinned nodes, four influences per vertex. Mirrors creativeglb/skin.go.
+
+const maxJointNameRunes = 64
+/** How far a vertex's weights may sum from 1. */
+const weightTolerance = 1e-3
+
+function parseSkins(top: Obj, nodes: number, views: BufferView[], accessors: Accessor[], bin: DataView | null, limits: Limits): Skin[] {
+  const items = arrayOf(top, 'skins', 'skins') ?? []
+  if (items.length > limits.maxSkins) fail('limit', `${items.length} skins, limit ${limits.maxSkins}`)
+  return items.map((s, i) => {
+    const what = `skins[${i}]`
+    checkMembers(s, what, ['joints', 'inverseBindMatrices', 'skeleton', 'name'], [], none)
+    strOf(s, 'name', what)
+    indexOf(s, 'skeleton', what, nodes)
+    const joints = indicesOf(s, 'joints', what, nodes)
+    if (joints.length === 0) fail('skin', `${what} has no joints`)
+    if (joints.length > limits.maxJointsPerSkin) fail('limit', `${what} has ${joints.length} joints, limit ${limits.maxJointsPerSkin}`)
+    const seen = new Set<number>()
+    for (const j of joints) {
+      if (seen.has(j)) fail('skin', `${what} lists nodes[${j}] twice`)
+      seen.add(j)
+    }
+    const ibm = indexOf(s, 'inverseBindMatrices', what, accessors.length)
+    if (ibm < 0) fail('skin', `${what} has no inverseBindMatrices`)
+    return { joints, inverseBind: inverseBindMatrices(views, accessors[ibm], bin, joints.length, what) }
+  })
+}
+
+function inverseBindMatrices(views: BufferView[], a: Accessor, bin: DataView | null, joints: number, what: string): number[][] {
+  if (a.component !== compFloat || a.comps !== 16 || a.count !== joints) {
+    fail('skin', `${what} inverseBindMatrices is not ${joints} float MAT4`)
+  }
+  const v = views[a.view]
+  const base = v.offset + a.offset
+  const stride = v.stride === 0 ? 64 : v.stride
+  const data = bin as DataView
+  const out: number[][] = []
+  for (let i = 0; i < a.count; i++) {
+    const m = new Array<number>(16)
+    for (let c = 0; c < 16; c++) {
+      m[c] = data.getFloat32(base + i * stride + 4 * c, true)
+      if (!Number.isFinite(m[c])) fail('skin', `${what} inverseBindMatrices[${i}] is not finite`)
+    }
+    out.push(m)
+  }
+  return out
+}
+
+// Every skin's joints in the scene, a mesh on every skinned node, skin
+// attributes exactly on the meshes of skinned nodes, joint indices within the
+// skin and weights summing to 1.
+function checkSkins(d: Doc, limits: Limits): void {
+  const reached = reachable(d)
+  const union = new Set<number>()
+  d.skins.forEach((s, i) => {
+    for (const j of s.joints) {
+      if (!reached[j]) fail('skin', `skins[${i}] joint nodes[${j}] is not in the scene`)
+      union.add(j)
+    }
+  })
+  if (union.size > limits.maxJoints) fail('limit', `${union.size} joints, limit ${limits.maxJoints}`)
+  const isStatic = 1
+  const isSkinned = 2
+  const use = new Map<number, number>()
+  const maxJoint = new Map<number, number>()
+  const checkedWeights = new Set<number>()
+  // Like the POSITION budget: aliased accessors cannot make the scan longer
+  // than the BIN chunk holds (four bytes is the smallest skin element).
+  const budget = { left: Math.floor((d.bin?.byteLength ?? 0) / 4) }
+  d.nodes.forEach((n, i) => {
+    if (!reached[i]) return
+    if (n.skin >= 0 && n.mesh < 0) fail('skin', `nodes[${i}] has a skin but no mesh`)
+    if (n.mesh < 0) return
+    const kind = n.skin >= 0 ? isSkinned : isStatic
+    const prior = use.get(n.mesh)
+    if (prior !== undefined && prior !== kind) fail('skin', `meshes[${n.mesh}] is used with and without a skin`)
+    use.set(n.mesh, kind)
+    d.meshes[n.mesh].forEach((p, j) => {
+      const what = `meshes[${n.mesh}].primitives[${j}]`
+      if (kind === isStatic) {
+        if (p.joints >= 0 || p.weights >= 0) fail('skin', `${what} has skin attributes but nodes[${i}] has no skin`)
+        return
+      }
+      if (p.joints < 0 || p.weights < 0) fail('skin', `${what} lacks JOINTS_0 or WEIGHTS_0 on skinned nodes[${i}]`)
+      let highest = maxJoint.get(p.joints)
+      if (highest === undefined) {
+        highest = highestJoint(d, p.joints, budget)
+        maxJoint.set(p.joints, highest)
+      }
+      const count = d.skins[n.skin].joints.length
+      if (highest >= count) fail('skin', `${what} joint index ${highest} with ${count} joints in skins[${n.skin}]`)
+      if (!checkedWeights.has(p.weights)) {
+        checkWeights(d, p.weights, budget)
+        checkedWeights.add(p.weights)
+      }
+    })
+  })
+}
+
+function reachable(d: Doc): boolean[] {
+  const reached = new Array<boolean>(d.nodes.length).fill(false)
+  const stack = [...d.roots]
+  for (let i = stack.pop(); i !== undefined; i = stack.pop()) {
+    reached[i] = true
+    stack.push(...d.nodes[i].children)
+  }
+  return reached
+}
+
+function highestJoint(d: Doc, idx: number, budget: { left: number }): number {
+  const a = d.accessors[idx]
+  budget.left -= a.count
+  if (budget.left < 0) fail('limit', 'skin accessors read more vertices than the BIN chunk holds')
+  const { base, stride } = elementLayout(d, a)
+  const bin = d.bin as DataView
+  let highest = 0
+  for (let i = 0; i < a.count; i++) {
+    for (let c = 0; c < 4; c++) {
+      const v = a.component === compUByte ? bin.getUint8(base + i * stride + c) : bin.getUint16(base + i * stride + 2 * c, true)
+      highest = Math.max(highest, v)
+    }
+  }
+  return highest
+}
+
+function checkWeights(d: Doc, idx: number, budget: { left: number }): void {
+  const a = d.accessors[idx]
+  budget.left -= a.count
+  if (budget.left < 0) fail('limit', 'skin accessors read more vertices than the BIN chunk holds')
+  const { base, stride } = elementLayout(d, a)
+  const bin = d.bin as DataView
+  for (let i = 0; i < a.count; i++) {
+    let sum = 0
+    for (let c = 0; c < 4; c++) {
+      const w = bin.getFloat32(base + i * stride + 4 * c, true)
+      if (!(w >= 0 && w <= 1)) fail('skin', `accessors[${idx}] weight ${w} outside [0, 1]`)
+      sum += w
+    }
+    if (Math.abs(sum - 1) > weightTolerance) fail('skin', `accessors[${idx}] vertex ${i} weights sum to ${sum}`)
+  }
+}
+
+/** Every reachable node's world matrix (empty for the rest). */
+function worldsOf(d: Doc): number[][] {
+  const out = new Array<number[]>(d.nodes.length).fill([])
+  const identity = compose([0, 0, 0], [0, 0, 0, 1], [1, 1, 1])
+  const stack = d.roots.map((node) => ({ node, parent: identity }))
+  for (let f = stack.pop(); f; f = stack.pop()) {
+    const w = multiply(f.parent, d.nodes[f.node].local)
+    if (!w.every((v) => Number.isFinite(v))) fail('scene_graph', `nodes[${f.node}] world transform overflows`)
+    out[f.node] = w
+    for (const c of d.nodes[f.node].children) stack.push({ node: c, parent: w })
+  }
+  return out
+}
+
+// Merges one skinned primitive at rest: each vertex is
+// Σ wᵢ · (joint world · inverse bind)ᵢ · v. glTF ignores the skinned node's
+// own transform, so it takes no part.
+function extendSkinned(d: Doc, b: { min: number[]; max: number[] }, p: Primitive, s: Skin, worlds: number[][], budget: { left: number }): void {
+  const pos = d.accessors[p.position]
+  budget.left -= pos.count
+  if (budget.left < 0) fail('limit', `POSITION accessors read more vertices than the BIN chunk holds (${binVertices(d)})`)
+  const joint = s.joints.map((n, k) => multiply(worlds[n], s.inverseBind[k]))
+  const jacc = d.accessors[p.joints]
+  const wacc = d.accessors[p.weights]
+  const pl = elementLayout(d, pos)
+  const jl = elementLayout(d, jacc)
+  const wl = elementLayout(d, wacc)
+  const bin = d.bin as DataView
+  for (let i = 0; i < pos.count; i++) {
+    const v = [0, 1, 2].map((c) => bin.getFloat32(pl.base + i * pl.stride + 4 * c, true))
+    const out = [0, 0, 0]
+    for (let k = 0; k < 4; k++) {
+      const w = bin.getFloat32(wl.base + i * wl.stride + 4 * k, true)
+      if (w === 0) continue
+      const j = jacc.component === compUByte ? bin.getUint8(jl.base + i * jl.stride + k) : bin.getUint16(jl.base + i * jl.stride + 2 * k, true)
+      const m = joint[j]
+      out[0] += w * (m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12])
+      out[1] += w * (m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13])
+      out[2] += w * (m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14])
+    }
+    for (let c = 0; c < 3; c++) {
+      b.min[c] = Math.min(b.min[c], out[c])
+      b.max[c] = Math.max(b.max[c], out[c])
+    }
+  }
+}
+
+// The union of every skin's joints by node index, each with its nearest joint
+// ancestor. The fingerprint covers the structure only: SHA-256 over uint32 LE
+// [count, (node, parent or 0xFFFFFFFF)…].
+function skeletonOf(d: Doc): Skeleton | null {
+  if (d.skins.length === 0) return null
+  const isJoint = new Set<number>()
+  for (const s of d.skins) for (const j of s.joints) isJoint.add(j)
+  const parents = new Array<number>(d.nodes.length).fill(-1)
+  d.nodes.forEach((n, i) => {
+    for (const c of n.children) parents[c] = i
+  })
+  const nodes = [...isJoint].sort((a, b) => a - b)
+  const words = new DataView(new ArrayBuffer(4 + 8 * nodes.length))
+  words.setUint32(0, nodes.length, true)
+  const joints = nodes.map((node, i) => {
+    let parent: number | null = null
+    for (let a = parents[node]; a >= 0; a = parents[a]) {
+      if (isJoint.has(a)) {
+        parent = a
+        break
+      }
+    }
+    words.setUint32(4 + 8 * i, node, true)
+    words.setUint32(8 + 8 * i, parent ?? 0xffffffff, true)
+    return { node, parent, name: [...d.nodes[node].name].slice(0, maxJointNameRunes).join('') }
+  })
+  const hex = Array.from(sha256(new Uint8Array(words.buffer)).subarray(0, 8), (x) => x.toString(16).padStart(2, '0')).join('')
+  return { joints, fingerprint: `s1-${hex}` }
 }
 
 type LocalBounds = { min: number[]; max: number[] }
@@ -674,6 +914,7 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   // whose POSITION accessors do not overlap never reads more vertices than
   // its BIN chunk holds.
   const budget = { left: binVertices(d) }
+  const worlds = d.skins.length > 0 ? worldsOf(d) : []
 
   const identity = compose([0, 0, 0], [0, 0, 0, 1], [1, 1, 1])
   const stack: { node: number; world: number[] }[] = []
@@ -692,7 +933,8 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
         count += triangles(d, p, maxIndex)
         if (count > limits.maxTriangles) fail('limit', `more than ${limits.maxTriangles} triangles`)
         uv &&= p.uv
-        extend(bounds, lb, world)
+        if (n.skin >= 0) extendSkinned(d, bounds, p, d.skins[n.skin], worlds, budget)
+        else extend(bounds, lb, world)
         const m = p.material >= 0 ? d.materials[p.material] : null
         if (m?.isSlot && !slots.has(m.slot)) {
           slots.add(m.slot)
@@ -709,6 +951,8 @@ function manifestOf(d: Doc, limits: Limits): Manifest {
   if (manifest.anchors.length > limits.maxAnchors) fail('limit', `${manifest.anchors.length} anchors, limit ${limits.maxAnchors}`)
   manifest.triangles = count
   manifest.uv = uv
+  const skeleton = skeletonOf(d)
+  if (skeleton) manifest.skeleton = skeleton
   return normalize(manifest)
 }
 
@@ -761,8 +1005,8 @@ function near(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
- * The contract comparison: after sorting by id, ids, hints, the triangle count
- * and uv are exact; bounds and anchor positions agree within TOLERANCE. y is
+ * The contract comparison: after sorting by id, ids, hints, the triangle count,
+ * uv and the skeleton are exact; bounds and anchor positions agree within TOLERANCE. y is
  * the server's: one computed before uv was added carries none, and uv then
  * goes uncompared.
  */
@@ -773,6 +1017,7 @@ export function matches(x: Manifest, y: Manifest): boolean {
   const b = copy(y)
   return (
     (b.uv === undefined || a.uv === b.uv) &&
+    sameSkeleton(a.skeleton, b.skeleton) &&
     a.triangles === b.triangles &&
     near(a.bounds.min, b.bounds.min) &&
     near(a.bounds.max, b.bounds.max) &&
@@ -782,5 +1027,14 @@ export function matches(x: Manifest, y: Manifest): boolean {
     a.parts.every((p, i) => p === b.parts[i]) &&
     a.anchors.length === b.anchors.length &&
     a.anchors.every((s, i) => s.id === b.anchors[i].id && near(s.position, b.anchors[i].position))
+  )
+}
+
+function sameSkeleton(a: Skeleton | undefined, b: Skeleton | undefined): boolean {
+  if (!a || !b) return a === b
+  return (
+    a.fingerprint === b.fingerprint &&
+    a.joints.length === b.joints.length &&
+    a.joints.every((j, i) => j.node === b.joints[i].node && j.name === b.joints[i].name && j.parent === b.joints[i].parent)
   )
 }

@@ -35,12 +35,13 @@ export function nextOrder(objects: readonly SceneObject[], parent: string | null
 export const groundBuiltin = 'ground@1'
 
 /**
- * An instance of a model revision placed from the asset library, last among
- * root objects, named after the asset (an object name holds 80 characters),
- * with the materials the asset was saved with.
+ * An instance of a model placed from the asset library (a revision) or the
+ * built-in models, last among root objects, named after the asset or entry
+ * (an object name holds 80 characters), with the materials it was saved
+ * with or the entry's.
  */
 export function newModelInstance(
-  revision: string,
+  model: NonNullable<SceneObject['model']>,
   name: string,
   placed: Pick<SceneTransform, 'position' | 'rotation'>,
   objects: readonly SceneObject[],
@@ -56,7 +57,7 @@ export function newModelInstance(
     transform: { ...identity, ...placed },
     visible: true,
     locked: false,
-    model: { content_revision_id: revision },
+    model: { ...model },
     material_slots: structuredClone(materials),
   }
 }

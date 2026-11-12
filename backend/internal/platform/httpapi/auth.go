@@ -107,6 +107,7 @@ type handlers struct {
 	creativeImageEdit   *creativeimageedit.Service
 	creativeMedia       *creativemedia.Service
 	sceneTextures       *creativescene.BuiltinTextures
+	sceneModels         SceneModelFiles
 	creativeGeneration  *creativegeneration.Product
 	creativeAgent       *creativeagent.Service
 	realtime            *realtime.Server

@@ -317,6 +317,11 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 		if err := decodeInput(raw, &op); err != nil {
 			return nil, err
 		}
+		if op.MaterialSlots != nil {
+			if err := writeSlots(*op.MaterialSlots, "material_slots"); err != nil {
+				return nil, err
+			}
+		}
 		return &op, op.checkScope()
 	}
 	return nil, invalid("场景不支持操作 %q", head.Op)

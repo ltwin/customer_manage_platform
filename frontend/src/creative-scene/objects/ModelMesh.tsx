@@ -10,6 +10,7 @@ import { resolvePart } from '../materials/resolve.ts'
 import { drawnGeometries } from '../materials/instances.ts'
 import { raycastPieces } from '../placement/raycast.ts'
 import { pieceViews } from '../render/pieces.ts'
+import { SkinnedModel, type SkinLook } from './SkinnedModel.tsx'
 import type { SceneObject } from '../api.ts'
 
 // A model instance. Every instance of a revision draws the same cached
@@ -20,7 +21,8 @@ import type { SceneObject } from '../api.ts'
 // A part is the model's parts of one slot merged (models/merge.ts), one draw.
 // What must draw as before the merge draws its pieces' range views instead: a
 // see-through slot and a ghost, which three sorts mesh by mesh. Picking goes
-// piece by piece (placement/raycast.ts).
+// piece by piece (placement/raycast.ts). A skinned model's skeleton draws
+// beside its parts, posed by its object (objects/SkinnedModel.tsx).
 
 // Code-built models are often open (a lathe without caps), so both sides draw.
 const clayMaterial = new MeshStandardMaterial({ color: clay, roughness: 0.92, metalness: 0, side: DoubleSide })
@@ -35,7 +37,8 @@ type Slots = NonNullable<SceneObject['material_slots']>
 
 /** slots: the instance's material slots in the material looks, null for clay. */
 /** boundsWhileLoading: a ghost outlines the manifest's bounds until its GLB is in, instead of drawing nothing. */
-export function ModelMesh({ revision, summary, edge, ghost = false, wire = false, slots = null, boundsWhileLoading = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; ghost?: boolean; wire?: boolean; slots?: Slots | null; boundsWhileLoading?: boolean }) {
+/** objectId: the scene object it draws, whose pose a skinned model takes. */
+export function ModelMesh({ revision, summary, edge, objectId, ghost = false, wire = false, slots = null, boundsWhileLoading = false }: { revision: string; summary: SceneModel | undefined; edge: string | null; objectId?: string; ghost?: boolean; wire?: boolean; slots?: Slots | null; boundsWhileLoading?: boolean }) {
   const usable = summary?.usable !== false
   // A model already in the cache draws from the first frame (an offscreen
   // screenshot renders exactly once).
@@ -59,16 +62,21 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
   if (!usable || (loaded?.revision === revision && !loaded.parts)) return <BoundsBox bounds={bounds} edge={edge} unavailable />
   // While a new revision loads, the previous one stays on screen.
   if (!loaded?.parts) return ghost && !boundsWhileLoading ? null : <BoundsBox bounds={bounds} edge={edge} ghost={ghost} />
+  const hints = new Map((summary?.manifest?.slots ?? []).map((x) => [x.id, x.hint]))
+  const look: SkinLook = ghost ? { kind: 'ghost' } : wire ? { kind: 'wire' } : slots ? { kind: 'slots', slots, hints } : { kind: 'clay' }
+  const skeleton = loaded.parts.skeleton && (
+    <SkinnedModel key={loaded.revision} modelKey={loaded.revision} skeleton={loaded.parts.skeleton} summary={summary} objectId={ghost ? undefined : objectId} look={look} edge={edge} clay={clayMaterial} ghost={ghostMaterial} />
+  )
   if (wire && !ghost)
     return (
       <group>
         {loaded.parts.meshes.map((m, i) => (
           <WireMesh key={i} geometry={m.geometry} edge={edge} raycast={raycastPieces} />
         ))}
+        {skeleton}
       </group>
     )
   if (slots && !ghost) {
-    const hints = new Map((summary?.manifest?.slots ?? []).map((x) => [x.id, x.hint]))
     return (
       <group>
         {loaded.parts.meshes.map((m, i) => {
@@ -79,6 +87,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
             </SlotMesh>
           ))
         })}
+        {skeleton}
       </group>
     )
   }
@@ -91,6 +100,7 @@ export function ModelMesh({ revision, summary, edge, ghost = false, wire = false
           </mesh>
         )),
       )}
+      {skeleton}
     </group>
   )
 }

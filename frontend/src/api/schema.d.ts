@@ -1169,9 +1169,29 @@ export interface paths {
         };
         /**
          * 内置贴图材质的图片文件（内置贴图库）；支持 HEAD
-         * @description file 是材质目录里 textured 条目 files[].name 的值（内容的 sha256 加 .jpg）。不按账号区分内容， 需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256， Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。 file 格式不对或不在目录里返回 404 not_found；在目录里但对象存储里没有（未导入）或读取失败返回 503 creative_texture_unavailable。
+         * @description file 是材质目录里 textured 条目 files[].name 的值（内容的 sha256 加 .jpg 或 .png，含 listed 为 false 的条目）。不按账号区分内容， 需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256， Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。 file 格式不对或不在目录里返回 404 not_found；在目录里但对象存储里没有（未导入）或读取失败返回 503 creative_texture_unavailable。
          */
         get: operations["getCreativeSceneTexture"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/scene-models/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 内置模型的 GLB 文件（内置模型库）；支持 HEAD
+         * @description file 是内置模型清单里某个条目 glb.name 的值（内容的 sha256 加 .glb）。不按账号区分内容， 需要 Bearer 认证与创意空间读取权限。成功时原样返回文件，ETag 为 sha256， Cache-Control 为 private, max-age=31536000, immutable；If-None-Match 相同时返回 304。 file 格式不对或不在清单里返回 404 not_found；在清单里但对象存储里没有（未导入）或读取失败返回 503 creative_model_file_unavailable。
+         */
+        get: operations["getCreativeSceneModel"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3394,6 +3414,7 @@ export interface components {
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
                 import?: components["schemas"]["CreativeModelImport"];
+                rig?: components["schemas"]["CreativeModelRig"];
             };
         };
         /** @description 响应里的内容载荷。资产列表与资产读取中的模型不含代码（CreativeModelPreviewPayload）；代码经 GET /creative/content-revisions/{id} 读取。 */
@@ -3498,6 +3519,7 @@ export interface components {
                 /** @description 库副本复制自哪个模型修订；有它就是库副本 */
                 source_revision_id?: string;
                 import?: components["schemas"]["CreativeModelImport"];
+                rig?: components["schemas"]["CreativeModelRig"];
             };
         };
         /** @description 面级材质分配（data: 模型内容「面级材质分配」）：把网格的部分三角形分到别的槽位。GLB 不改写，渲染端加载时按身份和拓扑指纹套用； 服务端只校验外形与上限（区间合计 ≤ 8192，序列化后 ≤ 128 KiB，有效槽位合计 ≤ 32）。 */
@@ -3537,6 +3559,45 @@ export interface components {
             }[];
             /** @description 每个三角网格都带 TEXCOORD_0 时为 true；贴图选 uv 映射而这里为 false 时，没有 UV 的网格按三平面投影显示。修订 v18 之前写入的模型没有这个字段，表示不知道。 */
             uv?: boolean;
+            skeleton?: components["schemas"]["CreativeModelSkeleton"];
+        };
+        /** @description 骨架摘要（data: 模型内容「骨架与人形映射」），GLB 有 skins 时由服务端算出。joints 是所有 skin 的关节的并集，按节点下标升序； fingerprint 只看结构（关节与父关节），不含名称和静止姿势。 */
+        CreativeModelSkeleton: {
+            joints: {
+                /** @description 关节的节点下标 */
+                node: number;
+                /** @description 最近的、也是关节的祖先节点下标；没有时为 null */
+                parent: number | null;
+                /** @description 节点名（GLB JSON 原文，可为空串），只作显示 */
+                name: string;
+            }[];
+            fingerprint: string;
+        };
+        /** @description 骨骼的标准人形映射与节点约束（data: 模型内容「骨架与人形映射」、patterns: 标准人形骨骼），只在 manifest 有 skeleton 时允许。 humanoid 缺省表示非人形骨架。 */
+        CreativeModelRig: {
+            /** @description 标准骨骼名（VRM 1.0 humanoid，如 leftUpperArm）到关节的节点下标；必需骨骼齐全、互不重复、满足层级嵌入。 */
+            humanoid?: {
+                [key: string]: number;
+            };
+            constraints?: components["schemas"]["CreativeModelConstraint"][];
+        };
+        /** @description 节点约束，语义同 VRMC_node_constraint 1.0；node 与 source 都是关节，依赖无环。 */
+        CreativeModelConstraint: {
+            node: number;
+            /** @enum {string} */
+            kind: "roll" | "aim" | "rotation";
+            source: number;
+            weight: number;
+            /**
+             * @description kind = roll 时必有
+             * @enum {string}
+             */
+            roll_axis?: "X" | "Y" | "Z";
+            /**
+             * @description kind = aim 时必有
+             * @enum {string}
+             */
+            aim_axis?: "PositiveX" | "NegativeX" | "PositiveY" | "NegativeY" | "PositiveZ" | "NegativeZ";
         };
         /** @description 几何模块的一个参数定义。number / integer 必须有 min 与 max；enum 必须有 options。 */
         CreativeModelParamSpec: {
@@ -5016,14 +5077,15 @@ export interface components {
             marker_id: string;
             frame: number;
         };
-        /** @description 读不到的内置贴图文件名（creative_texture_unavailable）。 */
+        /** @description 读不到的内置贴图或内置模型文件名（creative_texture_unavailable、creative_model_file_unavailable）。 */
         CreativeSceneTextureDetails: {
             file: string;
         };
-        /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 */
+        /** @description 指出请求里出错的字段，例如 operations[0].updates[0].material_slots.main.maps.base_color.content_revision_id； 恢复旧修订时为场景里的路径（objects[3].material_slots…）。content_revision_id 是该字段指向、但不可用的内容。 reason 是不成立的原因，目前只用于骨骼映射与约束（rig.humanoid.leftFoot 的上级不是 leftLowerLeg 等）。 */
         CreativeFieldDetails: {
             field: string;
             content_revision_id?: string;
+            reason?: string;
         };
         CreativeLimitDetails: {
             limit: number;
@@ -7618,6 +7680,8 @@ export interface components {
             name_hint: string | null;
             /** @description 面级材质分配；没有时为 null。编辑器加载 GLB 后按它拆分槽位。 */
             faces: components["schemas"]["CreativeModelFaces"] | null;
+            /** @description 带骨骼的模型的人形映射与节点约束；没有骨架或没有 rig 时省略。 */
+            rig?: components["schemas"]["CreativeModelRig"];
         };
         CreativeScene: {
             environment: components["schemas"]["CreativeSceneEnvironment"];
@@ -7845,9 +7909,11 @@ export interface components {
             /** @description 在表面上投影；只在灯本身 cast_shadow 为 true、表面接收阴影时生效。 */
             cast_shadow?: boolean;
         };
-        /** @description model_instance 引用的模型修订。快照里只有 content_revision_id；提交时可以写 ref，指向本批之前的 commit_model。两者只能有一个。 */
+        /** @description model_instance 引用的模型。快照里是 content_revision_id（账号的模型修订）或 builtin（data: 内置模型库的条目 ID，如 body_female@1）； 提交时还可以写 ref，指向本批之前的 commit_model。三者只能有一个。 */
         CreativeSceneModelRef: {
             content_revision_id?: string;
+            /** @description 内置模型的条目 ID；不进引用表，实例不能做面级材质分配、不能存入资产库。 */
+            builtin?: string;
             ref?: string;
         };
         CreativeSceneTransform: {
@@ -8137,6 +8203,8 @@ export interface components {
             op: "set_instance_model";
             object_id: string;
             model: components["schemas"]["CreativeSceneModelRef"];
+            /** @description 可选。给出时整体替换这些实例的 material_slots，与模型引用写入同一个内容单元；不给时保留原值。男、女素体互换时带目标素体的 materials。 */
+            material_slots?: components["schemas"]["CreativeSceneMaterialSlots"];
             /**
              * @default this
              * @enum {string}
@@ -8711,6 +8779,8 @@ export interface components {
             mount: "floor" | "wall" | "ceiling" | "free";
             import: components["schemas"]["CreativeModelImport"];
             materials: components["schemas"]["CreativeSceneMaterialSlots"];
+            /** @description 可选，只在 GLB 带骨架时允许：标准人形映射与节点约束（节点下标指向上传的 GLB）。带骨架而不传时按非人形骨架保存。 */
+            rig?: components["schemas"]["CreativeModelRig"];
             target: components["schemas"]["CreativeUploadAssetTarget"];
         };
         CreateCreativeAssetFromGLBRequest: {
@@ -11366,13 +11436,54 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 贴图文件 */
+            /** @description 贴图文件，媒体类型随扩展名 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            /** @description 与 If-None-Match 相同，未修改 */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeSceneModel: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description GLB 文件 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "model/gltf-binary": string;
                 };
             };
             /** @description 与 If-None-Match 相同，未修改 */

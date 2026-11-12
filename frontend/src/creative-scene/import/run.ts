@@ -33,7 +33,7 @@ export type ImportJob = {
   slots: ReadonlyMap<string, ConvertedSlot>
   /** Draws the card thumbnail with these slots, each image already uploaded as revisions has it (file image → revision). */
   thumbnail(materials: Slots, revisions: ReadonlyMap<number, string>): Promise<Blob>
-  fields: Pick<ImportPayload, 'import' | 'mount' | 'target'>
+  fields: Pick<ImportPayload, 'import' | 'mount' | 'target' | 'rig'>
 }
 
 export type RunState =

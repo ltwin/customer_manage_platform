@@ -23,6 +23,8 @@ export type MaterialEntry = {
   size_m?: number
   maps?: BuiltinMaps
   source?: { site: string; asset: string; author: string; license: string }
+  /** false: a built-in model's own texture, kept out of the picker and the library's built-in source (still a preset scenes use). */
+  listed?: boolean
 }
 type RawEntry = Omit<MaterialEntry, 'params'> & { params?: Record<string, ParamSpec>; defaults?: Record<string, ParamValue> }
 export type MaterialCategory = { id: string; label: string }

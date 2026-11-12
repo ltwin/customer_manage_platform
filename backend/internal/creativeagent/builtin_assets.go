@@ -14,20 +14,32 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// Built-in textured materials (C5c2 data: 内置贴图库「助手」) are the
-// platform's catalog, not account content: read_asset gives one by
-// builtin_id without the library grant, and its thumbnail rides the same
-// image locator as an account image, prefixed so it never reaches the media
-// store or the consent's content list.
-const builtinImagePrefix = "builtin:"
+// Built-in textured materials (C5c2 data: 内置贴图库「助手」) and built-in
+// models (data: 内置模型库「助手」) are the platform's catalog, not account
+// content: read_asset gives one by builtin_id without the library grant, and
+// its thumbnail rides the same image locator as an account image, prefixed so
+// it never reaches the media store or the consent's content list. The two
+// catalogs name their entries apart, so each has its own prefix.
+const (
+	builtinImagePrefix      = "builtin:"
+	builtinModelImagePrefix = "builtin-model:"
+)
 
-func builtinImage(id string) bool { return strings.HasPrefix(id, builtinImagePrefix) }
+func builtinImage(id string) bool {
+	return strings.HasPrefix(id, builtinImagePrefix) || strings.HasPrefix(id, builtinModelImagePrefix)
+}
 
 // agentImage is an image the model is sent: a built-in thumbnail from the
 // binary, anything else from the media store.
 func (s *Service) agentImage(ctx context.Context, scope store.AccountScope, id string, maxBytes int64) (*llmgateway.ImageInput, error) {
-	if material, ok := strings.CutPrefix(id, builtinImagePrefix); ok {
-		thumb, ok := creativescene.BuiltinThumbnail(material)
+	if builtinImage(id) {
+		var thumb []byte
+		var ok bool
+		if model, isModel := strings.CutPrefix(id, builtinModelImagePrefix); isModel {
+			thumb, ok = creativescene.BuiltinModelThumbnail(model)
+		} else {
+			thumb, ok = creativescene.BuiltinThumbnail(strings.TrimPrefix(id, builtinImagePrefix))
+		}
 		if !ok {
 			return nil, creativecontent.ErrNotFound
 		}
@@ -41,13 +53,18 @@ func (s *Service) agentImage(ctx context.Context, scope store.AccountScope, id s
 	return s.images.AgentImage(ctx, scope, id, maxBytes)
 }
 
-// readBuiltinAsset is read_asset of a built-in material: its facts and slot,
-// its parameters' defaults, and its thumbnail on the terms of a material
+// readBuiltinAsset is read_asset of a built-in material (its facts and slot,
+// its parameters' defaults) or a built-in model (its facts, slots and the
+// materials placing it writes), with its thumbnail on the terms of a material
 // asset's.
 func (s *Service) readBuiltinAsset(ctx context.Context, scope store.AccountScope, access readAccess, id string) (map[string]any, error) {
-	facts, ok := creativescene.BuiltinMaterialByID(id)
-	if !ok {
-		return nil, refuseTool("没有内置材质 %q；可用的有：%s", id, strings.Join(creativescene.BuiltinMaterialIDs(), "、"))
+	result, image := map[string]any{"builtin_id": id}, ""
+	if facts, ok := creativescene.BuiltinMaterialByID(id); ok {
+		result["material"], image = facts, builtinImagePrefix+id
+	} else if facts, ok := creativescene.BuiltinModelByID(id); ok {
+		result["model"], image = facts, builtinModelImagePrefix+id
+	} else {
+		return nil, refuseTool("没有内置材质或内置模型 %q；可用的有：%s", id, strings.Join(append(creativescene.BuiltinMaterialIDs(), creativescene.BuiltinModelIDs()...), "、"))
 	}
 	var consent Consent
 	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -57,14 +74,13 @@ func (s *Service) readBuiltinAsset(ctx context.Context, scope store.AccountScope
 	}); err != nil {
 		return nil, err
 	}
-	result := map[string]any{"builtin_id": id, "material": facts}
 	switch {
 	case !access.imageCapable():
 		result["thumbnail_omitted"] = "model_cannot_see_images"
 	case !consentHas(consent, "image_preview"):
 		result["thumbnail_omitted"] = "image_preview_not_allowed"
 	default:
-		result["image_revision_id"] = builtinImagePrefix + id
+		result["image_revision_id"] = image
 	}
 	return result, nil
 }

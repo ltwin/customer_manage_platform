@@ -156,10 +156,10 @@ test('external images and buffers are refused before the loader sees the file', 
   )
 })
 
-test('KTX2, skins, files that are not GLB and images in other formats are refused', async () => {
+test('KTX2, files that are not GLB and images in other formats are refused', async () => {
+  // Skins are taken since scene-skinned-humanoid (creative-scene-import-rig.test.ts).
   await rejects(textured({ bufferView: 1, mimeType: 'image/ktx2' }), 'ktx2')
   await rejects(textured(null, { extensionsUsed: ['KHR_texture_basisu'] }), 'ktx2')
-  await rejects(textured(null, { skins: [{ joints: [0] }] }), 'skinned')
   await rejects(new TextEncoder().encode('{"asset":{"version":"2.0"}}').buffer as ArrayBuffer, 'not_glb')
   await rejects(textured({ uri: dataURL(new Uint8Array([1, 2, 3, 4]), 'image/png') }), 'image_format')
   await rejects(textured({ bufferView: 1, mimeType: 'image/jpeg' }), 'image_format')

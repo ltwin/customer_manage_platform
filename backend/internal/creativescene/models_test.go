@@ -38,6 +38,12 @@ func basicManifest(t *testing.T) creativeglb.Manifest {
 // its upload id.
 func stage(t *testing.T, f fixture, scope store.AccountScope, kind string) string {
 	t.Helper()
+	return stageWith(t, f, scope, kind, basicManifest(t))
+}
+
+// stageWith is stage with the manifest a staged model carries.
+func stageWith(t *testing.T, f fixture, scope store.AccountScope, kind string, manifest creativeglb.Manifest) string {
+	t.Helper()
 	account, blob, upload := scope.AccountID(), "ccbl_"+uuid.NewString(), "ccup_"+uuid.NewString()
 	mime := map[string]string{"model": "model/gltf-binary", "image": "image/png"}[kind]
 	if _, err := f.db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,sha256,byte_size,mime,state,verified_at)
@@ -46,7 +52,7 @@ func stage(t *testing.T, f fixture, scope store.AccountScope, kind string) strin
 	}
 	draft := creativecontent.Draft{Kind: kind}
 	if kind == "model" {
-		payload, err := json.Marshal(map[string]any{"format": "glb", "manifest": basicManifest(t)})
+		payload, err := json.Marshal(map[string]any{"format": "glb", "manifest": manifest})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { builtinMaterial, builtinMaterials, builtinSlot, filterBuiltin, groupBuiltin } from '../src/creative-canvas/assets/builtin.ts'
+import { builtinCategories, builtinMaterial, builtinMaterials, builtinSlot, filterBuiltin, groupBuiltin } from '../src/creative-canvas/assets/builtin.ts'
 
 const ids = (items: readonly { id: string }[]) => items.map((m) => m.id)
 
@@ -16,6 +16,11 @@ test('every built-in material is listed with its category, size and thumbnail', 
   assert.equal(brick.source.license, 'CC0')
   for (const m of builtinMaterials) assert.ok(existsSync(fileURLToPath(m.thumbnail)), `${m.id} has no thumbnail`)
   assert.deepEqual(builtinSlot('red_brick@1'), { preset: 'red_brick@1', params: {} })
+  // A built-in model's own textures are not offered, but are there for the slots that use them.
+  assert.ok(!builtinMaterials.some((m) => m.id === 'ubc_female_body@1'))
+  assert.equal(builtinMaterial('ubc_female_body@1')?.label, '女素体皮肤')
+  assert.ok(!builtinCategories.some((c) => c.id === 'character'), 'no empty 角色 button')
+  assert.equal(builtinCategories.length, 10)
 })
 
 test('the filter matches name, category and source asset, case aside, every word', () => {

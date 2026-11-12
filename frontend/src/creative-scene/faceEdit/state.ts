@@ -49,6 +49,8 @@ export function faceEditBlock(o: SceneObject | undefined, usable: boolean, model
   if (o.kind !== 'model_instance' && o.kind !== 'primitive') return '面编辑只用于模型实例和基础体'
   if (o.locked) return '物件已锁定，解锁后才能面编辑'
   if (!o.visible) return '物件已隐藏，显示后才能面编辑'
+  // 面分配按静态网格拆分，套到蒙皮网格上会失效（design「带骨骼的模型不做面级材质分配」）。
+  if (o.kind === 'model_instance' && (o.model?.builtin || model?.manifest?.skeleton)) return '带骨骼的模型和内置模型不能面编辑，材质按槽位整体指定'
   if (!faceSource(o, model) || !usable) return '模型不可用，不能面编辑'
   return null
 }

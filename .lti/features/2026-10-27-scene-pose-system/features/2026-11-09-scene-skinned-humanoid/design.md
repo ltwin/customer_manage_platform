@@ -39,7 +39,7 @@
 **姿态在本次的状态**：骨骼通道在子项 4 才有，本次的「当前姿态」只有两个来源：
 
 - 静止姿势：缺省。
-- 编辑器内存里的测试姿态：经 `__sceneTest.setPose(objectId, pose)` 写入，按物件 ID 存放，不进快照、不进撤销。子项 4 把来源换成骨骼通道的求值结果，渲染路径不变。
+- 编辑器内存里的测试姿态：经 `__scenePose.set(objectId, pose)` 写入（e2e 页面设了 `__sceneTest` 时才挂出，同 `__sceneGPU`），按物件 ID 存放，不进快照、不进撤销。子项 4 把来源换成骨骼通道的求值结果，渲染路径不变。
 
 所有渲染入口都从同一个「当前姿态」读，保证视口、追踪层、包围盒和导出一致。
 
@@ -117,6 +117,7 @@ sequenceDiagram
   - 当前帧在用的条目（场景里有实例正用这个模型键和姿态）钉住，不淘汰；其余按最近使用淘汰，淘汰时释放几何和 BVH。
   - 钉住的条目本身超过预算时不再缓存新条目，用完即释放，并在控制台记一条警告。
   - 追踪层的 GPU 段归 `render/trace` 现有的缓存管，不计入这里。
+  - 静止姿势的几何（`rest`）和它的拾取 BVH 是模型加载结果的一部分，与静态 part 一样归 `ModelCache` 管：随模型的 `forget` / `clear` 释放，不计入这里。2026-11-12 评审指出移除实例后它们仍在缓存里；所有模型的 part 都是这样，不是蒙皮特有，按设计保留。
 
 ### 当前姿态与各渲染入口的一致性
 
@@ -213,7 +214,8 @@ worker（上传 model）：
   - `downloadGLB` 遇到 `builtin:` 键时，经 `authorizedFetch` 读 `/creative/scene-models/<file>`。
   - 503 时按「模型加载失败」处理：视口占位并提示，导出失败。
 - **放置**：
-  - 「添加 > 素体」和资产面板「素体」两个入口，都按条目写 `model: {builtin}` 和 `material_slots = materials`，经现有 `newModelInstance`（改为接收模型引用）。
+  - 场景资产面板模型类的「内置」来源（与「我的」切换，同内置材质，Epic 修订 v8）和「添加 > 素体」快捷入口，都按条目写 `model: {builtin}` 和 `material_slots = materials`，经现有 `newModelInstance`（改为接收模型引用）。
+  - 资产库页面：左侧树在「内置材质」旁加「内置模型」，网格只读，按名称、品类本地过滤；查看浮窗（`BuiltinViewer`）对内置模型显示 3D 预览（经 `preview/` 按模型键加载）、来源与授权。
   - 属性栏的模型区：内置模型显示名称、来源与授权，另有「换成男素体 / 女素体」。它发一个 `set_instance_model`，带上目标条目的 `materials` 作为 `material_slots`（评审第 6 项）：摄影师自定义过的材质一并重置；撤销按内容单元恢复原模型和原材质。助手换内置模型而没写材质时，工具层同样补上。
 
 ### 素体的生成
@@ -296,7 +298,7 @@ worker（上传 model）：
 | `backend/internal/creativescene/builtin_models.go` | 新增 | 清单加载、校验、对象存储、`Import`、`Missing`、`Open`、`BuiltinModels`、`BuiltinModelByID`、缩略图 |
 | `backend/internal/creativescene/models.json`、`builtin_thumbnails/models/` | 新增 | 两个素体（脚本生成） |
 | `backend/internal/platform/config/config.go` | 修改 | `SCENE_MODEL_LOCAL_ROOT` |
-| `backend/internal/platform/httpapi/creative_scene_models.go` | 新增 | `GET`/`HEAD /creative/scene-models/{file}`，503 `creative_model_file_unavailable` |
+| `backend/internal/platform/httpapi/creative_scene_model_files.go` | 新增 | `GET`/`HEAD /creative/scene-models/{file}`，503 `creative_model_file_unavailable` |
 | `backend/internal/platform/httpapi/creative_canvas.go`、`router.go` | 修改 | 注册路由、依赖 |
 | `backend/cmd/server/main.go` | 修改 | 组装内置模型存储，后台检查缺失 |
 | `backend/cmd/creativectl/main.go`、`models.go`（新增）、`textures.go` | 修改 | `models import/check`；`textures import --dir` |
@@ -310,53 +312,81 @@ worker（上传 model）：
 | `frontend/src/creative-scene/rig/constraints.ts` | 新增 | VRM 节点约束 roll / aim / rotation；按契约的依赖（aim 含被约束节点父链）拓扑排序，与 `rig.go` 的成环判定共用测试向量 |
 | `frontend/src/creative-scene/rig/template.ts` | 新增 | 从解析结果分出骨架模板，克隆实例 |
 | `frontend/src/creative-scene/rig/skin.ts` | 新增 | CPU 蒙皮、静态化几何、姿态哈希、缓存 |
-| `frontend/src/creative-scene/rig/pose.ts` | 新增 | 当前姿态的存放（测试姿态），`__sceneTest.setPose` |
+| `frontend/src/creative-scene/rig/pose.ts` | 新增 | 当前姿态的存放（测试姿态），`__scenePose.set`；把姿态与约束套到实例上 |
 | `frontend/src/creative-scene/models/cache.ts:ModelCache.load`、`downloadGLB`、`partsOf` | 修改 | 分出骨架模板；`builtin:` 键走新接口；合并时跳过蒙皮网格 |
 | `frontend/src/creative-scene/models/catalog.ts` | 新增 | 内置模型清单副本与摘要 |
 | `frontend/src/creative-scene/models/key.ts` | 新增 | `modelKey(ref)` |
-| `frontend/src/creative-scene/objects/SceneObjects.tsx` | 修改 | 按模型键分发；有骨架时渲染 `SkinnedModel` |
+| `frontend/src/creative-scene/objects/SceneObjects.tsx`、`objects/ModelMesh.tsx` | 修改 | 按模型键分发；`ModelMesh` 在部件加载后、有骨架时于静态部件旁渲染 `SkinnedModel`（`SceneObjects` 传物件 ID），加载、占位与换修订的处理不重复 |
 | `frontend/src/creative-scene/objects/SkinnedModel.tsx` | 新增 | 每个实例的骨架、求值、`SkinnedMesh`，向追踪层与拾取提供静态化几何 |
 | `frontend/src/creative-scene/objects/Outline.tsx` | 修改 | 蒙皮网格的轮廓用静态化几何 |
 | `frontend/src/creative-scene/render/trace/collect.ts:collectMeshes` | 修改 | 蒙皮网格取（静态化几何, 模型根矩阵）与带姿态的 `traceKey` |
 | `frontend/src/creative-scene/render/trace/base.ts:TraceBase.instances` | 修改 | 显式的实例矩阵优先于网格节点的 `matrixWorld` |
 | `frontend/src/creative-scene/faceEdit/` 入口、`panels/MaterialSlots.tsx` | 修改 | 带骨骼的模型不显示面分配 |
-| `frontend/src/creative-scene/placement/raycast.ts`、`placement/snap.ts`、`host/framing.ts:sceneBounds` | 修改 | 按模型键取摘要；带骨骼的用静态化几何的包围盒和 BVH |
-| `frontend/src/creative-scene/host/render.ts`、`host/pageExecutor.ts` | 修改 | 按模型键加载；导出等待静态化几何与段重建 |
+| `frontend/src/creative-scene/placement/raycast.ts`、`host/framing.ts:sceneBounds` | 修改 | 按模型键取摘要；带骨骼的用静态化几何的包围盒和 BVH（`raycastPosed`）；`placement/snap.ts` 只用 manifest 的包围盒放新模型，无需改 |
+| `frontend/src/creative-scene/host/render.ts` | 修改 | 按模型键加载；静态化几何在挂载的 layout effect 里同步算出，段重建由现有的 `base.ready()` 等待，`host/pageExecutor.ts` 无需改 |
 | `frontend/src/creative-scene/preview/cache.ts`、`preview/ModelPreview.tsx`、`library/thumbnail.ts` | 修改 | 带骨骼的模型按静止姿势显示与出缩略图 |
 | `frontend/src/creative-scene/sandbox/inspect.ts` | 修改 | 蒙皮子集预检与骨架摘要 |
+| `frontend/src/creative-scene/sandbox/gltf.ts:parseModelGLB` | 修改 | 解析结果带上对象到 GLB 节点下标的对照，供骨架模板定部件 ID |
 | `frontend/src/creative-scene/sandbox/host.ts` | 修改 | 代码模型的产物带 `skins` 时报错（与服务端一致） |
 | `frontend/src/creative-scene/import/parse.ts:precheck`、`parseImport` | 修改 | 放行蒙皮；关节上限；读 VRM 扩展与约束 |
 | `frontend/src/creative-scene/import/convert.ts:convert`、`dequantize`、`toBottomCenter` | 修改 | 保留关节；保留并换算权重；带骨骼时平移祖先节点 |
 | `frontend/src/creative-scene/import/write.ts:writeGLB` | 修改 | 节点下标回写、删去标记 |
 | `frontend/src/creative-scene/import/run.ts` | 修改 | 提交带 `rig` |
-| `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入 |
+| `frontend/src/creative-scene/SceneEditor.tsx`（文件选择）、`frontend/src/creative-canvas/assets/AssetImport.tsx`、`frontend/src/creative-canvas/editor/fileImport.ts:isModelFile` | 修改 | 接受 `.vrm`（VRM 是 GLB 容器，走同一条导入） |
+| `frontend/src/creative-scene/import/ImportModelDialog.tsx`、`import/RigMapping.tsx`（新增）、`import/mapping.ts`（新增） | 修改 | 映射结果、原因、手动指定、按非人形导入；`mapping.ts` 放校验与提交的纯逻辑，供单测直接调用 |
 | `frontend/src/creative-scene/SceneEditor.tsx`、`editing.ts:newModelInstance` | 修改 | 「添加 > 素体」；放置改为接收模型引用；查表改用模型键 |
-| `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 「素体」分区 |
-| `frontend/src/creative-scene/panels/ModelParams.tsx`、`panels/MaterialSlots.tsx` | 修改 | 内置模型的信息块与换男女；按模型键取槽位 |
+| `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 模型类的「我的 / 内置」切换，内置模型可拖入、双击放置 |
+| `frontend/src/creative-canvas/assets/LibraryTree.tsx`、`AssetsPage.tsx`、`BuiltinBrowser.tsx`、`builtin.ts`、`viewer/BuiltinViewer.tsx` | 修改 | 资产库的「内置模型」与查看浮窗的 3D 预览 |
+| `frontend/src/creative-scene/panels/BuiltinModelInfo.tsx`（新增）、`panels/MaterialSlots.tsx`、`panels/Properties.tsx`、`panels/AssetPanel.tsx`、`scene.css` | 修改 | 内置模型的信息块与换男女；按模型键取槽位；模型说明按来源；资产面板模型类的「内置」 |
+| `frontend/src/creative-scene/state/apply.ts`、`state/sync.ts`、`host/render.ts` | 修改 | `set_instance_model` 的 `material_slots` 在前端投影里生效；内置模型读不到时出图失败（AC-12） |
+| `frontend/src/creative-canvas/viewer/MediaViewer.tsx` | 修改 | 查看浮窗按模型键预览内置模型 |
 | `frontend/src/creative-scene/modelEdits.ts`、`saveModel.ts`、`faceEdit/state.ts`、`faceEdit/assign.ts`、`faceEdit/useFaceMeshes.ts`、`state/sync.ts`、`state/intents.ts` | 修改 | 按模型键查表；对内置模型关闭面分配、存入资产库、改参数 |
 | `frontend/src/creative-scene/materials/catalog.ts:texturedEntries`、`panels/LibraryPicker.tsx`、`creative-canvas/assets/builtin.ts` | 修改 | 过滤 `listed: false` |
 | `frontend/src/creative-scene/materials/images.ts` | 修改 | `tex:` 文件可为 `.png` |
-| `frontend/scripts/builtin-models/convert.mjs` | 新增 | 素体生成 |
-| `frontend/scripts/render-texture-thumbnails.mjs` | 修改 | 模型缩略图模式 |
-| `docs/dev/scene-texture-library.md`、`docs/dev/builtin-models.md`（新增） | 修改 | 导入与新增条目的做法 |
+| `frontend/scripts/builtin-models/convert.mjs`、`builtin-models/page.ts` | 新增 | 素体生成；`page.ts` 是脚本驱动的页面，调用导入的换算与写出 |
+| `frontend/scripts/render-texture-thumbnails.mjs`、`fixtures/texture-thumbnails.ts` | 修改 | 模型缩略图模式 |
+| `docker-compose.yml`、`scripts/production-preflight.sh`、`scripts/test-production-preflight.sh`、`scripts/test-v1-ops-common.sh` | 修改 | `scene_model_data` 卷与预检的 `models check` |
+| `docs/dev/scene-texture-library.md`、`docs/dev/builtin-models.md`（新增）、`docs/dev/object-storage.md` | 修改 | 导入与新增条目的做法；对象布局加 `scene-models/` |
 
 ## 验证与交付
 
 | 验收 | 验证方式 |
 |---|---|
-| AC-1 内置素体 | e2e（单条）：添加女素体 → 三处截图（材质预览、实时 GI 镜中、`lit` 导出）非空、贴图像素符合预期区域；换材质与撤销；属性栏没有面分配和存入资产库；换成男素体后带男素体的材质，撤销后回到女素体和原材质。owner 看图 |
+| AC-1 内置素体 | e2e（单条）：资产库内置模型列表与查看浮窗；场景资产面板切「内置」拖入；添加女素体 → 三处截图（材质预览、实时 GI 镜中、`lit` 导出）非空、贴图像素符合预期区域；换材质与撤销；属性栏没有面分配和存入资产库；换成男素体后带男素体的材质，撤销后回到女素体和原材质。owner 看图 |
 | AC-2 / AC-3 导入 VRM、Mixamo | 前端单测：五个角色的识别结果（映射数、手指、约束数），素材作为夹具（授权允许再分发的提交进仓库，其余在测试里下载并跳过）。e2e（单条）：导入 VRM 1.0 样例到放进场景、贴地 |
-| AC-4 映射不成立 | 共用测试向量（Go 与 TS）；单测：RobotExpressive 手动把 `Body` 指定为 hips 后成立；Go 测试：导入接口收到不成立的映射时 400 |
+| AC-4 映射不成立 | 共用测试向量（Go 与 TS）；单测：RobotExpressive 手动修改后仍不成立、可按非人形骨架导入，Xbot 错映射一根骨骼后手动改回成立；Go 测试：导入接口收到不成立的映射时 400 |
 | AC-5 换算与拒绝 | 单测：8 影响、归一化整数权重、全零权重夹具的换算结果与报告；Go 测试：蒙皮子集每条规则各一个反例（下标越界、权重和、缺逆绑定矩阵、混用网格、关节超限） |
-| AC-6 按姿态渲染 | 前端单测：把穿刺①的数值检查（肢体方向、合成变体、握拳、约束）改写成测试，在素体和夹具上跑。e2e（单条）：`__sceneTest.setPose` 后，视口、镜中、导出三处的肢体位置一致（按屏幕上手部的像素位置比对），包围盒更新 |
+| AC-6 按姿态渲染 | 前端单测：把穿刺①的数值检查（肢体方向、合成变体、握拳、约束）改写成测试，在素体和夹具上跑。e2e（单条）：`__scenePose.set` 后，视口、镜中、导出三处的肢体位置一致（按屏幕上手部的像素位置比对），包围盒更新 |
 | AC-7 合并与缓存 | 单测：合并时跳过蒙皮网格；`traceKey` 只对改了姿态的实例变化；部件身份（两个网格各有 primitive 0、同一网格不同 skin）；字节预算的淘汰与钉住。e2e：`__sceneNoMerge` 开关两种画面一致（现有做法） |
 | 坐标空间 | 单测：根节点旋转、网格节点自身变换、同模型两个不同位置与缩放的实例，光栅与追踪层输入逐顶点一致 |
 | 约束顺序 | 共用向量：父级受约束的 aim、非关节源被拒、越界源、成环；单测：父级受约束时 aim 的方向与 three-vrm 参考结果一致 |
-| AC-8 重新收敛耗时 | 测量脚本记录各阶段耗时，结果写回本节，给 owner 看 |
+| AC-8 重新收敛耗时 | 测量脚本记录各阶段耗时，结果写回本节，给 owner 看（结果见下方「AC-8 实测」） |
 | AC-9 助手 | Go 测试：`search_assets` 内置模型、`read_asset`、`edit_scene` 补材质 |
 | AC-10 代码模型不带骨骼 | Go 测试：`commit_model` 带骨架时 400；沙箱单测 |
 | AC-11 旧数据不变 | Go 测试：现有指纹测试全部通过，没有内置模型的场景指纹不变；现有 e2e 与材质截图用例照常 |
 | AC-12 文件缺失 | Go 测试：handler 503、启动检查日志；e2e 中把 GLB 请求改成 503，检查占位与导出失败 |
+
+### AC-8 实测
+
+2026-11-12，Apple M4 Pro，Chromium 145，Metal 后端。脚本是 e2e「skinned 6.3 evidence」；详情与截图见 `discovery/research/2026-11-12-skinned-measurements.md`。
+
+| 场景 | 进入追踪层 | 收敛到可导出 |
+|---|---|---|
+| 实时 GI 下给女素体换一个新姿态 | 50–67 ms | 418–425 ms（视口累积满 52 帧） |
+| 换回用过的姿态（命中静态化缓存） | 17 ms | 425 ms |
+
+- 「进入追踪层」包括 CPU 蒙皮、静态化、worker 段重建和上传。
+- 主线程分项（素体，8,844 顶点）：求姿态 0.1 ms，蒙皮与静态化 0.7 ms。拾取用 BVH 2.7 ms，只在第一次拾取时建。
+- `lit` 导出不论姿态都约 3.3 s。
+- **接近上限的导入角色**：
+  - 合成方式：女素体身体复制 148 份，1,896,176 三角形，105.7 MB，65 关节。
+  - 耗时：写出 557 ms、加载 317 ms、蒙皮与静态化 96 ms、拾取 BVH 468 ms。
+  - worker 段重建没有单独测，估计不少于 0.5 s。重建期间按 Epic 规则剔除这个角色，导出等待重建完成。
+  - 拖动调姿要支持这一档，由子项 4 的设计处理（refit 或拖动中跳过静态化）。
+- **静态化的实现**：`rig/skin.ts:staticGeometry` 在 6.3 改为逐顶点直接混合矩阵，属性读成普通数组并缓存。
+  - 法线用混合矩阵的余子式，行列式为负时翻转。
+  - 与改前逐顶点对照：位置和切线一致，法线最多差 0.022°。
+  - 素体耗时 2.9 ms → 0.7 ms。
 
 - 测试按项目约定只跑受影响的 Go 包和单条 e2e（[[targeted-verification-only]]）。
 - **上线顺序**：
@@ -370,5 +400,5 @@ worker（上传 model）：
 
 | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|
-| 导出的线稿从哪里取几何：屏幕空间的边缘检测会自动随光栅，用几何的路径要改为静态化几何 | 挂载点是否要加线稿模块 | 实现蒙皮渲染时先读线稿通道的代码确认 | 蒙皮渲染任务开始 |
-| 夹具素材里哪些能提交进仓库（Xbot、Michelle 来自 three 示例；RobotExpressive 是 CC0；VRM 样例按 VRM Public License） | 单测的夹具位置 | 逐个核对许可；不能再分发的在测试里下载，下载失败时跳过并标注 | 导入任务开始 |
+| ~~导出的线稿从哪里取几何~~ 已解决（5.2）：`render/lineArt.ts` 用 `overrideMaterial` 画屏幕空间的法线与深度，节点材质对蒙皮网格照样蒙皮，自动随姿态，不加挂载点 | — | — | — |
+| ~~夹具素材里哪些能提交进仓库~~ 已解决（2026-11-12 owner 确认）：都可以提交。节点树在 `scripts/fixtures/rig/skeletons.json`，五个原文件在 `scripts/fixtures/rig/characters/`，附来源与授权说明 | — | — | — |

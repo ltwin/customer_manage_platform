@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
@@ -60,12 +61,14 @@ func (e *UploadUnavailableError) PublicMessage() string {
 	return fmt.Sprintf("上传 %s 不可用，请重新生成", e.UploadID)
 }
 
-// ModelRef points a model instance at an immutable model revision. In a
-// stored snapshot only ContentRevisionID is set; Ref names a commit_model of
-// the same batch and is resolved before the snapshot is validated.
+// ModelRef points a model instance at an immutable model revision or a
+// built-in model (data: 内置模型库). In a stored snapshot exactly one of
+// ContentRevisionID and Builtin is set; Ref names a commit_model of the same
+// batch and is resolved before the snapshot is validated.
 type ModelRef struct {
 	ContentRevisionID string `json:"content_revision_id,omitempty"`
 	Ref               string `json:"ref,omitempty"`
+	Builtin           string `json:"builtin,omitempty"`
 }
 
 // languageImported marks a model imported from an external GLB (data: 模型内容
@@ -115,6 +118,8 @@ type ModelImport struct {
 // A library copy, written only by SaveModelToLibrary, also carries the
 // instance's materials and the revision it was copied from; an imported model,
 // written only by ImportModelToLibrary, its materials and where it came from.
+// Rig is a skinned model's humanoid mapping and constraints, only with a
+// manifest skeleton; every later revision copies it.
 type ModelPayload struct {
 	Format           string                  `json:"format"`
 	Generator        *Generator              `json:"generator,omitempty"`
@@ -124,6 +129,7 @@ type ModelPayload struct {
 	Materials        map[string]MaterialSlot `json:"materials,omitzero"`
 	SourceRevisionID string                  `json:"source_revision_id,omitempty"`
 	Import           *ModelImport            `json:"import,omitempty"`
+	Rig              *Rig                    `json:"rig,omitempty"`
 }
 
 func decodeModelPayload(raw json.RawMessage) (ModelPayload, bool) {
@@ -283,7 +289,15 @@ func completeModel(r creativecontent.Revision) (ModelPayload, bool) {
 }
 
 func modelUnavailable(id string) error {
+	if _, ok := builtinModels.byID[id]; ok {
+		return creativeops.Explain(ErrModelUnavailable, "%s 是内置模型，没有内容修订：放置时写 model.builtin；它不能派生、烘焙、做面分配或存入资产库", id)
+	}
 	return creativeops.Explain(ErrModelUnavailable, "模型 %s 不可用", id)
+}
+
+// builtinModelUnavailable is a model.builtin the catalog does not list.
+func builtinModelUnavailable(id string) error {
+	return creativeops.Explain(ErrModelUnavailable, "没有内置模型 %q，可用：%s", id, strings.Join(BuiltinModelIDs(), "、"))
 }
 
 // modelRefs are the distinct model revisions a scene references, sorted. They
@@ -311,6 +325,7 @@ type modelView struct {
 	NameHint  *string               `json:"name_hint"`
 	Faces     *Faces                `json:"faces"`
 	Import    *ModelImport          `json:"import,omitempty"`
+	Rig       *Rig                  `json:"rig,omitempty"`
 }
 
 // readModels reads the listed revisions in the caller's snapshot with a fixed
@@ -331,7 +346,7 @@ func readModels(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 			g := *p.Generator
 			g.Code = ""
 			manifest := p.Manifest
-			v.Usable, v.Manifest, v.Generator, v.Faces, v.Import = true, &manifest, &g, p.Faces, p.Import
+			v.Usable, v.Manifest, v.Generator, v.Faces, v.Import, v.Rig = true, &manifest, &g, p.Faces, p.Import, p.Rig
 			if p.NameHint != "" {
 				hint := p.NameHint
 				v.NameHint = &hint
@@ -346,6 +361,15 @@ func readModels(ctx context.Context, tx store.ReadTxAccountScope, ids []string) 
 func validateModelRef(m *ModelRef) error {
 	if m == nil {
 		return errors.New("缺少 model")
+	}
+	if m.Builtin != "" {
+		if m.Ref != "" || m.ContentRevisionID != "" {
+			return errors.New("model 只能写 content_revision_id 或 builtin 其中之一")
+		}
+		if _, ok := builtinModels.byID[m.Builtin]; !ok {
+			return fmt.Errorf("没有内置模型 %q", m.Builtin)
+		}
+		return nil
 	}
 	if m.Ref != "" || !revisionIDPattern.MatchString(m.ContentRevisionID) {
 		return errors.New("model 须为合法的 content_revision_id")

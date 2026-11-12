@@ -2,85 +2,131 @@
 
 ## 1. 后端：骨架、rig 与模型命令
 
-- [ ] 1.1 OpenAPI：`CreativeModelManifest` 加 `skeleton`；`CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `rig`；`CreativeSceneModelRef` 改为 `content_revision_id` / `builtin` 二选一；`CreativeSceneSetInstanceModel` 的 `model` 加 `builtin`，并加可选的 `material_slots`；`CreativeAssetFromGLBPayload` 加 `rig`；新路径 `/creative/scene-models/{file}`；`/creative/scene-textures/{file}` 的 pattern 与媒体类型。运行 `make generate`。完成判据：`go build ./...` 与前端 `tsc -b` 通过，读模型引用的前端调用点先按类型收窄（界面留给 5.1）
-- [ ] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`。现有 `creativeglb` 测试全绿
-- [ ] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`
-- [ ] 1.4 模型命令与导入：
+- [x] 1.1 OpenAPI：`CreativeModelManifest` 加 `skeleton`；`CreativeModelPayload`、`CreativeModelPreviewPayload`、`CreativeSceneModel` 加 `rig`；`CreativeSceneModelRef` 改为 `content_revision_id` / `builtin` 二选一；`CreativeSceneSetInstanceModel` 的 `model` 加 `builtin`，并加可选的 `material_slots`；`CreativeAssetFromGLBPayload` 加 `rig`；`/creative/scene-models/{file}` 路径随 2.1 的 handler 一起加；`CreativeFieldDetails` 加可选的 `reason`；`/creative/scene-textures/{file}` 的 pattern 与媒体类型。运行 `make generate`。完成判据：`go build ./...` 与前端 `tsc -b` 通过，读模型引用的前端调用点先按类型收窄（界面留给 5.1）
+- [x] 1.2 `creativeglb` 的蒙皮子集：先写测试，蒙皮子集的每条规则各一个反例（joint 越界或不在场景树、缺逆绑定矩阵、带 skin 的节点没有 mesh、网格同时被带 skin 与不带 skin 的节点引用、`JOINTS_0` 越界、权重越界或和不为 1、`JOINTS_1`、关节超限）；根节点带旋转、网格节点自身带变换时，蒙皮包围盒与手算结果一致；`Skeleton` 的并集、父关节和 `s1` 指纹；`Matches` 比对骨架。然后实现 `skin.go`，修改 `glb.go`；前端 `sandbox/inspect.ts` 同步镜像（共用 `testdata/cases.json`，两侧须同时通过，故从 4.1 提前）。现有 `creativeglb` 测试与 `scripts/creative-scene-model.test.ts` 全绿
+- [x] 1.3 `creativescene/rig.go` 与共用测试向量 `testdata/humanoid_rig.json`（`Makefile` 的 `generate` / `generate-check` 复制到前端）。向量覆盖：穿刺①的五个角色与两个素体的骨架；缺必需骨骼；重复映射；脚挂在控制骨下；可选骨骼越级；约束的源不是关节；源越界；父级受约束的 aim；成环。先写读向量的 Go 测试，再实现 `Validate`。向量由暂存区脚本从原文件抽取骨架后生成，每例给 `valid` 与第一条问题的 `field`、`reason`（`unknown_bone` / `missing_required` / `not_joint` / `duplicate_node` / `hierarchy` / `invalid` / `limit` / `source_is_node` / `cycle`）；`creativeops.FieldError` 加 `Reason`，`abortFieldError` 填 `details.reason`
+- [x] 1.4 模型命令与导入：
   - `import.go` 收 `rig`，按 design「服务端的骨架与 `rig` 校验顺序」复核。
   - `commitModelOp` 拒绝带骨架的 GLB。
   - `deriveModelOp` 照抄 `Rig`，并拒绝带骨架的来源。
-  - `library.go` 的库副本照抄 `Rig`。
-  - `setInstanceModelOp` 接受 `builtin` 与 `material_slots`（整体替换）。
+  - `library.go` 的库副本照抄 `Rig`（库副本原样复制载荷，无需改代码，只补测试）。
+  - `setInstanceModelOp` 接受 `material_slots`（整体替换，与 `update_objects` 同样只校验外形与贴图）；`builtin` 的解析依赖 2.1 的清单，随 2.2 的 `validateModelRef` / `targets` 一起做。
   - 先写测试，每个分支各一例（含 AC-4 的 400 与 AC-10）。
 
 ## 2. 后端：内置模型
 
-- [ ] 2.1 内置模型库与贴图库放宽：
-  - `builtin_textures.go`：`.png`、`quaternius`、`listed`、`character`；没有 `url` 的文件从目录导入。
+- [x] 2.1 内置模型库与贴图库放宽：
+  - `builtin_textures.go`：`.png`、`quaternius`、`listed`；没有 `url` 的文件从目录导入。`character` 品类本身是 `materials.json` 的数据，随 6.1 的贴图条目一起加（现在加会让资产浏览器多出一个空分组）。
   - 新增 `builtin_models.go`：清单与缩略图的嵌入、加载校验、`scene-models/` 存储、`Open` / `Missing` / `Import`。
   - `config.go` 的 `SCENE_MODEL_LOCAL_ROOT`。
-  - `httpapi/creative_scene_models.go` 与路由注册；`cmd/server/main.go` 的后台缺失检查。
+  - `httpapi/creative_scene_model_files.go` 与路由注册（与已有的 `creative_scene_models_test.go` 区分开）；handler 依赖 `SceneModelFiles` 接口，测试不依赖清单条目；`cmd/server/main.go` 的后台缺失检查。
   - `creativectl models import/check` 与 `textures import --dir`。
   - `Makefile` 复制 `models.json` 与模型缩略图。
   - 先写测试：清单校验的失败例；handler 的 200、304、404、503（AC-12）；import 核对 sha256、`Inspect` 和 manifest，不一致时不写入。
-  - 用一个测试条目跑通，素体条目在 6.1 加入。
-- [ ] 2.2 场景引用与助手：
+  - 用测试条目跑通：清单校验用共用向量里 xbot 的骨架和映射拼出的条目，导入用 `creativeglb/testdata/skinned-turned-root.glb`；仓库里的 `models.json` 暂为空，素体条目在 6.1 加入。
+  - 文档先写了 `docs/dev/builtin-models.md` 与贴图库的 `--dir`（`.env.example` 引用它），6.1 补素体的生成步骤。
+- [x] 2.2 场景引用与助手：
   - `validateModelRef`、`modelRefs`、`readModels`、`opEnv.resolve`、`setInstanceModelOp.targets` 认得 `builtin`。
   - 有效槽位取清单的 manifest（`materials.go`）。
   - `faces.go`、`jobs.go`、`library.go`、`agent.go` 的 `write_model` 对内置模型拒绝；`ModelView` 带 `builtin`。
+  - `set_instance_model` 的 `builtin`（从 1.4 移来）；助手路径（`resolveSlots`）核对 `set_instance_model.material_slots` 的槽位名属于新模型。
   - 助手：`builtinSearch` 支持 `kind: model`，并过滤 `listed: false`；`readBuiltinAsset` 支持内置模型；`edit_scene` 的说明与 schema 更新；`editScene` 遇到内置模型而没写材质时补上条目的 `materials`（添加和换模型都补）。
   - 先写测试：AC-9、AC-11（现有指纹测试不变，没有内置模型的场景指纹不变），以及以上各个拒绝分支。
+  - 实施记录：
+    - 仓库清单暂为空，测试经 `creativescene.UseBuiltinModelsForTest` 换上 `testdata/builtin_models.json` 的两个测试素体（xbot 骨架）。
+    - `derive_model` 与 `write_model` 的 `base_content_revision_id` 写内置模型 ID 时，`creative_model_unavailable` 的消息说明它是内置模型；面分配随 `derive_model` 一并拒绝，`faces.go` 无需改动。
+    - `search_assets(source: builtin)` 不写 kind 时材质与模型都列出；内置模型缩略图的图片定位用 `builtin-model:` 前缀，与内置材质的 `builtin:` 分开。
+    - 读场景的模型摘要补上 `rig`（1.1 已加进 OpenAPI 的 `CreativeSceneModel`，1.4 漏了读取）。
+    - 工具说明约增加 1 KB，压缩回归测试的窗口相应调大。
 
 ## 3. 前端：骨骼核心（`rig/`）
 
-- [ ] 3.1 `bones.ts`、`humanoid.ts`、`detect.ts`、`retarget.ts`、`constraints.ts`：
+- [x] 3.1 `bones.ts`、`humanoid.ts`、`detect.ts`、`retarget.ts`、`constraints.ts`：
   - 由穿刺原型整理而来。
   - 先写测试：
     - 跑共用测试向量。
-    - 识别五个角色（VRM 1.0 / 0.x、Mixamo、UE 命名、RobotExpressive 失败与手动成立）。
+    - 识别五个角色（VRM 1.0 / 0.x、Mixamo、UE 命名、RobotExpressive 手动修改后仍不成立）。
     - 把穿刺①的数值检查改写成测试：4 组姿态的肢体方向误差 < 1°；合成变体误差 < 0.01°；握拳。
     - 约束：父级受约束时，aim 的方向与 three-vrm 参考实现的结果一致。
     - 骨架几何条件的四种退化夹具。
-- [ ] 3.2 `template.ts`、`skin.ts`、`pose.ts`：
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-rig.test.ts`。夹具 `scripts/fixtures/rig/skeletons.json` 只含穿刺用的 7 个角色的节点树（名称、局部变换、skin 关节、VRM 人形与约束扩展），不含网格、材质和贴图；每个角色记了来源。
+    - `prepare` 的结果（朝向 F、T(n)）在模型根空间里算，不含根节点自己的变换，同一模型的实例可以共用；合成变体加了一例「模型根在场景里平移、旋转、缩放」，误差同样 < 0.01°。
+    - 名字识别：命名表要认出髋骨才采用。RobotExpressive 的 `Head` 与 UE 命名表同名，不加这条会被误认成 UE 骨架。
+    - `pruneOptional` 在提交前去掉服务端会拒绝的可选骨骼（不是关节、与其他骨骼同节点、违反层级嵌入），必需骨骼留给 `checkRig` 判定；`checkRig` 的顺序、字段、原因和消息与 `rig.go` 一致。
+    - 约束的求值分三步：`resetConstraints` → `apply` → `runConstraints`，由 3.2 的 `pose.ts` 组合。依赖排序与 `rig.go` 的成环判定同一规则，共用向量的成环用例同时覆盖。
+    - three-vrm 没有引入为依赖：aim 的公式按它的实现写，测试核对父级受约束时 aim 轴指向源，并验证不按依赖排序时会偏。
+- [x] 3.2 `template.ts`、`skin.ts`、`pose.ts`：
   - 骨架模板与实例克隆；按 design 的坐标空间做 CPU 蒙皮与静态化几何。
   - 部件 ID 取 `n<节点>p<primitive>`；姿态哈希。
   - 缓存：256 MiB 字节预算，在用的钉住，其余按最近使用淘汰并释放。
-  - `__sceneTest.setPose`。
+  - `__scenePose.set`（原写 `__sceneTest.setPose`；`__sceneTest` 是 e2e 页面的布尔开关，测试钩子照 `__sceneGPU` 另挂）。
   - 先写测试：
     - 坐标空间三种情况（根节点旋转、网格节点自身变换、同模型两个不同实例），three 光栅顶点与静态化几何逐顶点一致。
     - 部件身份：两个网格各有 primitive 0；同一网格不同 skin。
     - 缓存的淘汰与钉住。
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-rig-skin.test.ts`，蒙皮 GLB 在测试里由 JSON 拼出：一个小模型覆盖坐标空间与部件身份，Xbot 的节点树加几个绑在左手上的顶点覆盖套姿态。
+    - 部件 ID 要用节点下标：`sandbox/gltf.ts:parseModelGLB` 的结果加 `nodes`（对象 → GLB 节点下标），已补进 design 挂载点。
+    - three 的 GLTFLoader 本来就按单位绑定矩阵、`attached` 模式绑定，与 glTF 规定一致，模板不再重新绑定；坐标空间测试核对了光栅结果（`getVertexPosition` 乘网格矩阵）与静态化几何乘模型根矩阵逐顶点一致（< 1e-5 m）。
+    - 骨架模板是解析结果的拷贝，去掉不挂在关节下的静态网格（下面挂着关节的换成空节点）；`taken` 交给 5.2 的 `partsOf` 跳过。
+    - 静态化几何的 uv 等属性与原几何共用数组、各用各的属性对象（three 按属性对象释放显存）；缓存按位置、法线、切线、索引和拾取 BVH 计字节。
+    - 静止姿势不跑约束，得到的就是存储的模型；没有人形映射或骨架几何退化的模型，标准姿态一律按静止姿势处理。
+    - 粗测：9000 个顶点、每个 4 个影响，CPU 蒙皮约 1.3 ms（Node）。
 
 ## 4. 前端：导入带骨骼的角色
 
-- [ ] 4.1 解析、换算与写出：
+- [x] 4.1 解析、换算与写出：
   - `parse.ts`：放行蒙皮；关节上限；读 VRM 扩展与约束（去掉源不是关节的约束）；有多组影响时从原始访问器裁剪，压缩过又有多组影响的 primitive 拒绝。
   - `convert.ts`：保留关节和挂在关节下的对象，保留 `skinIndex` / `skinWeight`；带骨骼的模型改为平移祖先节点来移动原点。
   - `write.ts`：回写节点下标并删去标记。
-  - `sandbox/inspect.ts`：蒙皮子集预检；`sandbox/host.ts` 拒绝带 `skins` 的代码模型产物。
+  - `sandbox/host.ts` 拒绝带 `skins` 的代码模型产物（`sandbox/inspect.ts` 的蒙皮子集已在 1.2 完成）。
   - 先写测试：
     - 多组影响的最小模型经完整解析链路后，保留第 4–7 根骨骼（AC-5）。
     - AC-5b：合成夹具（根节点旋转、多个 skin、两组影响、原点移到底面中心）写出再解析，静止姿势与非平凡姿态下逐顶点位置、法线、包围盒一致。
     - 节点下标回写后与识别出的映射一致；导出物不带标记。
   - 合成夹具提交在 `frontend/scripts/fixtures/`。
-- [ ] 4.2 导入对话框与提交：
+  - 实施记录：
+    - 测试在 `scripts/creative-scene-import-rig.test.ts`。合成夹具是 `scripts/fixtures/rig/glb.ts`：用 JSON 拼 GLB 的工具和「角色节点树 + 绑在一根关节上的三角形」，3.2 的测试也改用它。
+    - 拒绝原因 `skinned` 改为 `skin`，只用于「多组影响又经过压缩」；关节超限用已有的 `limit`。
+    - 全为 0 的权重：three 的加载器会先把它们改成 (1, 0, 0, 0)，换算阶段已分辨不出，所以改在解析时从原始访问器里数，进换算报告。
+    - 「原点移到底面中心」不用改做法：原本就是平移最上层节点、不改顶点。只补了一条：算包围盒前先更新世界矩阵，蒙皮网格按静止姿势计入。测试确认顶点和逆绑定矩阵不变，蒙皮结果整体平移，存储的包围盒底面为 0。
+    - `writeGLB(scene, track)` 返回被跟踪对象的新节点下标；`writtenRig` 把按原文件下标的 `rig` 换成写出后的下标（4.2 起跟踪全部关节，见下）。three 导出时会去掉节点名里的 `:` 等字符，回写按标记找节点，不受影响。
+    - 导入对话框里勾选原点时的复制改用 `SkeletonUtils.clone`：`Object3D.clone` 不会把蒙皮网格重新绑到复制出的骨骼上。
+    - `sandbox/host.ts` 的拒绝（AC-10）测在 `creative-scene-model.test.ts`，用 `creativeglb/testdata/skinned-turned-root.glb`。
+- [x] 4.2 导入对话框与提交：
   - `ImportModelDialog.tsx` 显示映射结果（骨骼数、手指、约束数、去掉的项、非均匀缩放的提示）。
   - 不成立时说明原因。
   - 新增 `RigMapping.tsx`：手动指定，即时重新校验。
   - 提供「按非人形骨架导入」。
   - `run.ts` 提交 `rig`。
-  - 先写单测（RobotExpressive 手动把 `Body` 指定为髋后成立）。
+  - 先写单测：RobotExpressive 手动修改后仍提示脚的问题、可按非人形骨架导入；Xbot 错映射一根骨骼后手动改回成立。
   - e2e（单条）：导入 VRM 1.0 样例，放进场景后贴地、贴图正确（AC-2）。
   - 夹具许可逐个核对；不能再分发的素材在测试里下载，下载失败时只跳过这些。
+  - 实施记录：
+    - 校验与提交的逻辑在新增的 `import/mapping.ts`：`checkMapping`（剪掉可选骨骼 → `checkRig` → 静止骨架的几何条件）、`fileConstraints`（服务端不收的约束整组去掉并说明）、`submittedRig`、`jointTree`、`followClone`。对话框只管状态和显示。
+    - 换算后写出时跟踪全部关节，而不是只跟踪已映射的骨骼：手动改映射不用重新导出，回写总能找到节点。勾选原点时，用 `followClone` 把关节对应到复制出的场景上再写出。
+    - 映射不成立时「导入」按钮不可用，提供「手动指定」和「按非人形骨架导入」；按非人形导入后可以「改回人形映射」。没有认出任何骨骼也按「不成立」处理，由摄影师二选一。
+    - 单测加在 `scripts/creative-scene-import-rig.test.ts`（RobotExpressive 两种手动映射分别卡在腿和脚、按非人形导入；Xbot 错映射后改回；原点复制后的回写；约束成环时整组去掉）。
+    - e2e（AC-2）移到 5.2 之后：贴地和贴图对不对，要等蒙皮网格能在场景里渲染才看得出。
+    - 夹具许可：仓库里只提交节点树（名字、变换、关节表、VRM 扩展），不含网格、材质和贴图。RobotExpressive、两个 UBC 素体是 CC0；VRM1 扭转样例按 VRM Public License 1.0；Xbot、Michelle（Mixamo）与 VRM 0.x 女孩（VRoid Hub 条款）的条款对「只取骨架数据」没有明说，交 owner 判断。若不接受，改为测试里下载、下载失败时跳过。
+      - 2026-11-12 owner 确认：角色素材可以提交。五个原文件提交在 `scripts/fixtures/rig/characters/`，附来源与授权说明，供 owner 手动试导入。AC-2 的 e2e 改为读这里的 VRM 1.0 样例，不再下载，也不再因为没有网络而跳过。
 
 ## 5. 前端：渲染
 
-- [ ] 5.1 模型键与内置模型的加载：
+- [x] 5.1 模型键与内置模型的加载：
   - 新增 `models/key.ts:modelKey`、`models/catalog.ts`。
   - `downloadGLB` 遇到 `builtin:` 时走 `/creative/scene-models/`，503 时视口占位并提示、导出失败。
   - design 列出的查表调用点全部改用模型键（`SceneEditor.tsx`、`saveModel.ts`、`modelEdits.ts`、`host/*`、`panels/MaterialSlots.tsx`、`state/*`、`faceEdit/*`、`placement/*`）。
   - 完成判据：`tsc -b` 与 `oxlint` 无报错；现有场景相关单测和一条现有模型 e2e 照常通过（AC-11）。
-- [ ] 5.2 蒙皮渲染：
+  - 实施记录：
+    - `models/key.ts`：`modelKey`、`builtinOf`、`builtinKey`。`models/catalog.ts`：清单副本、条目查询、`builtinModelURL`、内置摘要表，以及 `summaryOf(models, ref)`：先查传入的表，内置模型再查目录。宿主读到的 `doc.models` 和历史预览的表都来自服务端、不含内置模型，所以取景、出图加载、物件分发都用 `summaryOf`；编辑器的表在 `modelSummaries` 和历史预览两处都并入了内置摘要。
+    - 改为按模型键的：`SceneObjects.tsx`（`ModelMesh` 的键与摘要）、`host/render.ts:loadModels`、`host/framing.ts:sceneBounds`、`panels/MaterialSlots.tsx`（槽位、常量、来源槽位、部件加载）、`SceneEditor.tsx`（`modelOf`、属性栏的模型、槽位名）。
+    - 只对账号修订有意义的调用点保持读 `content_revision_id`，内置模型自然被排除：改代码和参数（`modelEdits.ts`、`retune`、代码面板）、派生与面分配（`faceEdit/assign.ts`）、同步层的未知修订判断与回执换号（`state/sync.ts`、`state/intents.ts`）、`pageExecutor` 的替换查询。`placement/*` 不查模型表，无需改动。
+    - 明确提示：面编辑对内置模型和 manifest 带 `skeleton` 的模型给出「带骨骼的模型和内置模型不能面编辑」（状态栏不再提示 Tab）；存入资产库对内置模型给出「内置模型不能存入资产库」。属性栏的代码模型参数区对内置模型不显示，内置模型的信息块留给 6.2。
+    - `downloadGLB` 对 `builtin:` 键经 `authorizedFetch` 读 `/creative/scene-models/<file>`；503 时报「内置模型的文件暂时读不到」，走现有的加载失败占位（导出同样失败）。
+    - 验证：`tsc -b`、`oxlint` 无报错；相关单测 11 个文件共 251 条通过；e2e（端口 5199，单条）「asset panel: Shift+A」和「a model that cannot be shown」通过。「a code model: 代码模型…」在改动前的提交上同样超时（等不到生成命令），与本次无关，未处理。
+- [x] 5.2 蒙皮渲染：
   - `models/cache.ts` 分出骨架模板，合并时跳过蒙皮网格。
   - 新增 `objects/SkinnedModel.tsx`。
   - `SceneObjects.tsx` 分发。
@@ -91,26 +137,115 @@
   - 先确认导出线稿的取几何路径（design 未决事项），需要时改为静态化几何。
   - 测试：合并与 `traceKey` 的单测（AC-7）。
   - e2e（单条）：`setPose` 后，视口、实时 GI 镜中、`lit` 导出三处的手部位置一致，包围盒更新（AC-6）；`__sceneNoMerge` 开与关的画面一致。
+  - e2e（单条，自 4.2 移来）：导入 VRM 1.0 样例，放进场景后贴地、贴图正确（AC-2）。
+  - 实施记录：
+    - `models/cache.ts`：`modelParts(parsed)` 先用 `templateOf` 分出骨架模板，再让 `partsOf` 跳过模板拿走的网格（蒙皮网格一律跳过），所以蒙皮网格从不参与合并。共用几何的计数改为按全部网格算：静态网格与挂在关节下的网格可能共用一份几何，不能让静态那份的变换写进去。加载结果多了 `skeleton`，包含三样：
+      - `template`：骨架模板。
+      - `rest`：各蒙皮部件在静止姿势下的静态化几何，带 `traceKey = <模型键>#n<节点>p<primitive>#rest`。
+      - `still`：整个骨架在静止姿势下烘焙到模型空间的部件。
+      `stillMeshes(parts)` 返回静态部件加上 `still`，供模型预览、资产缩略图、导入缩略图和材质槽面板（常量、UV 判断）使用。释放时连同模板的几何一起释放。
+    - `rig/pose.ts` 新增 `posableOf`（人形的 `prepare` 按模板只算一次）、`posedGeometries`（静止姿势直接用加载时的 `rest`，其余姿态从缓存取，用完释放）、`skeletonBounds`。视口组件和取景都走这一组，保证同一份数据。
+    - 新增 `objects/SkinnedModel.tsx`：
+      - 每个实例克隆骨架，按 `testPoses` 里这个物件的姿态求值。
+      - 在 layout effect 里同步算出静态化几何，写到每个蒙皮网格的 `userData.posed = { geometry, root }`，卸载或换姿态时释放。
+      - 材质按显示方式（白模、幽灵、线框、槽位材质）在 effect 里换上，槽位材质沿用 `resolvePart` 和 `useSlotMaterial`；蒙皮网格关掉视锥剔除，因为 three 的包围球是静止姿势的。
+      - 选中轮廓和线框用 `createPortal` 挂进去：蒙皮部件挂到模型根下，用静态化几何；骨骼上挂的普通网格直接挂到网格自身下。
+    - 分发位置（与 design 的偏差）：没有在 `SceneObjects.tsx` 里另起分支，而是由 `ModelMesh` 在部件加载完成后，于静态部件旁边渲染 `SkinnedModel`。这样加载、灰块占位、切换修订时旧模型留在屏幕上的逻辑都不用重复。`SceneObjects.tsx` 只多传一个 `objectId`。
+    - 追踪层：`Traced` 增加 `matrixWorld` 字段。普通网格取网格自身的世界矩阵；蒙皮网格取 `userData.posed` 里的几何和模型根的世界矩阵，没有 `posed` 时不收集，所以不会用别的姿态去追踪。`base.ts` 的实例矩阵、包围盒、精度等级和移动判断都改用 `t.matrixWorld`。构建期间的剔除是现成的：新 `traceKey` 的段还没到时，`instances()` 不会把它排进顶层。
+    - 拾取：`placement/raycast.ts:raycastPosed` 用代理网格，把静态化几何放到模型根的矩阵下求交，命中对象记为蒙皮网格。面法线换到蒙皮网格自身的空间，因为视口按命中对象的矩阵换算法线（吸附依赖这一点）。`accelerateModels` 把 BVH 建在静态化几何上，缓存按字节计入。
+    - 取景：`host/framing.ts:sceneBounds` 对有测试姿态、且模型已加载的物件，用姿态下的包围盒；静止姿势仍用 manifest 的包围盒。
+    - 导出和 `render_view`：静态化几何在挂载提交的 layout effect 里同步算好，早于 `onCommit`；段重建由现有的 `base.ready()` 等待。`host/pageExecutor.ts` 不用改。
+    - 线稿（design 的未决项）：`render/lineArt.ts` 用 `overrideMaterial` 画屏幕空间的法线和深度，节点材质会对蒙皮网格做蒙皮，所以自动跟随姿态，不用改。
+    - `.vrm` 也是 GLB 容器：场景里「导入模型…」和资产库导入的文件选择器都接受 `.glb,.vrm`，`fileImport.ts:isModelFile` 也认 `.vrm`（AC-2 要摄影师能选到 VRM 文件）。
+    - 测试夹具：`scripts/fixtures/rig/glb.ts:characterGLB` 可以传尺寸和材质，在关节处放一个带法线的方块，用于 e2e 在画面里找位置。
+    - 单测（`scripts/creative-scene-rig-skin.test.ts`，新增 5 条，共 12 条通过）：
+      - 蒙皮网格和挂在关节下的网格归骨架，不进合并；与静态网格共用的几何保持原样；按修订加载后带上静止姿势的 `traceKey`（AC-7）。
+      - 只有摆了姿态的实例 `traceKey` 会变；同一姿态的实例共用同一份几何；释放后不再钉住（AC-7）。
+      - 追踪收集取（姿态几何，模型根矩阵）；没有姿态几何时不收集；与 three 的光栅逐顶点一致。
+      - 拾取命中姿态几何，经 BVH 和不经 BVH 两条路径都测；按视口的读法换算出的法线正确。
+      - 取景包围盒随姿态变化，回到静止姿势时恢复成 manifest 的包围盒。
+      另补 `creative-file-import` 的 `.vrm` 用例。
+    - e2e（端口 5199，单条，GPU）：
+      - 「skinned AC-6」用 UBC 男素体的骨架（CC0），左手放一个红色发光方块。相机 A 平视拍到方块；相机 B 俯视镜面地板，方块在画面外，只能看到追踪层给出的倒影。静止和抬臂两个姿态下，lit 导出里的方块与镜中倒影都和姿态几何投影出的像素一致（误差约 1 px）；不合并部件的页面（`__sceneNoMerge`）上位置相同；编辑器视口透过相机 B，在「最终渲染」里镜中倒影的位置和导出一致。连跑 3 次都通过。
+      - 「skinned AC-2」测试时下载 pixiv three-vrm 的 VRM 1.0 扭转样例（VRM Public License 1.0，不提交进仓库；下载不到时跳过），缓存在系统临时目录。对话框显示「154 根骨骼 · 14 条节点约束」「人形映射（VRM 1.0）：54 根标准骨骼 · 手指 30 / 30」；请求里带上 `rig` 和 17 张贴图；缩略图带颜色；存储的包围盒和静止姿势下的蒙皮几何都贴地（最低点为 0）；材质预览带贴图；点一下人物能选中；白模和线框下有选中轮廓、没有报错。样例的材质本来就全是 OPAQUE，所以透明方式不需要额外检查。截图留给 owner 看。
+      - 回归：「P1 AC-2: merged parts」「asset panel: Shift+A」「a model that cannot be shown」「glb-import: with the origin moved」通过。「real-time GI: the box room bleeds…」失败（红墙旁地面红绿比 1.013 → 1.061，门槛要求至少提高 0.07）；在改动前的源码上数值完全相同，与本次无关，未处理。
+    - 观察到的现象，没有核实是否本来就有：编辑器直接以「最终渲染」打开、追踪层还在初次构建时，视口可能画到 3/12 帧就停下（镜中还没有新段），要等下一次重画才补上。换姿态的路径会完整收敛，e2e 已覆盖。
 
 ## 6. 内置素体与收尾
 
-- [ ] 6.1 素体内容：
+- [x] 6.1 素体内容：
   - 新增 `frontend/scripts/builtin-models/convert.mjs`：读来源包，修正贴图引用，材质改名为 `body` / `eyes` / `brows`，走导入的换算与写出，输出 GLB、PNG 贴图和清单片段。
   - `render-texture-thumbnails.mjs` 加模型模式。
   - 把两个素体写进 `models.json`，贴图材质写进 `materials.json`（`listed: false`、`character`），提交缩略图。
   - `creativectl textures import --dir`、`models import --dir` 导入共享对象存储，`check` 通过。
-  - 文档：`docs/dev/builtin-models.md`、`docs/dev/scene-texture-library.md`。
+  - compose 部署（本地驱动）：仿 `scene_texture_data` 加 `scene_model_data` 卷；`production-preflight.sh` 的卷集合、挂载检查加上它，并加 `models check` 一步；同步 `test-production-preflight.sh` 等运维测试（`make check-ops`）。
+  - `materials.json` 的 `categories` 加 `character`，前端选材面板与资产浏览器同时过滤 `listed: false`。
+  - 文档：`docs/dev/builtin-models.md` 补素体的生成步骤。
   - 完成判据：服务启动时清单校验通过；两个素体的 `rig` 都是 52 根骨骼。
-- [ ] 6.2 素体的界面与验收：
-  - `SceneEditor.tsx` 加「添加 > 素体」；`AssetPanel.tsx` 加「素体」分区。
+  - 实施记录：
+    - 产物：`body_female@1`（GLB 802588 字节，15060 个三角形）、`body_male@1`（770448 字节，14318 个三角形）；都按 UE 命名识别出 52 根标准骨骼，65 个关节，没有约束，包围盒底面为 0。贴图 12 张 PNG，材质 5 个：`ubc_female_body@1`、`ubc_male_body@1`、两个素体共用的 `ubc_eyes@1`、`ubc_female_brows@1`、`ubc_male_brows@1`。
+    - `convert.mjs` 把 `.gltf`、`.bin` 和贴图打成一个 GLB 交给 `page.ts`，页面里依次调用 `parseImport`、`convert`（原点到底面中心）、`checkMapping`、`fileConstraints`、`writeGLB`、`writtenRig`、`prepareImages`，与导入对话框同一条链路。
+    - 与契约示例的出入：眉毛保持不透明，来源包眉毛的底色贴图没有 alpha 通道；金属度为 0 的槽位不带金属度贴图（glTF 里贴图乘系数，为 0 时贴图不起作用）；缺省值按参数步长取到 0.01（Blender 导出的系数是 0.8227272629737854 这类数）；`size_m` 填 1，按 UV 贴的贴图不用它。
+    - 过滤 `listed: false` 在本项一并完成：后端材质目录与助手 `builtinSearch` 在 2.1/2.2 已过滤；前端 `builtin.ts` 区分 `builtinMaterials`（上架）与 `builtinMaterial(id)`（含不上架的，槽位上照样显示来源），资产库的品类按钮只列有上架条目的品类，不出现空的「角色」。场景选材下拉不列贴图材质（贴图材质只从资产库选），无需改动。
+    - 缩略图：`render-texture-thumbnails.mjs --models` 用资产卡同一种静止姿势渲染，写到 `builtin_thumbnails/models/`；5 个贴图材质照常渲染材质球。`make generate` 在 worktree 里没有跑（会动 `node_modules`），按它的规则手工复制到前端。
+    - 2026-11-11 owner 同意后导入共享对象存储：`textures import --dir` 导入 12 个、`models import --dir` 导入 2 个，`textures check` 与 `models check` 都是 ready。
+    - compose：`scene_model_data:/var/lib/crm/scene-models`；预检的卷集合与挂载检查加上它，`models check` 一步失败时给 `run-creativectl-models-import` 或 `fix-scene-model-storage`；`test-production-preflight.sh` 补了缺文件、存储不可读、未挂卷三例，`make check-ops` 通过。
+    - 锁定的数量随之更新：Go 侧贴图材质 29 个、文件 84 个，`publishedTextured` 加 5 条，`TestBuiltinModelCatalog` 锁定两个素体；助手测试的 `search_assets(kind: model)` 改为返回两个素体，内置来源总数不含 `ubc_*`；前端材质目录 44 条（贴图材质 29，其中不上架 5）。
+- [x] 6.2 素体的界面与验收：
+  - `SceneEditor.tsx` 加「添加 > 素体」快捷入口；`AssetPanel.tsx` 的模型类加「我的 / 内置」切换（Epic 修订 v8，取代单独的「素体」分区）。
+  - 资产库页面：`LibraryTree` 加「内置模型」，`BuiltinBrowser` 支持模型，`BuiltinViewer` 显示 3D 预览、来源与授权。
   - `editing.ts:newModelInstance` 改为接收模型引用。
   - `ModelParams.tsx`：内置模型的信息块，以及「换成男素体 / 女素体」（带目标材质）。
   - 带骨骼的模型和内置模型隐藏面分配、存入资产库、改参数。
   - 选材面板与资产库的内置来源过滤 `listed: false`。
-  - e2e（单条）：AC-1，含换素体与撤销。
+  - e2e（单条）：AC-1，含资产库内置模型、资产面板拖入、换素体与撤销。
   - e2e：把 GLB 请求改成 503，检查占位与导出失败（AC-12）。
-- [ ] 6.3 实测与 owner 材料：
+  - 实施记录：
+    - 放置：`SceneEditor.tsx:placeBuiltin` 写 `{builtin}` 和条目的 `materials`，经 `newModelInstance`（第一个参数改为模型引用）。来源有三处：「添加 > 素体」（菜单在指针处打开时放在指针处）、资产面板「内置」的双击或「放入场景」（视图中心下方）、拖进视口（松手处，拖动时有幽灵）。拖动沿用 `DragModel`，内置模型以模型键同时充当资产 ID 和修订。
+    - 资产面板：「我的 / 内置」改为两类共用一个来源选择；模型的「内置」一次放一个，不做多选和最近使用。第二行（导入、来源、分组、标签、卡片大小）在窄侧栏里放不下时换行：筛选区原来按内容撑宽，把「模型 / 材质」挤到视口下面，改为一列与面板同宽。
+    - 属性栏：内置模型的信息块是新文件 `panels/BuiltinModelInfo.tsx`（与 `ImportedModelInfo.tsx` 同一种做法），没有放进 `ModelParams.tsx`。它显示名称、来源与授权，同品类其他条目各一个「换成…」按钮；文件读不到时提示「文件暂时读不到」（AC-12 的提示）。属性栏顶部的模型说明原来一律写「代码模型」，改为按来源写「代码模型 / 导入的模型 / 内置模型」。
+    - 换素体：一次编辑发 `set_instance_model`（带目标条目的 `material_slots`）；物件名还是原条目名时同批改名。前端投影 `state/apply.ts` 原来只换模型引用，补上 `material_slots` 整体替换，与服务端一致；`namesUnknownImage` 也检查它。
+    - 面编辑、存入资产库与改参数在 5.1 已对内置模型关闭，e2e 核对了提示。
+    - AC-12：5.1 的记录说导出同样失败，实际 `host/render.ts:loadModels` 对加载失败的模型一律画灰块、导出照常。改为内置模型读不到时抛错，导出和 `render_view` 失败并说明「内置模型「女素体」的文件暂时读不到，请稍后再试」；账号自己的模型保持原样（灰块）。
+    - 资产库页面：`LibraryTree` 加「内置模型」（只在资产库页面列出，给槽位选材质的选择器不列），网址 `source=builtin-models`；`BuiltinBrowser.tsx:BuiltinModelBrowser` 是只读网格；`BuiltinViewer.tsx:BuiltinModelViewer` 经 `MediaViewer` 的 `builtinModel` 按模型键画 3D 预览，列出品类、骨骼、三角形数和来源。
+    - 测试：单测 `scripts/creative-scene-builtin-models.test.ts`（清单、放置、换素体带材质、筛选与缩略图）。e2e `creative-scene.e2e.mjs` 的「skinned AC-1」「skinned AC-12」，`creative-assets.e2e.mjs` 的「skinned-builtin-models」。素体文件来自手工下载的来源包，不进仓库：e2e 读 `SCENE_E2E_BUILTIN_DIR` 或 `<tmp>/creative-scene-e2e/bodies`（convert.mjs 的输出），没有时 AC-1 跳过、资产库用例不画 3D 预览；AC-12 不需要文件。
+    - AC-1 的 e2e 只截了材质预览：实时 GI 镜中与 `lit` 导出的截图要 GPU 浏览器，放进 6.3 给 owner 的材料。
+- [x] 6.3 实测与 owner 材料：
   - AC-8：在实时 GI 下给素体换一个姿态，记录 CPU 蒙皮、静态化、段重建、GI 收敛到可导出的耗时。
   - 一个接近上限的导入角色的加载与静态化耗时。
   - 结果写进 design。
   - AC-1、AC-2、AC-6 的截图放进 `discovery/research/`，交 owner 看图。
+  - 实施记录：
+    - 测量：e2e「skinned 6.3 evidence」，只在有素体文件且设了 `SCENE_E2E_EVIDENCE` 时运行，用 GPU 浏览器。
+      - 换姿态：从 `__scenePose.set` 计到追踪层 `geometryVersion` 增加且没有待建段，再计到视口累积满 `viewportSettle` 帧。
+      - 主线程分项：用新的 `ModelCache` 加载，求姿态、`staticGeometry`、`MeshBVH` 各跑 9 次取中位数。
+      - 接近上限的角色：女素体身体复制 148 份，经 `writeGLB` 写出（约 190 万三角形），分项跑 3 次。
+    - 结果写进 design「AC-8 实测」。材料在 `discovery/research/2026-11-12-skinned-measurements.md` 和 `skinned-6.3/`。
+    - AC-1 的实时 GI 镜中截图和 `lit` 导出截图在这里补齐（5.2 记录的遗留）。AC-2、AC-6 的截图来自单条 e2e 加 `SCENE_E2E_EVIDENCE`。
+    - 优化：第一次测量时素体的静态化需要 2.9 ms，`rig/skin.ts:staticGeometry` 改为直接混合矩阵。
+      - 法线用余子式，相当于逆转置，与改前等价：法线最多差 0.022°，位置和切线一致。
+      - 改后素体 0.7 ms，接近上限的角色 96 ms。
+      - 单测 `rig-skin`、`import-rig` 和 e2e「skinned AC-6」通过。
+
+## 代码评审修复（2026-11-12）
+
+评审提出 10 项，逐项核对后 9 项成立并已修复，1 项按设计保留：
+
+- **部署**：镜像预建 `/var/lib/crm/scene-models` 和 `scene-textures`，交给 `app`。新卷首次挂载时沿用这个属主，已用最小镜像实测可写。以前建过的卷，在 `docs/dev/builtin-models.md`、`scene-texture-library.md` 写了用 root 改属主的命令。
+- **模型文件的 304**：先确认文件在清单里、存储里也有，再比对 If-None-Match。HTTP 用例覆盖了清单外 404 和缺文件 503。
+- **拖入预览**：拖入摘要带上 `rig`；`posableOf` 的准备结果按模板和 rig 缓存；`SkinnedModel` 在 rig 到达时重新求值。
+- **导入**：
+  - 只把默认场景交给解析器，骨架只收这个场景用到的 skin。
+  - 预检拒绝不成树的节点层级（成环或一个节点挂在两处），包括未使用的节点。
+  - `skeletonOf` 的父链遍历设了上限。
+  - 读取权重支持未压缩的稀疏访问器。
+- **静态化法线**：没有 NORMAL 时，先设索引再算法线。
+- **导出**：内置模型读不到时，只有出图帧里可见的物件（含编组隐藏）才会让导出失败。分镜导出按每个分镜求值后的场景加载模型。
+- **aim 约束**：在模型根空间求解，非等比缩放的实例与共享的静态化几何一致。
+- **取景**：视口取景改用当前姿态的静态化几何的包围盒；`render_view` 先加载模型再取景。
+- **AC-4**：新增通用命名表（`UpperLeg.L`、`Thigh_R` 等，不含手指），RobotExpressive 首次导入就能认出躯干、四肢和脚。映射缺少必需骨骼时，对话框先说已映射骨骼的层级问题：「leftUpperLeg 上面没有映射过的骨骼，应在 hips 之下」，再补一句缺手。
+- **按设计保留**：静止几何和拾取 BVH 是模型加载结果，与静态 part 一样随 `ModelCache` 释放，不计入 256 MiB 预算。已写进 design「缓存预算」。
+- **验证**：
+  - Go 测试：`httpapi`。
+  - 前端单测：`rig`、`rig-skin`、`import-rig`、`import`、`model`、`camera`、`timeline-export`、`builtin-models`、`materials`、`trace`。
+  - e2e（逐条）：「skinned AC-1」「AC-2」「AC-6」「AC-12」。

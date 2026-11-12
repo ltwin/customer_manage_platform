@@ -1,7 +1,7 @@
 // Package creativeglb inspects untrusted GLB files produced by scene geometry
-// modules. It accepts only a static subset of glTF 2.0 (data: 模型内容) and
-// derives the model manifest from the actual vertex data; nothing the file
-// declares about itself is trusted. The editor host runs the same algorithm in
+// modules or imported. It accepts only a static subset of glTF 2.0 plus the
+// skin subset (data: 模型内容) and derives the model manifest from the actual
+// vertex data; nothing the file declares about itself is trusted. The editor host runs the same algorithm in
 // frontend/src/creative-scene/sandbox/inspect.ts against the shared testdata.
 package creativeglb
 
@@ -33,6 +33,7 @@ const (
 	ReasonBoundsMismatch     Reason = "bounds_mismatch"
 	ReasonUnsupportedFeature Reason = "unsupported_feature"
 	ReasonLimit              Reason = "limit"
+	ReasonSkin               Reason = "skin"
 )
 
 // Error is a rejected GLB. Detail is English and meant for logs and the
@@ -57,6 +58,9 @@ type Limits struct {
 	MaxSlots              int
 	MaxParts              int
 	MaxAnchors            int
+	MaxSkins              int
+	MaxJointsPerSkin      int
+	MaxJoints             int
 }
 
 // DefaultLimits are the contract budgets for model content, imported or
@@ -70,6 +74,9 @@ func DefaultLimits() Limits {
 		MaxSlots:              32,
 		MaxParts:              200,
 		MaxAnchors:            200,
+		MaxSkins:              32,
+		MaxJointsPerSkin:      256,
+		MaxJoints:             512,
 	}
 }
 
@@ -84,6 +91,8 @@ type Manifest struct {
 	// UV says whether every mesh has TEXCOORD_0 (Epic 修订 v18); nil on a
 	// manifest computed before it was added.
 	UV *bool `json:"uv,omitempty"`
+	// Skeleton summarizes the joints of a skinned model; nil without skins.
+	Skeleton *Skeleton `json:"skeleton,omitempty"`
 }
 
 // Bounds is the world-space axis-aligned box of the whole model.
@@ -122,11 +131,11 @@ const (
 var (
 	namePattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	componentSizes = map[int]int{5120: 1, compUByte: 1, 5122: 2, compUShort: 2, compUInt: 4, compFloat: 4}
-	typeComponents = map[string]int{"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+	typeComponents = map[string]int{"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 	// Top-level and per-object members that are valid glTF but outside the
 	// static subset. Each maps to the feature named in the rejection.
-	topUnsupported  = map[string]string{"images": "texture", "textures": "texture", "samplers": "texture", "skins": "skin", "animations": "animation", "cameras": "camera"}
-	nodeUnsupported = map[string]string{"camera": "camera", "skin": "skin", "weights": "morph target"}
+	topUnsupported  = map[string]string{"images": "texture", "textures": "texture", "samplers": "texture", "animations": "animation", "cameras": "camera"}
+	nodeUnsupported = map[string]string{"camera": "camera", "weights": "morph target"}
 )
 
 // Inspect validates glb against the static subset and computes its manifest.
@@ -374,6 +383,7 @@ type document struct {
 	materials []material
 	meshes    [][]primitive
 	nodes     []node
+	skins     []skin
 	roots     []int
 }
 
@@ -394,13 +404,16 @@ type material struct {
 
 type primitive struct {
 	position, indices, material int
-	uv                          bool
+	// joints and weights are the JOINTS_0 / WEIGHTS_0 accessors, -1 without.
+	joints, weights int
+	uv              bool
 }
 
 type node struct {
 	name     string
 	children []int
 	mesh     int
+	skin     int
 	local    [16]float64
 }
 
@@ -415,7 +428,7 @@ func parseDocument(jsonChunk, bin []byte, limits Limits) (*document, error) {
 	if err != nil {
 		return nil, err
 	}
-	allowed := []string{"asset", "scene", "scenes", "nodes", "meshes", "materials", "accessors", "bufferViews", "buffers", "extensionsUsed", "extensionsRequired"}
+	allowed := []string{"asset", "scene", "scenes", "nodes", "meshes", "materials", "accessors", "bufferViews", "buffers", "skins", "extensionsUsed", "extensionsRequired"}
 	if err := top.checkMembers("gltf", allowed, nil, topUnsupported); err != nil {
 		return nil, err
 	}
@@ -443,13 +456,23 @@ func parseDocument(jsonChunk, bin []byte, limits Limits) (*document, error) {
 	if d.meshes, err = d.parseMeshes(top); err != nil {
 		return nil, err
 	}
-	if d.nodes, err = parseNodes(top, len(d.meshes), limits); err != nil {
+	skins, _, err := top.array("skins", "skins")
+	if err != nil {
+		return nil, err
+	}
+	if d.nodes, err = parseNodes(top, len(d.meshes), len(skins), limits); err != nil {
+		return nil, err
+	}
+	if d.skins, err = d.parseSkins(top, len(d.nodes), limits); err != nil {
 		return nil, err
 	}
 	if d.roots, err = parseScene(top, len(d.nodes)); err != nil {
 		return nil, err
 	}
 	if err := d.checkGraph(); err != nil {
+		return nil, err
+	}
+	if err := d.checkSkins(limits); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -801,7 +824,8 @@ func (d *document) parseMeshes(top object) ([][]primitive, error) {
 }
 
 // attributeFormats lists the accepted vertex attributes: component types
-// (normalized integers only for COLOR_0) and component counts.
+// (normalized integers only for COLOR_0, plain ones only for JOINTS_0) and
+// component counts.
 var attributeFormats = map[string]struct {
 	components []int
 	counts     []int
@@ -812,6 +836,8 @@ var attributeFormats = map[string]struct {
 	"TEXCOORD_0": {[]int{compFloat}, []int{2}},
 	"TEXCOORD_1": {[]int{compFloat}, []int{2}},
 	"COLOR_0":    {[]int{compFloat, compUByte, compUShort}, []int{3, 4}},
+	"JOINTS_0":   {[]int{compUByte, compUShort}, []int{4}},
+	"WEIGHTS_0":  {[]int{compFloat}, []int{4}},
 }
 
 func (d *document) parsePrimitive(p object, what string) (primitive, error) {
@@ -837,13 +863,13 @@ func (d *document) parsePrimitive(p object, what string) (primitive, error) {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	prim := primitive{position: -1}
+	prim := primitive{position: -1, joints: -1, weights: -1}
 	count := -1
 	for _, name := range names {
 		format, known := attributeFormats[name]
 		if !known {
 			if strings.HasPrefix(name, "JOINTS_") || strings.HasPrefix(name, "WEIGHTS_") {
-				return primitive{}, failf(ReasonUnsupportedFeature, "skin attribute %s (%s)", name, what)
+				return primitive{}, failf(ReasonSkin, "attribute %s: at most four influences per vertex (%s)", name, what)
 			}
 			return primitive{}, failf(ReasonUnsupportedFeature, "attribute %s (%s)", name, what)
 		}
@@ -853,7 +879,9 @@ func (d *document) parsePrimitive(p object, what string) (primitive, error) {
 		}
 		a := d.accessors[idx]
 		okFormat := slices.Contains(format.components, a.component) && slices.Contains(format.counts, a.comps)
-		if !okFormat || (a.component != compFloat && !a.normalized) {
+		// Joint indices are plain integers; every other integer attribute is
+		// normalized.
+		if !okFormat || (a.component != compFloat && a.normalized == (name == "JOINTS_0")) {
 			return primitive{}, failf(ReasonAccessor, "%s attribute %s has an unsupported format", what, name)
 		}
 		if count >= 0 && a.count != count {
@@ -865,6 +893,10 @@ func (d *document) parsePrimitive(p object, what string) (primitive, error) {
 			prim.position = idx
 		case "TEXCOORD_0":
 			prim.uv = true
+		case "JOINTS_0":
+			prim.joints = idx
+		case "WEIGHTS_0":
+			prim.weights = idx
 		}
 	}
 	if prim.position < 0 {
@@ -888,7 +920,7 @@ func (d *document) parsePrimitive(p object, what string) (primitive, error) {
 	return prim, nil
 }
 
-func parseNodes(top object, meshes int, limits Limits) ([]node, error) {
+func parseNodes(top object, meshes, skins int, limits Limits) ([]node, error) {
 	items, _, err := top.array("nodes", "nodes")
 	if err != nil {
 		return nil, err
@@ -899,7 +931,7 @@ func parseNodes(top object, meshes int, limits Limits) ([]node, error) {
 	out := make([]node, len(items))
 	for i, n := range items {
 		what := fmt.Sprintf("nodes[%d]", i)
-		allowed := []string{"name", "children", "mesh", "matrix", "translation", "rotation", "scale"}
+		allowed := []string{"name", "children", "mesh", "skin", "matrix", "translation", "rotation", "scale"}
 		if err := n.checkMembers(what, allowed, nil, nodeUnsupported); err != nil {
 			return nil, err
 		}
@@ -915,11 +947,15 @@ func parseNodes(top object, meshes int, limits Limits) ([]node, error) {
 		if err != nil {
 			return nil, err
 		}
+		skin, err := n.index("skin", what, skins)
+		if err != nil {
+			return nil, err
+		}
 		local, err := localMatrix(n, what)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = node{name: name, children: children, mesh: mesh, local: local}
+		out[i] = node{name: name, children: children, mesh: mesh, skin: skin, local: local}
 	}
 	return out, nil
 }
@@ -1091,6 +1127,14 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	// its BIN chunk holds.
 	budget := len(d.bin) / 12
 
+	var worlds [][16]float64
+	if len(d.skins) > 0 {
+		var err error
+		if worlds, err = d.worlds(); err != nil {
+			return Manifest{}, err
+		}
+	}
+
 	type frame struct {
 		node  int
 		world [16]float64
@@ -1131,7 +1175,13 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 				if triangles > limits.MaxTriangles {
 					return Manifest{}, failf(ReasonLimit, "more than %d triangles", limits.MaxTriangles)
 				}
-				extend(&bounds, lb, world)
+				if n.skin >= 0 {
+					if err := d.extendSkinned(&bounds, p, d.skins[n.skin], worlds, &budget); err != nil {
+						return Manifest{}, err
+					}
+				} else {
+					extend(&bounds, lb, world)
+				}
 				if p.material >= 0 && d.materials[p.material].isSlot && !slots[d.materials[p.material].slot] {
 					m := d.materials[p.material]
 					slots[m.slot] = true
@@ -1160,6 +1210,7 @@ func (d *document) manifest(limits Limits) (Manifest, error) {
 	manifest.Bounds = bounds
 	manifest.Triangles = triangles
 	manifest.UV = &uv
+	manifest.Skeleton = d.skeleton()
 	manifest.Normalize()
 	return manifest, nil
 }
@@ -1311,14 +1362,17 @@ func (m *Manifest) Normalize() {
 const Tolerance = 1e-4
 
 // Matches compares two manifests by the contract rules: after sorting by id,
-// ids, hints, the triangle count and uv are exact; bounds and anchor
-// positions agree within Tolerance. other is the server's: one computed
-// before uv was added carries none, and uv then goes uncompared.
+// ids, hints, the triangle count, uv and the skeleton are exact; bounds and
+// anchor positions agree within Tolerance. other is the server's: one
+// computed before uv was added carries none, and uv then goes uncompared.
 func (m Manifest) Matches(other Manifest) bool {
 	a, b := m.clone(), other.clone()
 	a.Normalize()
 	b.Normalize()
 	if b.UV != nil && (a.UV == nil || *a.UV != *b.UV) {
+		return false
+	}
+	if !a.Skeleton.equal(b.Skeleton) {
 		return false
 	}
 	if a.Triangles != b.Triangles || len(a.Slots) != len(b.Slots) || len(a.Parts) != len(b.Parts) || len(a.Anchors) != len(b.Anchors) {
