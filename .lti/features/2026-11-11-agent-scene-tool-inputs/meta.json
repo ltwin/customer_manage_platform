@@ -1,0 +1,174 @@
+{
+  "uid": "81e909da-aa58-4459-abd0-66fdffe3fac2",
+  "revision": 9,
+  "id": "agent-scene-tool-inputs",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "closed",
+  "createdAt": "2026-11-11T13:36:01.350Z",
+  "updatedAt": "2026-11-12T04:06:14.163Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "concurrency"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:49.513Z",
+      "contentHash": "4ab27f7ec4aa59c9"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-12T04:03:50.071Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "8b8f70003337640e"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:37:31.632Z",
+      "contentHash": "4ab27f7ec4aa59c9",
+      "role": "proposal"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:37:31.632Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "c4e2f2395086655d",
+      "role": "design"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:09.979Z",
+      "contentHash": "4ab27f7ec4aa59c9",
+      "role": "proposal"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:09.979Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "c4e2f2395086655d",
+      "role": "design"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-11T13:38:49.513Z",
+      "contentHash": "a6306fa191d023da",
+      "deltaHash": "de4e5925aeedc7a5",
+      "role": "design"
+    }
+  ],
+  "revisions": [],
+  "baseline": {
+    "commit": "63331bbcc76cc4b3b212eddb3c9cc735ffa1d227",
+    "at": "2026-11-11T13:38:12.914Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "1ee2e3634c9ee86acee2d56652df0ee45ffeee096e39f6a53bb11fda79552cfd"
+    },
+    "preExisting": [
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/contracts.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/design.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/diagnosis.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/meta.json",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/proposal.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/specs.md",
+      ".lti/features/2026-11-11-agent-scene-tool-inputs/tasks.md",
+      ".lti/snapshots/1ee2e3634c9ee86acee2d56652df0ee45ffeee096e39f6a53bb11fda79552cfd.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "Claude",
+      "at": "2026-11-12T04:05:58.106Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "未单独在基线上跑红灯对照，新用例直接覆盖 diagnosis 中的拒绝输入；creativeagent 的 TestCompactionSmallWindowCanContinue、TestCompactionOriginalsLeaveRoomForRecentTurns、TestCompactionReplacementAtSameCoverageUsesNewSummary 在 63331bbc 上已失败，未在本 change 修复；网关 closeObjectSchemas 会把 schema 中未列字段的对象（light、volume、environment、render、material_slots 等）关闭为空对象，基线中整条 operation 也是如此，未在本 change 处理",
+        "coverage": [
+          {
+            "criterionId": "AC-1ccc22303756",
+            "status": "verified",
+            "evidence": "creativescene/agent_objects.go:completeAgentAdds + agent.go:AgentEditInTx(AddedObjectIDs)；TestAgentAddsObjectsWithPlacementDefaults（省略 id/order/parent/visible/locked，按父级追加并避开同批显式 order，返回 ID 顺序与默认 transform）；creativeagent TestSceneWritesReplayTheirReceipt（真实工具省略 id 写入，重放返回同一 added_object_ids）"
+          },
+          {
+            "criterionId": "AC-4aae07627b5b",
+            "status": "verified",
+            "evidence": "agent_objects.go:prepareAgentTransform/completeAgentTransforms + lookat.go:resolveItem（只输出 rotation，新增项按 objects[i] 报错）；TestAgentPartialTransformKeepsOtherShotChannels（基础与分镜只写 position 时保留旋转/缩放和其他分镜关键帧，yaw_deg 只键旋转）；TestSceneToolRefusalsTellTheAssistantHowToFixTheCall（camera.look_at 误放、look_at+rotation、look_at 缺 position 均返回带 objects[0] 路径的拒绝）"
+          },
+          {
+            "criterionId": "AC-17707c0438ce",
+            "status": "verified",
+            "evidence": "jobs.go:CreateBakeJobInTx + scene_tools.go:writeModel；TestSceneToolRefusalsTellTheAssistantHowToFixTheCall（缺 based_on_revision、缺来源、code 与 base_content_revision_id 冲突均拒绝且 creative_scene_jobs 为 0）；旧请求、冲突与重放：creativeagent -run 'Scene|RetryJobID' 与 creativescene -run 'Agent|Reparent|Edit|LookAt|Shot' 全绿（含 TestRetryJobIDWritesTheConflictedBakeOnce、TestSceneWritesReplayTheirReceipt）"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "定向验证：gofmt、golangci-lint（creativeagent/creativescene 0 issues）、go build ./...；creativescene -run 'Agent|Reparent|Edit|LookAt|Shot' 通过；creativeagent -run 'Scene|RetryJobID' 通过；在主检出试合并 develop（ef0b24d1）后 creativeagent 整包仅余 3 个分支起点 63331bbc 已失败的压缩用例。design 挂载点与实际改动一致（compaction_regression_test.go 为工具定义变长后的窗口校准）。契约 delta 与代码一致，owner 已按当前版本重批。信任边界：入口仍走 sceneWrite 的账号范围与准入，补齐后的操作仍经 CommandInTx 完整校验，based_on_revision 改为必填，无新增绕过路径。并发：补齐读取的是 LockCurrentInTx 加锁的场景，按单元的基线冲突检查与回执幂等不变，重放保持服务端分配的 ID。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "285603da57db9fa4fd742301fc250243240630e6b692b95ea4e98af2041ec4ed"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-12T04:06:11.348Z",
+      "assessment": {
+        "method": "checks",
+        "limitations": "同技术验证：未在基线上单独跑红灯对照；3 个压缩用例在分支起点已失败、未在本 change 修复；未列字段的 schema 对象被网关关闭为空对象的问题留作后续",
+        "coverage": [
+          {
+            "criterionId": "AC-1ccc22303756",
+            "status": "verified",
+            "evidence": "creativescene/agent_objects.go:completeAgentAdds + agent.go:AgentEditInTx(AddedObjectIDs)；TestAgentAddsObjectsWithPlacementDefaults（省略 id/order/parent/visible/locked，按父级追加并避开同批显式 order，返回 ID 顺序与默认 transform）；creativeagent TestSceneWritesReplayTheirReceipt（真实工具省略 id 写入，重放返回同一 added_object_ids）"
+          },
+          {
+            "criterionId": "AC-4aae07627b5b",
+            "status": "verified",
+            "evidence": "agent_objects.go:prepareAgentTransform/completeAgentTransforms + lookat.go:resolveItem（只输出 rotation，新增项按 objects[i] 报错）；TestAgentPartialTransformKeepsOtherShotChannels（基础与分镜只写 position 时保留旋转/缩放和其他分镜关键帧，yaw_deg 只键旋转）；TestSceneToolRefusalsTellTheAssistantHowToFixTheCall（camera.look_at 误放、look_at+rotation、look_at 缺 position 均返回带 objects[0] 路径的拒绝）"
+          },
+          {
+            "criterionId": "AC-17707c0438ce",
+            "status": "verified",
+            "evidence": "jobs.go:CreateBakeJobInTx + scene_tools.go:writeModel；TestSceneToolRefusalsTellTheAssistantHowToFixTheCall（缺 based_on_revision、缺来源、code 与 base_content_revision_id 冲突均拒绝且 creative_scene_jobs 为 0）；旧请求、冲突与重放：creativeagent -run 'Scene|RetryJobID' 与 creativescene -run 'Agent|Reparent|Edit|LookAt|Shot' 全绿（含 TestRetryJobIDWritesTheConflictedBakeOnce、TestSceneWritesReplayTheirReceipt）"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 指示收尾并合入 develop，并按当前版本重批契约 delta；依据技术验证记录的定向测试与合并树检查。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "285603da57db9fa4fd742301fc250243240630e6b692b95ea4e98af2041ec4ed"
+      }
+    }
+  ],
+  "checkRuns": [],
+  "closed": {
+    "at": "2026-11-12T04:06:13.964Z",
+    "incomplete": false
+  },
+  "type": "feature",
+  "stage": "closed"
+}

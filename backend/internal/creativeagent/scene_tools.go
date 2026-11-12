@@ -82,7 +82,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: editSceneTool,
 			Desc: "按顺序执行一组场景修改，全部成功或全部不生效，产生一个可撤销的新修订。" + sceneConventions +
 				"基线之后别人改过同一内容时不写入，返回 status=conflict，带改动者、当前状态和新的 revision。操作：" +
-				"add_objects{objects:[{id:\"sobj_\"+21 位字母数字或_-, kind:primitive|light|camera|group|model_instance|volume, name, parent_id(编组或 null), order(同级唯一), transform, visible, locked, material_slots?, primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}；" +
+				"add_objects{objects:[{kind:primitive|light|camera|group|model_instance|volume,name,transform?,parent_id?,id?,order?,visible?,locked?,material_slots?,primitive{builtin,params}|light|camera|volume|model{content_revision_id}}]}。省略 id 自动分配，结果 added_object_ids 按输入顺序返回；省略 parent_id 为根级，order 为同级末尾，visible 为 true，locked 为 false，transform 默认原点、单位旋转和缩放。" +
 				"light 字段同 three.js：{type:directional|point|spot|area, color:\"#rrggbb\", intensity:0…1000（area 0…100000）, cast_shadow}，point 和 spot 另有 distance（米，0 不截断）、decay（默认 2），spot 再加 angle（弧度，光锥半角，≤π/2，默认 π/3）、penumbra（0…1，只管光锥边缘羽化）；" +
 				"光源尺寸同 Blender：point 和 spot 有 radius_m（发光球半径，0…10 米，默认 0.1，不随物件缩放），directional 有 angular_diameter_deg（角直径，0…30 度，默认 0.545）；尺寸越大、遮挡物离受光面越远，影子边缘越软，高光越大越柔，强度不变；写 0 是硬影子；" +
 				"area 是面光源（同 Blender Area、three.js RectAreaLight，做柔光箱、灯板、窗户）：shape:rectangle|ellipse（默认 rectangle）、width、height（0.01…20 米，默认 0.25，随物件的世界缩放变化，含父级），沿局部 −Z 单面发光，背面不亮；intensity 是发光面亮度 cd/m²（默认 10000），法线方向的等效发光强度 = 亮度 × 面积；面光源越大影子越软、高光越大；与点光、聚光互换类型且不写 intensity 时按等效发光强度换算；" +
@@ -94,8 +94,8 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"体积物件（雾、烟、光束，同 Blender 的 Volume Scatter 加 Volume Absorption）kind:volume，volume{shape:box|sphere（边长或直径 1 m 的单位体，大小用 transform.scale）, scatter_color, scatter_density:0…100（每米）, anisotropy:-0.95…0.95（正值前向散射，逆光更亮）, absorption_color（透过后保留的颜色）, absorption_density:0…100, edge_falloff:0…1（边缘柔化，0 硬边）, cast_shadow（在被太阳、聚光、点光照到的表面上投影）}，均可省略（默认 box、#cccccc、0.1、0、#cccccc、0、0.1、false）；" +
 				"密度 0.05–0.3 是薄雾，2 以上是浓烟；每个场景最多 8 个；只在 lit 里看得到，clay 和线稿里没有；灯光照进体积才有光束，要看光束用 render_view 的 lit 回看。" +
 				"例（窗前的雾）：{kind:volume, transform:{position:[0,1.5,-2], rotation:[0,0,0,1], scale:[4,3,3]}, volume:{scatter_color:\"#e8e4dc\", scatter_density:0.3, anisotropy:0.6, edge_falloff:0.2}}。" +
-				"add_objects 和 update_objects 的条目可写 look_at:[x,y,z]（世界坐标）代替 transform.rotation：摄像机和灯光的 −Z、其余物件的 +Z 对准该点（同 three.js Object3D.lookAt），update 时 transform 可只写 position 或省略；父级在同一次修改里也被移动时会被拒绝，分两次提交。" +
-				"update_objects{updates:[{object_id, 只写要改的字段}]}（primitive.params、light、camera、volume 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
+				"look_at:[x,y,z] 是世界坐标，写在物件条目上，与 camera、transform 同级。摄像机和灯光以 −Z、其他物件以 +Z 对准该点。新增物件使用 look_at 时须写 transform.position。look_at、yaw_deg、transform.rotation 三选一。yaw_deg 是水平朝向：绕父级 Y 轴转到这个角度（度，0 为默认朝向），替换原有旋转，俯仰和侧倾一并清掉，不是在现有朝向上再转。例：{kind:camera,name:\"主机位\",transform:{position:[3,2,4]},look_at:[0,1,0],camera:{focal_mm:50}}。父级同时移动时分两次提交。" +
+				"update_objects{updates:[{object_id, 只写要改的字段}]}，transform 也可仅给要改的分量（primitive.params、light、camera、volume 按键合并，只改写到的字段；light 改 type 时去掉新类型没有的字段；material_slots 按槽位合并，写 null 清除该槽位）；remove_objects{object_ids}（连同子物件）；" +
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +
@@ -147,14 +147,13 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"摆好摄像机后先用 render_view 按摄像机回看确认构图，再用 export_shots 导出。新模型用 write_model。基础体（原点在底面中心）：" + creativescene.BuiltinCatalog(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
-				"based_on_revision": base,
+				"based_on_revision": {Type: schema.Integer, Desc: base.Desc + "；仅单独执行 revert_run 时可省略"},
 				"shot":              str("分镜 ID：把 update_objects 写到的可按分镜变化的属性只写进这个分镜"),
-				"operations": {Type: schema.Array, Required: true, Desc: "1 到 50 项", ElemInfo: &schema.ParameterInfo{Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
-					"op": {Type: schema.String, Required: true, Enum: []string{"add_objects", "update_objects", "remove_objects", "reparent_objects", "set_environment", "set_render", "set_instance_model", "add_shot", "update_shot", "remove_shot", "revert_run"}},
-				}}},
+				"operations":        {Type: schema.Array, Required: true, Desc: "1 到 50 项；每项按 op 只给对应字段", ElemInfo: sceneEditOperation()},
 			}),
 		}, nil
 	case writeModelTool:
+		base.Required = true
 		return &schema.ToolInfo{
 			Name: writeModelTool,
 			Desc: "用代码生成模型并放进场景：新增物件，或替换模型实例的模型。代码在创作者的页面编译，调用等到写入后返回尺寸 size_m、三角面、材质槽、部件和挂点；编译失败返回错误和行号，改代码重试。" +
@@ -168,7 +167,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":       doc,
 				"based_on_revision": base,
-				"target": {Type: schema.Object, Desc: "add 与 replace 二选一", SubParams: map[string]*schema.ParameterInfo{
+				"target": {Type: schema.Object, Required: true, Desc: "add 与 replace 二选一", SubParams: map[string]*schema.ParameterInfo{
 					"add": {Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
 						"name":      str(""),
 						"transform": {Type: schema.Object, Required: true, SubParams: map[string]*schema.ParameterInfo{"position": numbers, "rotation": numbers, "scale": numbers}},
@@ -179,11 +178,11 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 						"scope":     {Type: schema.String, Enum: []string{"this", "all_instances"}},
 					}},
 				}},
-				"code":                     str("与 base_content_revision_id 二选一"),
-				"base_content_revision_id": str("沿用这个模型修订的代码"),
+				"code":                     str("生成或改写模型代码时必传，与 base_content_revision_id、retry_job_id 互斥"),
+				"base_content_revision_id": str("只改参数时必传：read_scene 的 model.content_revision_id，与 code、retry_job_id 互斥"),
 				"params":                   {Type: schema.Object, Desc: "参数取值，省略的用默认值"},
 				"name_hint":                str("模型名，如「哥特式石柱」"),
-				"retry_job_id":             str("冲突结果给出的任务 ID；不能和 code、params 同用"),
+				"retry_job_id":             str("复用烘焙产物时必传：冲突结果给出的任务 ID，只另传 document_id、based_on_revision、target"),
 			}),
 		}, nil
 	case exportShotsTool:
@@ -425,6 +424,9 @@ func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any,
 	var args writeModelArgs
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
+	}
+	if args.BasedOn == 0 {
+		return nil, refuseTool("缺少有效的 based_on_revision：先用 read_scene 读取这个场景，再传回它的 revision")
 	}
 	if args.RetryJobID != "" {
 		if args.Code != "" || args.BaseContentRevisionID != "" || args.Params != nil {

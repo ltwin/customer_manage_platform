@@ -909,7 +909,8 @@ type EditResult struct {
 	// parameter cleared (data: 场景内置基础体「topology」).
 	FacesCleared []string `json:"faces_cleared,omitempty"`
 	// AddedShots are the ids of the shots add_shot made, in order.
-	AddedShots []string `json:"added_shots,omitempty"`
+	AddedShots     []string `json:"added_shots,omitempty"`
+	AddedObjectIDs []string `json:"added_object_ids,omitempty"`
 }
 
 // maxListedEntries bounds the lists an edit or revert result carries; counts
@@ -988,6 +989,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		}
 		return agentRevertInTx(ctx, tx, in)
 	}
+	if in.BasedOn == 0 {
+		return nil, invalid("缺少有效的 based_on_revision：先用 read_scene 读取这个场景，再传回它的 revision")
+	}
 	if onTheList > 1 {
 		return nil, invalid("add_objects、remove_objects 和 reparent_objects 都改物件列表，一次修改里只能有其中一个：同类的条目合进一个操作（新分组和挂进它的物件写在同一个 reparent_objects 里，新物件在 add_objects 里直接写 parent_id），不同类的分次提交")
 	}
@@ -1011,6 +1015,10 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	if err != nil {
 		return nil, err
 	}
+	var addedObjects []string
+	if in.Operations, addedObjects, err = prepareAgentObjects(in.Operations, scene); err != nil {
+		return nil, err
+	}
 	if in.Operations, err = resolveReparent(in.Operations, shown); err != nil {
 		return nil, err
 	}
@@ -1020,6 +1028,9 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 	// Before the baseline check, so it covers every unit the keys touch.
 	var added []string
 	if in.Operations, added, err = expandShots(in.Operations, scene, in.Shot); err != nil {
+		return nil, err
+	}
+	if in.Operations, err = completeAgentTransforms(in.Operations, scene); err != nil {
 		return nil, err
 	}
 	if err := readableImages(ctx, tx, in, cur.Refs); err != nil {
@@ -1047,7 +1058,7 @@ func AgentEditInTx(ctx context.Context, tx store.TxAccountScope, in EditInput) (
 		return nil, err
 	}
 	changed := changedObjects(append(slices.Clone(written.ChangedUnits), written.RemovedUnits...))
-	out := EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed), AddedShots: added}
+	out := EditResult{WrittenRevision: int64(written.Revision), ChangedObjects: changed[:min(len(changed), maxListedEntries)], ChangedCount: len(changed), AddedShots: added, AddedObjectIDs: addedObjects}
 	if out.FacesCleared, err = clearedFaces(ctx, tx, in.DocumentID, scene, in.Operations); err != nil {
 		return nil, err
 	}

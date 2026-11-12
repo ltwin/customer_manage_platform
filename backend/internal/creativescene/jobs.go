@@ -716,8 +716,11 @@ func CreateBakeJobInTx(ctx context.Context, tx store.TxAccountScope, in BakeInpu
 	if (in.Add == nil) == (in.Replace == nil) {
 		return Job{}, nil, invalid("target 须为 add 或 replace 其中之一")
 	}
-	if (in.Code == "") == (in.BaseContentRevisionID == "") {
-		return Job{}, nil, invalid("须给出 code 或 base_content_revision_id 其中之一")
+	switch {
+	case in.Code == "" && in.BaseContentRevisionID == "":
+		return Job{}, nil, invalid("缺少模型来源：生成或重写模型请给 code；只改参数请给 read_scene 返回的 model.content_revision_id，填入 base_content_revision_id")
+	case in.Code != "" && in.BaseContentRevisionID != "":
+		return Job{}, nil, invalid("code 和 base_content_revision_id 互斥：生成或重写模型保留 code，只改参数保留 base_content_revision_id")
 	}
 	if len(in.Params) > maxModelParams {
 		return Job{}, nil, invalid("params 最多 %d 个", maxModelParams)
