@@ -139,12 +139,13 @@ export function staticGeometry(part: SkinnedPart, root: Object3D): BufferGeometr
   const out = new BufferGeometry()
   out.setAttribute('position', new BufferAttribute(outPosition, 3))
   if (outNormal) out.setAttribute('normal', new BufferAttribute(outNormal, 3))
-  else out.computeVertexNormals()
   if (outTangent) out.setAttribute('tangent', new BufferAttribute(outTangent, 4))
   for (const [name, a] of Object.entries(src.attributes)) {
     if (!['position', 'normal', 'tangent', 'skinIndex', 'skinWeight'].includes(name)) out.setAttribute(name, shareOf(a))
   }
   if (src.index) out.setIndex(shareOf(src.index))
+  // Without NORMAL they come of the posed faces, through the index once it is set.
+  if (!outNormal) out.computeVertexNormals()
   for (const g of src.groups) out.addGroup(g.start, g.count, g.materialIndex)
   out.setDrawRange(src.drawRange.start, src.drawRange.count)
   out.computeBoundingBox()

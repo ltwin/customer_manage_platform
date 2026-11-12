@@ -51,12 +51,6 @@ func (h *handlers) GetCreativeSceneModel(c *gin.Context, file string, params Get
 		abortError(c, 404, CodeNotFound, "没有这个内置模型")
 		return
 	}
-	etag := strconv.Quote(strings.TrimSuffix(file, ".glb"))
-	if params.IfNoneMatch != nil && *params.IfNoneMatch == etag {
-		setSceneTextureCache(c, etag)
-		c.Status(http.StatusNotModified)
-		return
-	}
 	unavailable := func(err error) {
 		if h.logger != nil {
 			h.logger.ErrorContext(c.Request.Context(), "built-in model unavailable", "file", file, "error", err)
@@ -82,7 +76,14 @@ func (h *handlers) GetCreativeSceneModel(c *gin.Context, file string, params Get
 		return
 	}
 	defer func() { _ = body.Close() }()
+	// Matched only once the file is known to be there: a name off the list
+	// is 404 and a missing file 503, whatever the client cached.
+	etag := strconv.Quote(strings.TrimSuffix(file, ".glb"))
 	setSceneTextureCache(c, etag)
+	if params.IfNoneMatch != nil && *params.IfNoneMatch == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
 	c.Header("Content-Type", "model/gltf-binary")
 	c.Header("Content-Length", strconv.FormatInt(size, 10))
 	c.Header("X-Content-Type-Options", "nosniff")

@@ -69,7 +69,7 @@ export type Posable = {
 /** A fresh instance (at rest) made posable. */
 export function posable(instance: SkeletonInstance, rig: Rig | undefined, skeleton: Skeleton, prepared: Prepared | null): Posable {
   const mapping = mappingOf(rig, instance.nodes)
-  const constraints = bindConstraints(rig?.constraints ?? [], jointParents(skeleton), (i) => instance.nodes.get(i)!)
+  const constraints = bindConstraints(rig?.constraints ?? [], jointParents(skeleton), (i) => instance.nodes.get(i)!, instance.root)
   const rest = new Map(Object.values(mapping).map((o) => [o!, o!.quaternion.clone()]))
   return { instance, mapping, prepared, constraints, rest }
 }
@@ -91,13 +91,24 @@ export function pose(p: Posable, q: Pose | null) {
   p.instance.root.updateWorldMatrix(true, true)
 }
 
-const prepared = new WeakMap<SkeletonTemplate, Prepared | null>()
+const prepared = new WeakMap<SkeletonTemplate, Map<string, Prepared | null>>()
 const noSkeleton: Skeleton = { joints: [], fingerprint: '' }
 
-/** A fresh instance of a model's template, made posable; the humanoid's preparation is worked out once per template (a template is one model's, its rig fixed). */
+/** A rig by its content: its mapping and constraints. */
+export const rigKey = (rig: Rig | undefined) => JSON.stringify(rig ?? null)
+
+/**
+ * A fresh instance of a model's template, made posable; the humanoid's
+ * preparation is worked out once per template and rig. A model's rig is
+ * fixed, but a summary may come without it first (a model being placed) and
+ * with it after.
+ */
 export function posableOf(t: SkeletonTemplate, rig: Rig | undefined, skeleton: Skeleton | undefined): Posable {
-  if (!prepared.has(t)) prepared.set(t, prepareTemplate(t, rig))
-  return posable(instantiate(t), rig, skeleton ?? noSkeleton, prepared.get(t)!)
+  const byRig = prepared.get(t) ?? new Map<string, Prepared | null>()
+  prepared.set(t, byRig)
+  const key = rigKey(rig)
+  if (!byRig.has(key)) byRig.set(key, prepareTemplate(t, rig))
+  return posable(instantiate(t), rig, skeleton ?? noSkeleton, byRig.get(key)!)
 }
 
 /** Posed geometries, held from the cache until released. */

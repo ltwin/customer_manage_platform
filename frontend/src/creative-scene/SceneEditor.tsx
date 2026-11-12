@@ -144,7 +144,7 @@ function dragModel(asset: LibraryAsset): DragModel | null {
   return {
     assetID: asset.id,
     revision: asset.content_revision_id,
-    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null, ...(model.import ? { import: model.import } : {}) },
+    summary: { content_id: asset.content_id, usable: true, manifest: model.manifest, generator: model.generator, name_hint: model.name_hint ?? null, faces: model.faces ?? null, ...(model.import ? { import: model.import } : {}), ...(model.rig ? { rig: model.rig } : {}) },
     mount: model.generator.mount,
     bounds: model.manifest.bounds,
   }

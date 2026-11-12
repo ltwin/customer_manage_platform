@@ -1,4 +1,4 @@
-import { Quaternion, Vector3, type Object3D } from 'three'
+import { Matrix4, Quaternion, Vector3, type Object3D } from 'three'
 import type { components } from '../../api/schema'
 
 // Node constraints (VRMC_node_constraint 1.0's roll, aim and rotation, as
@@ -59,9 +59,21 @@ export type BoundConstraint = {
 const axisOf = (a: string) =>
   new Vector3(a.endsWith('X') ? 1 : 0, a.endsWith('Y') ? 1 : 0, a.endsWith('Z') ? 1 : 0).multiplyScalar(a.startsWith('Negative') ? -1 : 1)
 
-const worldQuat = (o: Object3D | null) => (o ? o.getWorldQuaternion(new Quaternion()) : new Quaternion())
+/**
+ * Where o is in root's space: its matrix there, or its world matrix without a root. Aim works there, so a pose
+ * comes out alike in every instance, whatever the object's scale (design「坐标空间」: instances share it).
+ */
+const inRoot = (o: Object3D | null, root: Object3D | null) => {
+  const m = o ? o.matrixWorld.clone() : new Matrix4()
+  return root ? m.premultiply(root.matrixWorld.clone().invert()) : m
+}
+const rotationOf = (m: Matrix4) => {
+  const q = new Quaternion()
+  m.decompose(new Vector3(), q, new Vector3())
+  return q
+}
 
-function bind(c: Constraint, node: Object3D, source: Object3D): BoundConstraint {
+function bind(c: Constraint, node: Object3D, source: Object3D, root: Object3D | null): BoundConstraint {
   const rest = node.quaternion.clone()
   const reset = () => void node.quaternion.copy(rest)
   const blend = (target: Quaternion) => node.quaternion.copy(rest).slerp(target, c.weight)
@@ -88,9 +100,9 @@ function bind(c: Constraint, node: Object3D, source: Object3D): BoundConstraint 
         update() {
           node.updateWorldMatrix(true, false)
           source.updateWorldMatrix(true, false)
-          const parent = worldQuat(node.parent)
+          const parent = rotationOf(inRoot(node.parent, root))
           const from = axis.clone().applyQuaternion(rest).applyQuaternion(parent)
-          const to = new Vector3().setFromMatrixPosition(source.matrixWorld).sub(new Vector3().setFromMatrixPosition(node.matrixWorld)).normalize()
+          const to = new Vector3().setFromMatrixPosition(inRoot(source, root)).sub(new Vector3().setFromMatrixPosition(inRoot(node, root))).normalize()
           blend(new Quaternion().setFromUnitVectors(from, to).premultiply(parent.clone().invert()).multiply(parent).multiply(rest))
         },
       }
@@ -112,11 +124,12 @@ function bind(c: Constraint, node: Object3D, source: Object3D): BoundConstraint 
  * The constraints bound to an instance's nodes, in evaluation order. The nodes
  * must be at rest: each constraint keeps its node's and source's rest
  * rotations. Throws when the constraints loop, which a stored rig never does.
+ * root: the model's root, whose space aim works in; without it, the world's.
  */
-export function bindConstraints(cs: readonly Constraint[], parents: JointParents, nodeOf: (index: number) => Object3D): BoundConstraint[] {
+export function bindConstraints(cs: readonly Constraint[], parents: JointParents, nodeOf: (index: number) => Object3D, root: Object3D | null = null): BoundConstraint[] {
   const order = constraintOrder(cs, parents)
   if (!order) throw new Error('node constraints loop')
-  return order.map((i) => bind(cs[i], nodeOf(cs[i].node), nodeOf(cs[i].source)))
+  return order.map((i) => bind(cs[i], nodeOf(cs[i].node), nodeOf(cs[i].source), root))
 }
 
 /** Puts every constrained node back to rest, before a pose is applied. */

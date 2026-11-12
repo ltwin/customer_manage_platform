@@ -2,7 +2,7 @@ import type { Object3D } from 'three'
 import { humanBones } from '../rig/bones.ts'
 import type { Constraint } from '../rig/constraints.ts'
 import type { FileSkeleton } from '../rig/detect.ts'
-import { checkRig, pruneOptional, type Rig, type RigProblem } from '../rig/humanoid.ts'
+import { checkRig, placementProblem, pruneOptional, type Rig, type RigProblem } from '../rig/humanoid.ts'
 import { checkGeometry } from '../rig/retarget.ts'
 import type { ImportRig } from './parse.ts'
 
@@ -29,8 +29,11 @@ export type MappingCheck = {
 /** The mapping checked against the file's skeleton, and the scene's rest pose (root: the converted scene). */
 export function checkMapping(rig: ImportRig, root: Object3D, h: Humanoid): MappingCheck {
   const { humanoid, dropped } = pruneOptional(h, rig.skeleton)
-  if (Object.keys(humanoid).length === 0) return { humanoid, dropped, problem: '没有从骨骼名认出人形骨骼（能认 VRM、Mixamo 和 UE 小白人的命名）', nonUniform: [] }
+  if (Object.keys(humanoid).length === 0) return { humanoid, dropped, problem: '没有从骨骼名认出人形骨骼（能认 VRM、Mixamo、UE 小白人和 UpperLeg.L 这类通用命名）', nonUniform: [] }
   const refused = checkRig({ humanoid }, rig.skeleton)
+  // Bones missing, where the mapped ones hang comes first: a skeleton that cannot embed is not mended by mapping more (AC-4).
+  const misplaced = refused?.reason === 'missing_required' ? placementProblem(humanoid, rig.skeleton) : null
+  if (misplaced) return { humanoid, dropped, problem: `${misplaced.message}（另外${refused!.message}）`, nonUniform: [] }
   if (refused) return { humanoid, dropped, problem: refused.message, nonUniform: [] }
   const geometry = checkGeometry(root, Object.fromEntries(Object.entries(humanoid).map(([b, n]) => [b, rig.objects.get(n)!])))
   return { humanoid, dropped, problem: geometry.problem?.message ?? null, nonUniform: geometry.nonUniform }

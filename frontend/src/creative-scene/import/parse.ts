@@ -2,7 +2,7 @@ import { LoadingManager, type Group, type Material, type Object3D } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { MeshoptDecoder } from 'meshoptimizer'
-import { detectRig, skeletonOf, type Detection, type FileSkeleton } from '../rig/detect.ts'
+import { detectRig, inDefaultScene, skeletonOf, type Detection, type FileSkeleton } from '../rig/detect.ts'
 
 // Reading a GLB the photographer picked (design「模块职责与协作」parse): the
 // file's JSON is checked before any loader sees it, every image's own bytes are
@@ -51,7 +51,8 @@ export type PrimitiveJSON = {
   extensions?: Record<string, unknown>
 }
 
-export type AccessorJSON = { bufferView?: number; byteOffset?: number; componentType: number; normalized?: boolean; count: number; type: string; sparse?: unknown }
+type SparseJSON = { count: number; indices: { bufferView: number; byteOffset?: number; componentType: number }; values: { bufferView: number; byteOffset?: number } }
+export type AccessorJSON = { bufferView?: number; byteOffset?: number; componentType: number; normalized?: boolean; count: number; type: string; sparse?: SparseJSON }
 
 /** The parts of a glTF document the import reads. */
 export type GLTFJSON = {
@@ -176,6 +177,23 @@ function precheck(json: GLTFJSON): void {
     for (const j of skin.joints) joints.add(j)
   }
   if (joints.size > maxJoints) throw new ImportRejected('limit', `模型共有 ${joints.size} 根骨骼，最多 ${maxJoints} 根`)
+  checkNodeTree(json.nodes ?? [])
+}
+
+/** glTF's nodes make trees: one parent each at most, no loop anywhere, used or not (walking a loop would never end). */
+function checkNodeTree(nodes: NonNullable<GLTFJSON['nodes']>) {
+  const broken = () => new ImportRejected('unreadable', '模型的节点层级不是树（有节点挂在两处，或层级成环），不是合法的 glTF。请在 Blender 里重新导出')
+  const parents = new Map<number, number>()
+  nodes.forEach((n, i) =>
+    n.children?.forEach((c) => {
+      if (parents.has(c) || c === i) throw broken()
+      parents.set(c, i)
+    }),
+  )
+  for (let i = 0; i < nodes.length; i++) {
+    let steps = 0
+    for (let a = parents.get(i); a !== undefined; a = parents.get(a)) if (++steps > nodes.length) throw broken()
+  }
 }
 
 // The skin subset's limits (data: 模型内容「接受的 GLB 子集」).
@@ -204,24 +222,43 @@ const componentBytes = new Map([
   [5126, 4],
 ])
 
-/** An accessor's values as floats, glTF's normalisation applied; null when they cannot be read here (sparse or compressed). */
+/** An accessor's values as floats, glTF's normalisation and sparse substitution applied; null when they cannot be read here (compressed). */
 function readAccessor(json: GLTFJSON, buffer: (i: number) => Uint8Array, index: number): Float32Array | null {
   const a = json.accessors?.[index]
-  const view = a?.bufferView === undefined ? undefined : json.bufferViews?.[a.bufferView]
   const size = componentBytes.get(a?.componentType ?? 0)
   const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a?.type ?? ''] ?? 0
-  if (!a || !view || !size || n === 0 || a.sparse !== undefined || view.extensions?.EXT_meshopt_compression || view.extensions?.KHR_meshopt_compression) return null
-  const bytes = buffer(view.buffer)
-  const data = new DataView(bytes.buffer, bytes.byteOffset + (view.byteOffset ?? 0), view.byteLength)
-  const stride = view.byteStride ?? size * n
+  if (!a || !size || n === 0) return null
+  const viewOf = (i: number | undefined) => (i === undefined ? undefined : json.bufferViews?.[i])
+  const views = [viewOf(a.bufferView), viewOf(a.sparse?.indices.bufferView), viewOf(a.sparse?.values.bufferView)]
+  if (views.some((v) => v?.extensions?.EXT_meshopt_compression || v?.extensions?.KHR_meshopt_compression)) return null
+  if ((a.bufferView !== undefined && !views[0]) || (a.sparse && (!views[1] || !views[2]))) return null
+  /** Reads component values of a view: count elements of k components, each type bytes, from offset. */
+  const reader = (view: NonNullable<(typeof views)[number]>, offset: number, type: number, k: number) => {
+    const bytes = buffer(view.buffer)
+    const data = new DataView(bytes.buffer, bytes.byteOffset + (view.byteOffset ?? 0), view.byteLength)
+    const width = componentBytes.get(type) ?? 0
+    const stride = view.byteStride ?? width * k
+    return (i: number, c: number) => {
+      const at = offset + i * stride + c * width
+      if (at + width > data.byteLength) throw new ImportRejected('unreadable', `访问器 ${index} 的数据不完整`)
+      return type === 5126 ? data.getFloat32(at, true) : type === 5125 ? data.getUint32(at, true) : type === 5123 ? data.getUint16(at, true) : data.getUint8(at)
+    }
+  }
   const out = new Float32Array(a.count * n)
   const scale = a.normalized ? { 5121: 255, 5123: 65535, 5125: 4294967295 }[a.componentType as 5121] ?? 1 : 1
-  for (let i = 0; i < a.count; i++) {
-    for (let c = 0; c < n; c++) {
-      const at = (a.byteOffset ?? 0) + i * stride + c * size
-      if (at + size > data.byteLength) throw new ImportRejected('unreadable', `访问器 ${index} 的数据不完整`)
-      const v = a.componentType === 5126 ? data.getFloat32(at, true) : a.componentType === 5125 ? data.getUint32(at, true) : a.componentType === 5123 ? data.getUint16(at, true) : data.getUint8(at)
-      out[i * n + c] = v / scale
+  if (views[0]) {
+    const at = reader(views[0], a.byteOffset ?? 0, a.componentType, n)
+    for (let i = 0; i < a.count; i++) for (let c = 0; c < n; c++) out[i * n + c] = at(i, c) / scale
+  }
+  // Sparse: the listed elements' values replace the base (zeros without a view); values are packed, no stride.
+  if (a.sparse) {
+    const s = a.sparse
+    const indexAt = reader({ ...views[1]!, byteStride: undefined }, s.indices.byteOffset ?? 0, s.indices.componentType, 1)
+    const valueAt = reader({ ...views[2]!, byteStride: undefined }, s.values.byteOffset ?? 0, a.componentType, n)
+    for (let k = 0; k < s.count; k++) {
+      const i = indexAt(k, 0)
+      if (i >= a.count) throw new ImportRejected('unreadable', `访问器 ${index} 的稀疏下标越界`)
+      for (let c = 0; c < n; c++) out[i * n + c] = valueAt(k, c) / scale
     }
   }
   return out
@@ -344,6 +381,12 @@ function strip(json: GLTFJSON): GLTFJSON {
   delete out.images
   delete out.textures
   delete out.samplers
+  // The default scene alone: the import writes only it, and three's loader keeps the node associations of the last scene it builds.
+  const chosen = json.scenes?.[json.scene ?? 0]
+  if (chosen) {
+    out.scenes = [chosen]
+    out.scene = 0
+  }
   return out
 }
 
@@ -371,7 +414,9 @@ export function writeContainer(json: GLTFJSON, bin: Uint8Array | null): ArrayBuf
 
 const allowed = /^(blob|data):/i
 
-function rigOf(json: GLTFJSON, associations: ReadonlyMap<Object3D | Material, Association | undefined>): ImportRig | null {
+function rigOf(file: GLTFJSON, associations: ReadonlyMap<Object3D | Material, Association | undefined>): ImportRig | null {
+  // The import writes the default scene only: the skins its nodes use are the skeleton.
+  const json = inDefaultScene(file)
   const skeleton = skeletonOf(json)
   if (!skeleton) return null
   const objects = new Map<number, Object3D>()

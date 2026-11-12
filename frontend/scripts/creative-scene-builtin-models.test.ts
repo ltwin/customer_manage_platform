@@ -81,3 +81,19 @@ test('the library lists the bodies by name or category, each with its thumbnail'
     assert.match(builtinModelThumbnail(m.id), /builtin\/models\/body_(fe)?male_1\.webp$/)
   }
 })
+
+test('a body whose file cannot be read fails the picture only where the picture shows it (AC-12)', async () => {
+  const { loadModels } = await import('../src/creative-scene/host/render.ts')
+  const { modelCache } = await import('../src/creative-scene/models/cache.ts')
+  let n = 0
+  const body = newModelInstance({ builtin: female.id }, female.label, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, [], female.materials, () => `sobj_${String(++n).padStart(21, '0')}`)
+  const group: SceneObject = { ...body, id: 'sobj_group0000000000000000', kind: 'group', name: '编组', model: undefined, material_slots: undefined } as unknown as SceneObject
+  try {
+    // Nothing serves the file here: the load fails as a body not imported does.
+    await assert.rejects(loadModels(state([body]).scene, {}), /内置模型「女素体」的文件暂时读不到/)
+    await loadModels(state([{ ...body, visible: false }]).scene, {})
+    await loadModels(state([{ ...group, visible: false }, { ...body, parent_id: group.id }]).scene, {})
+  } finally {
+    modelCache.clear()
+  }
+})

@@ -19,6 +19,7 @@ import { ShotScene } from './ShotScene.tsx'
 import { loadNightAssets } from '../world/nightSky/assets.ts'
 import { loadSceneImages, type ImageHold } from '../materials/images.ts'
 import { evaluateAt } from '../timeline/evaluate.ts'
+import { shownIn } from '../objects/shadowBudget.ts'
 
 // Pictures of the confirmed scene drawn as the viewport draws it (the clay
 // look: the scene's sky and sun with AO; or the lit look: materials, lights,
@@ -92,10 +93,11 @@ export type Shooter = {
 }
 
 /**
- * Loads every model the scene shows; an account's that fails draws as its
+ * Loads every model the scene names; an account's that fails draws as its
  * grey block. A built-in model whose file cannot be read (not imported yet)
- * fails the shot, naming it (AC-12): a grey block in place of the body is not
- * the picture asked for, and a retry later draws it.
+ * fails the shot, naming it, when the shot shows it (AC-12): a grey block in
+ * place of the body is not the picture asked for, and a retry later draws it.
+ * Hidden, or in a hidden group, it is not in the picture and stops nothing.
  */
 export async function loadModels(scene: Scene, models: Readonly<Record<string, SceneModel>>): Promise<void> {
   const keys = new Map(scene.objects.flatMap((o) => {
@@ -103,10 +105,12 @@ export async function loadModels(scene: Scene, models: Readonly<Record<string, S
     const summary = summaryOf(models, o.model)
     return key && summary?.usable !== false ? [[key, summary] as const] : []
   }))
+  const shown = shownIn(scene.objects)
+  const drawn = new Set(scene.objects.flatMap((o) => (shown(o.id) ? [modelKey(o.model)] : [])))
   const loaded = await Promise.allSettled([...keys].map(([k, summary]) => modelCache.load(k, summary?.faces)))
   const missing = [...keys.keys()].flatMap((k, i) => {
     const id = builtinOf(k)
-    return id !== null && loaded[i]?.status === 'rejected' ? [builtinModel(id)?.label ?? id] : []
+    return id !== null && drawn.has(k) && loaded[i]?.status === 'rejected' ? [builtinModel(id)?.label ?? id] : []
   })
   if (missing.length) throw new Error(`内置模型「${missing.join('、')}」的文件暂时读不到，请稍后再试`)
 }
@@ -118,9 +122,10 @@ export async function renderView(documentID: string, request: RenderRequest, rea
   if (request.marker_id && !shot) return { ok: false, message: `分镜 ${request.marker_id} 已不存在` }
   if (shot && !shot.camera_object_id) return { ok: false, message: '这个分镜没有绑定摄像机' }
   const scene = evaluateAt(doc.scene, shot?.frame ?? request.frame ?? 0)
+  // Loaded first: a preset frames a posed model by its posed bounds, which need it loaded.
+  await loadModels(scene, doc.models)
   const framing = framingFor(scene, doc.models, shot ? { ...request, camera_object_id: shot.camera_object_id } : request)
   if ('error' in framing) return { ok: false, message: framing.error }
-  await loadModels(scene, doc.models)
   // The viewport's look; depth_of_field only adds the blur.
   const look: Look = request.mode === 'lit' ? 'lit' : 'clay'
   const shooter = await openShooter(scene, doc.models, look)

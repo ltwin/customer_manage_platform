@@ -344,7 +344,9 @@ test('RobotExpressive mapped by hand is still refused for its feet, and imports 
   const parsed = await parse(characterGLB(characters.robot_expressive, 19))
   const rig = parsed.rig!
   const c = convert(parsed, { originToBottomCenter: false })
-  assert.match(checkMapping(rig, c.scene, rig.detection.humanoid).problem ?? '', /没有从骨骼名认出人形骨骼/)
+  // AC-4 at first sight: the found mapping says where its legs hang, before the hands it lacks.
+  assert.equal(rig.detection.via, 'generic')
+  assert.match(checkMapping(rig, c.scene, rig.detection.humanoid).problem ?? '', /^leftUpperLeg 上面没有映射过的骨骼，应在 hips 之下（另外人形映射缺少必需骨骼 leftHand）$/)
   for (const [name, says] of [
     ['robot_expressive: Hips 作 hips，腿挂在 Body 下', /^leftUpperLeg 上面没有映射过的骨骼/],
     ['robot_expressive: Body 作 hips，脚挂在控制骨下', /^leftFoot 上面没有映射过的骨骼/],
@@ -391,4 +393,47 @@ test('the twist sample keeps its constraints; constraints the server would refus
   const out = fileConstraints(cyclic)
   assert.deepEqual(out.constraints, [])
   assert.match(out.notes[0] ?? '', /已全部去掉/)
+})
+
+/** twoSets' file with its JSON changed by edit. */
+function editedTwoSets(edit: (json: ReturnType<typeof readContainer>['json']) => void): ArrayBuffer {
+  const { json, bin } = readContainer(new Uint8Array(twoSets()))
+  edit(json)
+  return rewrap(json, bin!)
+}
+
+test('AC-5: the second set of weights as an uncompressed sparse accessor is read and trimmed like a plain one', async () => {
+  // WEIGHTS_1 with no view of its own (zeros) and all three vertices substituted: indices 0, 1, 2 are JOINTS_0's first bytes.
+  const glb = editedTwoSets((json) => {
+    const weights = json.accessors![4]!
+    delete weights.bufferView
+    weights.sparse = { count: 3, indices: { bufferView: 1, componentType: 5121 }, values: { bufferView: 4 } }
+  })
+  const c = convert(await parse(glb), { originToBottomCenter: false })
+  assert.ok(c.report.some((r) => r.text === '3 个顶点受超过 4 根骨骼影响，只保留了影响最大的 4 根'))
+  const [mesh] = skinned((await parseModelGLB((await writeGLB(c.scene)).glb)).scene)
+  const index = mesh.geometry.getAttribute('skinIndex')
+  for (let v = 0; v < 3; v++) assert.deepEqual([0, 1, 2, 3].map((k) => mesh.skeleton.bones[index.getComponent(v, k)].name).sort(), ['J4', 'J5', 'J6', 'J7'])
+})
+
+test('a file of two scenes imports its default one, the skeleton only what that scene uses', async () => {
+  const glb = editedTwoSets((json) => {
+    // A second character in scene 1: two joints and a body on skin 1, none of it written.
+    json.nodes!.push({ name: 'K0', children: [10] }, { name: 'K1' }, { name: 'Other', mesh: 0, skin: 1 })
+    json.skins!.push({ joints: [9, 10] })
+    json.scenes!.push({ nodes: [9, 11] })
+    json.scene = 0
+  })
+  const parsed = await parse(glb)
+  assert.deepEqual(parsed.rig!.skeleton.joints.map((j) => j.node), [0, 1, 2, 3, 4, 5, 6, 7])
+  const c = convert(parsed, { originToBottomCenter: false })
+  const written = await writeGLB(c.scene, jointObjects(parsed.rig!))
+  assert.equal(written.manifest.skeleton?.joints.length, 8)
+})
+
+test('a node tree with a loop, even among unused nodes, is refused rather than walked forever', async () => {
+  const loop = editedTwoSets((json) => void json.nodes!.push({ name: 'A', children: [10] }, { name: 'B', children: [9] }))
+  await rejects(loop, 'unreadable', /节点层级不是树/)
+  const shared = editedTwoSets((json) => void json.nodes!.push({ name: 'A', children: [1] }))
+  await rejects(shared, 'unreadable', /节点层级不是树/)
 })

@@ -107,7 +107,7 @@ test('the browser drops the optional bones the server would refuse, never a requ
   }
 })
 
-test('finds the mapping of each character, and none on RobotExpressive', () => {
+test('finds the mapping of each character; RobotExpressive by its plain names, without hands', () => {
   const want: Record<string, string> = { xbot: 'mixamo', michelle: 'mixamo', vrm1_twist: 'vrm1', vrm0_girl: 'vrm0', ubc_male: 'ue', ubc_female: 'ue' }
   for (const [name, via] of Object.entries(want)) {
     const d = detectRig(characters[name])
@@ -124,11 +124,17 @@ test('finds the mapping of each character, and none on RobotExpressive', () => {
   assert.deepEqual(twist.constraints, vectorCase('vrm1_twist: VRMC_node_constraint 原样').rig.constraints)
   assert.deepEqual(twist.droppedConstraints, [])
 
-  // RobotExpressive: no names to go by; mapped by hand, its feet hang under IK
-  // controls, so either choice of hips leaves the mapping refused.
+  // RobotExpressive: plain names (UpperLeg.L) find its trunk, arms and legs but
+  // no hands (Palm1–3); mapped by hand, its feet hang under IK controls, so
+  // either choice of hips leaves the mapping refused.
   const robot = detectRig(characters.robot_expressive)
-  assert.equal(robot.via, null)
-  assert.deepEqual(robot.humanoid, {})
+  const named = (b: string) => characters.robot_expressive.nodes[robot.humanoid[b]!]?.name
+  assert.equal(robot.via, 'generic')
+  assert.deepEqual(
+    Object.fromEntries(['hips', 'spine', 'chest', 'neck', 'head', 'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightFoot'].map((b) => [b, named(b)])),
+    { hips: 'Hips', spine: 'Abdomen', chest: 'Torso', neck: 'Neck', head: 'Head', leftShoulder: 'Shoulder.L', leftUpperArm: 'UpperArm.L', leftLowerArm: 'LowerArm.L', leftUpperLeg: 'UpperLeg.L', leftLowerLeg: 'LowerLeg.L', leftFoot: 'Foot.L', rightFoot: 'Foot.R' },
+  )
+  assert.equal(robot.humanoid.leftHand, undefined)
   for (const [name, field] of [
     ['robot_expressive: Hips 作 hips，腿挂在 Body 下', 'rig.humanoid.leftUpperLeg'],
     ['robot_expressive: Body 作 hips，脚挂在控制骨下', 'rig.humanoid.leftFoot'],
@@ -403,6 +409,30 @@ test('an aim under a constrained parent points at its source, as three-vrm evalu
   root.updateMatrixWorld(true)
   const blind = bindConstraints(cs, new Map(), (i) => nodes[i])
   assert.ok(aimError(blind) > 1, 'aim before its parent misses')
+})
+
+test('aim works in the model root\'s space: an instance scaled unevenly takes the same pose', () => {
+  // The model under an object scaled [3, 1, 1]: in the world the target's direction turns, in the root's it does not.
+  const aimed = (scale: number, rooted: boolean) => {
+    const object = new Object3D()
+    const root = new Object3D()
+    const [a, node, target] = Array.from({ length: 3 }, () => new Object3D())
+    object.add(root)
+    root.add(a, target)
+    a.add(node)
+    object.scale.set(scale, 1, 1)
+    node.position.set(0, 1, 0)
+    target.position.set(1, 2, 0.5)
+    object.updateMatrixWorld(true)
+    const cs: Constraint[] = [{ node: 1, kind: 'aim', source: 2, weight: 1, aim_axis: 'PositiveX' }]
+    const parents = jointParents({ joints: [{ node: 0, parent: null }, { node: 1, parent: 0 }, { node: 2, parent: null }] })
+    const list = bindConstraints(cs, parents, (i) => [a, node, target][i], rooted ? root : null)
+    resetConstraints(list)
+    runConstraints(list)
+    return node.quaternion.clone()
+  }
+  assert.ok(aimed(3, true).angleTo(aimed(1, true)) < 1e-6, 'the same pose in the root\'s space')
+  assert.ok(aimed(3, false).angleTo(aimed(1, false)) > 0.1, 'the world\'s space would differ')
 })
 
 test("the VRM twist sample's roll bones take their share of the hand's turn", () => {

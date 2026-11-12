@@ -35,7 +35,7 @@ type Prepared = {
   rig: ImportRig | null
 }
 
-const vias = { vrm1: 'VRM 1.0', vrm0: 'VRM 0.x', mixamo: 'Mixamo 命名', ue: 'UE 小白人命名' } as const
+const vias = { vrm1: 'VRM 1.0', vrm0: 'VRM 0.x', mixamo: 'Mixamo 命名', ue: 'UE 小白人命名', generic: '通用命名' } as const
 
 const mounts: { value: NonNullable<Mount>; label: string }[] = [
   { value: 'floor', label: '放在地面上' },

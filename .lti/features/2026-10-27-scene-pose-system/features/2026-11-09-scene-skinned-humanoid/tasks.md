@@ -226,3 +226,26 @@
       - 法线用余子式，相当于逆转置，与改前等价：法线最多差 0.022°，位置和切线一致。
       - 改后素体 0.7 ms，接近上限的角色 96 ms。
       - 单测 `rig-skin`、`import-rig` 和 e2e「skinned AC-6」通过。
+
+## 代码评审修复（2026-11-12）
+
+评审提出 10 项，逐项核对后 9 项成立并已修复，1 项按设计保留：
+
+- **部署**：镜像预建 `/var/lib/crm/scene-models` 和 `scene-textures`，交给 `app`。新卷首次挂载时沿用这个属主，已用最小镜像实测可写。以前建过的卷，在 `docs/dev/builtin-models.md`、`scene-texture-library.md` 写了用 root 改属主的命令。
+- **模型文件的 304**：先确认文件在清单里、存储里也有，再比对 If-None-Match。HTTP 用例覆盖了清单外 404 和缺文件 503。
+- **拖入预览**：拖入摘要带上 `rig`；`posableOf` 的准备结果按模板和 rig 缓存；`SkinnedModel` 在 rig 到达时重新求值。
+- **导入**：
+  - 只把默认场景交给解析器，骨架只收这个场景用到的 skin。
+  - 预检拒绝不成树的节点层级（成环或一个节点挂在两处），包括未使用的节点。
+  - `skeletonOf` 的父链遍历设了上限。
+  - 读取权重支持未压缩的稀疏访问器。
+- **静态化法线**：没有 NORMAL 时，先设索引再算法线。
+- **导出**：内置模型读不到时，只有出图帧里可见的物件（含编组隐藏）才会让导出失败。分镜导出按每个分镜求值后的场景加载模型。
+- **aim 约束**：在模型根空间求解，非等比缩放的实例与共享的静态化几何一致。
+- **取景**：视口取景改用当前姿态的静态化几何的包围盒；`render_view` 先加载模型再取景。
+- **AC-4**：新增通用命名表（`UpperLeg.L`、`Thigh_R` 等，不含手指），RobotExpressive 首次导入就能认出躯干、四肢和脚。映射缺少必需骨骼时，对话框先说已映射骨骼的层级问题：「leftUpperLeg 上面没有映射过的骨骼，应在 hips 之下」，再补一句缺手。
+- **按设计保留**：静止几何和拾取 BVH 是模型加载结果，与静态 part 一样随 `ModelCache` 释放，不计入 256 MiB 预算。已写进 design「缓存预算」。
+- **验证**：
+  - Go 测试：`httpapi`。
+  - 前端单测：`rig`、`rig-skin`、`import-rig`、`import`、`model`、`camera`、`timeline-export`、`builtin-models`、`materials`、`trace`。
+  - e2e（逐条）：「skinned AC-1」「AC-2」「AC-6」「AC-12」。

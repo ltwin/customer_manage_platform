@@ -4,16 +4,36 @@ import type { Constraint } from './constraints.ts'
 // Finding a skinned file's standard humanoid mapping and node constraints at
 // import (design「导入时保留骨骼并回写节点下标」): VRM 1.0 or 0.x says it
 // outright; otherwise the joints' names are read against the Mixamo and Unreal
-// mannequin tables. Names are looked for among the skin joints only: a mesh
-// node may share a bone's name (RobotExpressive's do). What this finds still
+// mannequin tables, and plain English names with a side. Names are looked for
+// among the skin joints only: a mesh node may share a bone's name (RobotExpressive's do). What this finds still
 // goes through pruneOptional and checkRig; the photographer can correct it.
 
-export type NodeJSON = { name?: string; children?: number[]; extensions?: Record<string, unknown> }
-export type RigJSON = { nodes?: NodeJSON[]; skins?: { joints: number[] }[]; extensions?: Record<string, unknown> }
+export type NodeJSON = { name?: string; children?: number[]; skin?: number; extensions?: Record<string, unknown> }
+export type RigJSON = { scene?: number; scenes?: { nodes?: number[] }[]; nodes?: NodeJSON[]; skins?: { joints: number[] }[]; extensions?: Record<string, unknown> }
+
+/**
+ * The file as its default scene has it: the skins none of that scene's nodes
+ * use are emptied, their indices kept. A file without scenes is as it is.
+ */
+export function inDefaultScene<T extends RigJSON>(json: T): T {
+  const roots = json.scenes?.[json.scene ?? 0]?.nodes
+  if (!roots) return json
+  const nodes = json.nodes ?? []
+  const seen = new Set<number>()
+  const stack = [...roots]
+  while (stack.length) {
+    const n = stack.pop()!
+    if (seen.has(n)) continue
+    seen.add(n)
+    stack.push(...(nodes[n]?.children ?? []))
+  }
+  const used = new Set([...seen].flatMap((n) => (nodes[n]?.skin !== undefined ? [nodes[n].skin] : [])))
+  return { ...json, skins: json.skins?.map((s, i) => (used.has(i) ? s : { ...s, joints: [] })) }
+}
 
 export type Detection = {
   /** Where the mapping came from; null when nothing was found. */
-  via: 'vrm1' | 'vrm0' | 'mixamo' | 'ue' | null
+  via: 'vrm1' | 'vrm0' | 'mixamo' | 'ue' | 'generic' | null
   /** Standard bone → node index; empty when nothing was found. */
   humanoid: Record<string, number>
   constraints: Constraint[]
@@ -142,6 +162,36 @@ const mixamoBone = (n: string) => {
 }
 const ueBone = (n: string) => (Object.hasOwn(ueNames, n) ? ueNames[n] : undefined)
 
+// Plain English names with a side suffix, as Blender's and many hand-made rigs have them (UpperLeg.L, Thigh_R,
+// RobotExpressive's Abdomen and Torso). No fingers: their names vary too much to guess.
+const genericCentre: Record<string, string> = { hips: 'hips', pelvis: 'hips', spine: 'spine', abdomen: 'spine', chest: 'chest', torso: 'chest', upperchest: 'upperChest', neck: 'neck', head: 'head' }
+const genericSided: Record<string, string> = {
+  shoulder: 'Shoulder',
+  clavicle: 'Shoulder',
+  upperarm: 'UpperArm',
+  lowerarm: 'LowerArm',
+  forearm: 'LowerArm',
+  hand: 'Hand',
+  upperleg: 'UpperLeg',
+  thigh: 'UpperLeg',
+  lowerleg: 'LowerLeg',
+  shin: 'LowerLeg',
+  calf: 'LowerLeg',
+  foot: 'Foot',
+  toes: 'Toes',
+  toe: 'Toes',
+}
+const genericBone = (n: string) => {
+  const own = (table: Record<string, string>, k: string) => (Object.hasOwn(table, k) ? table[k] : undefined)
+  const centre = own(genericCentre, n.toLowerCase())
+  if (centre) return centre
+  const suffixed = /^(.+?)[._ -]?(L|R|Left|Right)$/.exec(n)
+  const prefixed = /^(Left|Right)[._ -]?(.+)$/i.exec(n)
+  const [base, side] = suffixed ? [suffixed[1]!, suffixed[2]!] : prefixed ? [prefixed[2]!, prefixed[1]!] : ['', '']
+  const bone = own(genericSided, base.toLowerCase())
+  return bone ? (/^l/i.test(side) ? 'left' : 'right') + bone : undefined
+}
+
 const axes = { roll: 'rollAxis', aim: 'aimAxis' } as const
 
 function constraintsOf(nodes: readonly NodeJSON[], joints: ReadonlySet<number>): Pick<Detection, 'constraints' | 'droppedConstraints'> {
@@ -185,8 +235,9 @@ export function skeletonOf(json: RigJSON): FileSkeleton | null {
     joints: [...joints]
       .sort((a, b) => a - b)
       .map((node) => {
+        // Bounded: a file that reaches here was checked to have no loop, but this is no place to hang on one.
         let parent = parents.get(node)
-        while (parent !== undefined && !joints.has(parent)) parent = parents.get(parent)
+        for (let steps = 0; parent !== undefined && !joints.has(parent); steps++) parent = steps > nodes.length ? undefined : parents.get(parent)
         return { node, parent: parent ?? null, name: nodes[node]?.name ?? '' }
       }),
   }
@@ -205,6 +256,7 @@ export function detectRig(json: RigJSON): Detection {
     [
       ['mixamo', byNames(nodes, joints, mixamoBone)],
       ['ue', byNames(nodes, joints, ueBone)],
+      ['generic', byNames(nodes, joints, genericBone)],
     ] as const
   ).filter(([, h]) => h.hips !== undefined)
   const best = found.reduce<(typeof found)[number] | null>((a, b) => (!a || Object.keys(b[1]).length > Object.keys(a[1]).length ? b : a), null)

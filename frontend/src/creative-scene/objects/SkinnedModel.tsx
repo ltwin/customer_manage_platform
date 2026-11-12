@@ -7,7 +7,7 @@ import { onGeometry, resolvePart } from '../materials/resolve.ts'
 import { useSlotMaterial } from '../materials/useSlotMaterial.ts'
 import { renderPolicy } from '../materials/principled.ts'
 import { raycastPosed } from '../placement/raycast.ts'
-import { posableOf, posedGeometries, testPoses } from '../rig/pose.ts'
+import { posableOf, posedGeometries, rigKey, testPoses } from '../rig/pose.ts'
 import type { Posed } from '../rig/skin.ts'
 import type { SceneObject } from '../api.ts'
 import { Outline } from './Outline.tsx'
@@ -33,10 +33,12 @@ const noRaycast = () => {}
 
 /** objectId: whose pose it takes; none for a ghost, at rest. */
 export function SkinnedModel({ modelKey, skeleton, summary, objectId, look, edge, clay, ghost }: { modelKey: string; skeleton: ModelSkeleton; summary: SceneModel | undefined; objectId?: string; look: SkinLook; edge: string | null; clay: Material; ghost: Material }) {
+  // A model's rig never changes, but a summary may come without it first (placed from an asset) and with it after.
+  const rig = rigKey(summary?.rig)
   const p = useMemo(
     () => posableOf(skeleton.template, summary?.rig, summary?.manifest?.skeleton ?? undefined),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a model's rig and skeleton never change
-    [skeleton],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the summary's other fields do not bear on the pose
+    [skeleton, rig],
   )
   // The meshes and what their GLB materials say, before the look replaces the materials.
   const drawn = useMemo(() => {

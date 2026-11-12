@@ -99,4 +99,11 @@ func TestSceneModelRead(t *testing.T) {
 	if w := get("GET", present, token, etag); w.Code != 304 || w.Body.Len() != 0 || w.Header().Get("ETag") != etag {
 		t.Fatalf("not modified: %d", w.Code)
 	}
+	// A matching If-None-Match does not pass over the checks: off the list 404, missing 503.
+	unknown := strings.Repeat("c", 64) + ".glb"
+	if w := get("GET", unknown, token, `"`+strings.Repeat("c", 64)+`"`); w.Code != 404 {
+		t.Fatalf("unknown with etag: %d %s", w.Code, w.Body)
+	}
+	files[absent] = creativescene.ErrBuiltinModelMissing
+	unavailable(get("GET", absent, token, `"`+strings.Repeat("b", 64)+`"`), absent)
 }

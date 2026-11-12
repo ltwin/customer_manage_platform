@@ -45,6 +45,23 @@ function checkHumanoid(h: Readonly<Record<string, number>>, parents: JointParent
   for (const b of requiredBones) {
     if (!(b in h)) return problem(`rig.humanoid.${b}`, 'missing_required', `人形映射缺少必需骨骼 ${b}`)
   }
+  return checkPlacement(h, parents)
+}
+
+/**
+ * The checks after the required bones, on the bones mapped: each a joint of
+ * its own, under a mapped standard ancestor. The import asks this of a
+ * mapping that still lacks bones: where the mapped ones hang says more than
+ * what is missing (RobotExpressive's legs under a control bone).
+ */
+export function placementProblem(h: Readonly<Record<string, number>>, skeleton: Skeleton): RigProblem | null {
+  return checkPlacement(
+    Object.fromEntries(Object.entries(h).filter(([b]) => isHumanBone(b))),
+    jointParents(skeleton),
+  )
+}
+
+function checkPlacement(h: Readonly<Record<string, number>>, parents: JointParents): RigProblem | null {
   const boneOf = new Map<number, string>()
   for (const b of humanBones) {
     const n = h[b]

@@ -133,7 +133,8 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   // Drawn grouped by scene, each group where its first target is.
   const keys = [...new Set(planned.map((t) => t.key))]
   const targets = keys.flatMap((k) => planned.filter((t) => t.key === k))
-  await deps.loadModels(doc)
+  // Each scene the targets draw, as evaluated at its frame: what a shot hides stops nothing.
+  for (const k of keys) await deps.loadModels({ ...doc, scene: planned.find((t) => t.key === k)!.scene })
   const total = targets.length * plan.passes.length
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')

@@ -299,7 +299,7 @@ test('a test pose moves the skin of every instance the same way, and null is the
 
 import { Box3, Group, Matrix3, Raycaster } from 'three'
 import { ModelCache, modelCache, modelParts, stillMeshes, type SceneModel } from '../src/creative-scene/models/cache.ts'
-import { posableOf, posedGeometries, skeletonBounds } from '../src/creative-scene/rig/pose.ts'
+import { posableOf, posedGeometries, rigKey, skeletonBounds } from '../src/creative-scene/rig/pose.ts'
 import { staticGeometries, type Posed } from '../src/creative-scene/rig/skin.ts'
 import { collectMeshes, type SlotOf } from '../src/creative-scene/render/trace/collect.ts'
 import { raycastPosed } from '../src/creative-scene/placement/raycast.ts'
@@ -459,4 +459,66 @@ test('the framed bounds of a posed model follow its pose (render_view, export)',
   assert.ok(!posed.equals(atRest), 'the raised arm moves the bounds')
   modelCache.clear()
   staticGeometries.clear()
+})
+
+test('a skinned mesh without NORMAL gets its normals of the posed faces, through its index', async () => {
+  // A quad in the XZ plane, four vertices and two indexed triangles, on one joint.
+  const nodes: NodeJSON[] = [{ name: 'Body', mesh: 0, skin: 0 }, { name: 'J' }]
+  const t = await template(
+    glbOf(
+      {
+        scenes: [{ nodes: [0, 1] }],
+        nodes,
+        meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 }, indices: 3 }] }],
+        skins: [{ joints: [1], inverseBindMatrices: 4 }],
+      },
+      [
+        { array: new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1]), type: 'VEC3' },
+        { array: new Uint8Array(16), type: 'VEC4' },
+        { array: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]), type: 'VEC4' },
+        { array: new Uint16Array([0, 2, 1, 1, 2, 3]), type: 'SCALAR' },
+        { array: inverses([new Matrix4()]), type: 'MAT4' },
+      ],
+    ),
+  )
+  const normal = staticGeometry(t.skinned[0]!, t.root).getAttribute('normal')
+  assert.equal(normal.count, 4)
+  for (let i = 0; i < 4; i++) assert.deepEqual([normal.getX(i), normal.getY(i), normal.getZ(i)].map((v) => Math.round(v * 1e6) / 1e6 + 0), [0, 1, 0], `vertex ${i}`)
+})
+
+test('a template first instanced without its rig (a model being placed) poses once the rig comes', async () => {
+  const { template } = modelParts(await parseModelGLB(xbotGLB())).skeleton!
+  const skeleton = vectors.skeletons.xbot
+  assert.equal(posableOf(template, undefined, skeleton).prepared, null)
+  assert.notEqual(posableOf(template, xbotRig, skeleton).prepared, null, 'the rig is prepared, not the earlier null')
+  assert.notEqual(rigKey(undefined), rigKey(xbotRig))
+})
+
+test('framing a posed skinned mesh takes its current pose\'s bounds, not the box three kept of the first', async () => {
+  const { expandByPieces } = await import('../src/creative-scene/render/pieces.ts')
+  const parts = modelParts(await parseModelGLB(xbotGLB()))
+  const p = posableOf(parts.skeleton!.template, xbotRig, vectors.skeletons.xbot)
+  p.instance.root.position.set(5, 0, 0)
+  const frame = () => {
+    const box = new Box3()
+    p.instance.root.updateMatrixWorld(true)
+    for (const s of p.instance.skinned) expandByPieces(box, s.mesh)
+    return box
+  }
+  const at = (q: Parameters<typeof posedGeometries>[3]) => {
+    const held = posedGeometries(p, 'rev_frame', parts.skeleton!.rest, q)
+    for (const s of p.instance.skinned) s.mesh.userData.posed = { geometry: held.geometries.get(s.id)!, root: p.instance.root } satisfies Posed
+    return held
+  }
+  const rest = at(null)
+  const restBox = frame()
+  // The box three keeps would be computed once, here, and kept.
+  for (const s of p.instance.skinned) (s.mesh as SkinnedMesh).computeBoundingBox()
+  const raised = at({ leftUpperArm: turn([0, 1, 0], -90) })
+  const raisedBox = frame()
+  assert.ok(!raisedBox.equals(restBox), 'the bounds moved with the arm')
+  const expected = skeletonBounds(p, raised.geometries).applyMatrix4(p.instance.root.matrixWorld)
+  assert.ok(near(raisedBox.min.toArray(), expected.min.toArray()) && near(raisedBox.max.toArray(), expected.max.toArray()))
+  rest.release()
+  raised.release()
 })

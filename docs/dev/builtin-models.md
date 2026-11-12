@@ -17,6 +17,9 @@
 
 - `oss`：同一个 bucket 的 `scene-models/` 前缀。
 - `local`：`SCENE_MODEL_LOCAL_ROOT`，缺省为 `AVATAR_LOCAL_ROOT` 的同级目录 `scene-models`。compose 部署挂卷 `scene_model_data:/var/lib/crm/scene-models`。
+  - 镜像里预建了 `/var/lib/crm/scene-models` 并交给 `app`（UID 1000），新建的卷首次挂载时会沿用这个属主。
+  - 在这之前就创建过的卷属于 root，`creativectl` 写入时会报 `permission denied`。需要用 root 改一次属主：
+    `docker compose run --rm --no-deps --user root --entrypoint chown app -R app:app /var/lib/crm/scene-models`
 
 ## 导入与检查
 

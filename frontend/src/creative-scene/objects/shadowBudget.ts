@@ -16,7 +16,7 @@ export const shadowMaps = 8
 export type ShadowState = 'on' | 'off' | 'over_budget'
 
 /** Whether an object is drawn: it and every group above it visible. */
-function shownIn(objects: readonly SceneObject[]): (id: string) => boolean {
+export function shownIn(objects: readonly SceneObject[]): (id: string) => boolean {
   const byID = new Map(objects.map((o) => [o.id, o]))
   const memo = new Map<string, boolean>()
   const shown = (id: string, depth: number): boolean => {
