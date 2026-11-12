@@ -754,16 +754,16 @@ Content-Type: application/json
 | op | 字段 | 涉及单元 |
 |---|---|---|
 | `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容）、`faces`（可选，修订 v13：重新生成时由渲染端带过来的面级材质分配，结构见 `data: 模型内容`） | 无场景单元（不改快照） |
-| `derive_model`（修订 v13） | `ref`（同 `commit_model`）、`from_revision_id`（本账号完整形态的 `model` 修订，可以是库副本）、`faces`（新修订的完整分配；`null` 表示清空）、`base_content_id`（可选，规则同 `commit_model`） | 无场景单元（不改快照）。新修订的 `generator`、`manifest`、`name_hint` 取自来源修订，GLB 与缩略图复用来源修订的 blob，不上传、不编译；库副本的 `materials`、`source_revision_id` 不带过来。C8 的参考点也计划经这个操作写入 |
+| `derive_model`（修订 v13） | `ref`（同 `commit_model`）、`from_revision_id`（本账号完整形态的 `model` 修订，可以是库副本）、`faces`（新修订的完整分配；`null` 表示清空）、`base_content_id`（可选，规则同 `commit_model`） | 无场景单元（不改快照）。新修订的 `generator`、`manifest`、`name_hint`（导入的模型另有 `import`、`rig`，scene-pose-system 子项 3）取自来源修订，GLB 与缩略图复用来源修订的 blob，不上传、不编译；库副本的 `materials`、`source_revision_id` 不带过来。C8 的参考点也计划经这个操作写入 |
 | `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
-| `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
+| `set_instance_model` | `object_id`、`model`（`{content_revision_id}`、`{ref}` 或 `{builtin}`；`builtin` 为内置模型的条目 ID，scene-pose-system 子项 3，例如把女素体换成男素体）、`material_slots`（可选，Epic 修订 v7：给出时整体替换这些实例的 `material_slots`，与模型引用在同一操作里写入同一个内容单元；不给时保留原值）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`）、`object_ids`（`all_instances` 时必填，含 `object_id`，列出调用方看到的全部共用实例；每个都必须批前引用同一旧修订） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时为 `object_ids` 中每个对象的内容单元。由调用方列出而不是服务端展开，避免并发新增的共用实例让请求缺少预期单元 |
 
 - **分叉规则（I4）**：
   - `base_content_id` 被其他实例或资产引用时，`commit_model` 仍然在该内容上追加修订。是否让其他实例跟随，由 `set_instance_model` 的 `scope` 决定。
   - 资产持有的旧修订不受影响，因为资产引用的是修订而不是内容的最新版。
   - 编辑器和助手在 `scope = "this"` 且共享时，应传入不带 `base_content_id` 的 `commit_model`，即新建内容（分叉）。
 - **持有方交接**：`commit_model` 在场景类型的 `Apply` 中新建模型内容，使用底座传入的 `Retain` 回调预登记引用（底座 `patterns: 文档类型端口`）。
-- **校验**：暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
+- **校验**：`commit_model` 的 GLB 不能带骨架（暂存形态的 manifest 有 `skeleton` 时拒绝：代码模型不带骨骼，scene-pose-system 子项 3）；`derive_model` 不能以内置模型为来源（它没有内容修订），也不能以带骨架的修订为来源（带骨骼的模型暂不支持面级材质分配，Epic 修订 v7）。暂存上传属于本账号且未消费，GLB 上传的声明类型为 `model`、缩略图为 PNG 图片；manifest 与暂存形态中服务端算出的一致；`code_sha256` 正确；参数符合 schema（缺省的键补默认值）；`commit_model` / `derive_model` 必须出现在引用它的操作之前，两者的 `ref` 在同一批内不重复。消费后两个暂存候选标为已被文档采用。
 - **面级材质分配**（修订 v13）：`faces` 按 `data: 模型内容` 校验外形、上限和有效槽位数，不读 GLB。`derive_model` 与 `commit_model` 一样按 I4 分叉：编辑器和助手在共享且 `scope = "this"` 时不传 `base_content_id`。`derive_model` 与 `set_instance_model` 放在同一批，摄影师的一次「指定」只产生一条场景修订，撤销沿用内容单元的规则。
 - **成功响应**：在 `api: 提交场景命令` 的响应上增加 `models: {<ref>: {content_id, content_revision_id}}`，经底座的类型专属回执字段返回（`patterns: 文档类型端口`），随幂等回执重放。
 - **失败响应**（在基础接口之上增加）：
@@ -771,8 +771,8 @@ Content-Type: application/json
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
 | 409 | `creative_upload_unavailable` | 暂存上传不存在、属于其他账号、已过期、已消费或尚未就绪 | 重新上传 |
-| 400 | `validation_failed` | manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 与 `derive_model` 合计超过 16 个、`faces` 外形不对或超出上限（修订 v13） | 修正 |
-| 400 | `creative_model_unavailable` | `content_revision_id` 或 `derive_model` 的 `from_revision_id`（修订 v13）不存在、不是完整形态的 `model` 或不可展示 | 重读后重新选择 |
+| 400 | `validation_failed` | `commit_model` 的 GLB 带骨架（scene-pose-system 子项 3）、manifest 与 GLB 不符、哈希不符、参数越界、上传类型不符、`ref` 未定义 / 重复 / 未被本批引用、单批 `commit_model` 与 `derive_model` 合计超过 16 个、`faces` 外形不对或超出上限（修订 v13） | 修正 |
+| 400 | `creative_model_unavailable` | `content_revision_id` 或 `derive_model` 的 `from_revision_id`（修订 v13）不存在、不是完整形态的 `model` 或不可展示；`set_instance_model` 的 `builtin` 不在内置模型清单里（scene-pose-system 子项 3） | 重读后重新选择 |
 
 不使用 404 和 `creative_state_conflict`：编辑器把命令返回的 404 当作文档不存在、把 `creative_state_conflict` 当作文档进了回收站。
 
@@ -827,7 +827,8 @@ Content-Type: application/json
  "annotated_units": [], "removed_units": [], "reset_required": false,
  "models": {"pillar_faces": {"content_id": "ccnt_7d31", "content_revision_id": "ccrev_a0c4"}}}
 ```
-- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。
+- **换模型时的材质**（Epic 修订 v7）：编辑器在男、女素体之间互换时，同一个 `set_instance_model` 带上目标素体的 `materials` 作为 `material_slots`，摄影师自定义过的材质一并重置；撤销按内容单元恢复原模型和原材质。助手经 `edit_scene` 换内置模型而没写材质时，工具层同样补上目标的 `materials`。
+- **兼容**：在 `api: 提交场景命令` 上做兼容扩展。修订 v13 新增 `derive_model` 和 `commit_model.faces`，旧调用方不受影响。scene-pose-system 子项 3：`set_instance_model` 的 `model` 可以写 `{builtin}`，并可带 `material_slots`；`derive_model` 拒绝带骨架的来源；`commit_model` 拒绝带骨架的 GLB（此前 worker 本来就拒绝带 `skins` 的上传，没有调用方依赖它）；`derive_model` 照抄 `rig`。OpenAPI 同步，运行 `make generate`。
 
 ## 认领场景客户端任务
 
@@ -1590,15 +1591,15 @@ Content-Type: application/json
 ### 用途与调用
 - **用途**（修订 v20，C5c2）：编辑器取内置贴图材质的图片字节，供材质构建、世界空间层和离屏出图使用。
 - **消费者**：编辑器的图片缓存（`materials/images.ts`），包括为助手执行 `render_view` 和导出的页面。
-- **调用**：`GET /api/v1/creative/scene-textures/{file}`，也支持 `HEAD`。`file` 是目录里某个 `textured` 条目 `files[].name` 的值（`<sha256>.jpg`）。
+- **调用**：`GET /api/v1/creative/scene-textures/{file}`，也支持 `HEAD`。`file` 是目录里某个 `textured` 条目 `files[].name` 的值（`<sha256>.jpg` 或 `<sha256>.png`）。
 - **权限**：Bearer 认证，账号有创意空间读取权限（同读取场景）。不按账号区分内容；不走媒体票据，因为内置贴图不是账号内容，没有可读性要判断。
 
 ### 请求
-- 路径参数 `file`：必须匹配 `^[0-9a-f]{64}\.jpg$`，并且出现在当前目录里。
+- 路径参数 `file`：必须匹配 `^[0-9a-f]{64}\.(jpg|png)$`，并且出现在当前目录里（包括 `listed = false` 的条目）。
 - 可带 `If-None-Match`；不支持 `Range`。
 
 ### 成功响应
-- 200：`Content-Type: image/jpeg`，`Content-Length`，`ETag: "<sha256>"`，`Cache-Control: private, max-age=31536000, immutable`，`X-Content-Type-Options: nosniff`。正文是文件原样字节。
+- 200：`Content-Type` 按扩展名为 `image/jpeg` 或 `image/png`，`Content-Length`，`ETag: "<sha256>"`，`Cache-Control: private, max-age=31536000, immutable`，`X-Content-Type-Options: nosniff`。正文是文件原样字节。
 - 304：`If-None-Match` 与 ETag 相同。
 
 ### 失败响应
@@ -1632,6 +1633,8 @@ X-Content-Type-Options: nosniff
 
 ### 兼容与变更
 首次定义，只新增路由和错误码 `creative_texture_unavailable`，OpenAPI 加这一条后运行 `make generate`。
+
+scene-pose-system 子项 3：`file` 放宽到 `.png`，`Content-Type` 随扩展名。只放宽，已有调用不受影响；OpenAPI 的路径参数 pattern 与 200 的媒体类型同步。
 
 ## 场景时间线命令
 
@@ -1710,11 +1713,11 @@ X-Content-Type-Options: nosniff
 ## 导入模型到资产库
 
 ### 用途与调用
-- **用途**：把摄影师导入的外部静态 GLB 存进资产库，成为一份 `model` 资产（`data: 模型内容`「导入的模型」、`data: 模型资产`）。成功即资产已建好，可以从资产库放进场景。
+- **用途**：把摄影师导入的外部 GLB（静态，或带骨骼的角色，后者自 scene-pose-system 子项 3 起）存进资产库，成为一份 `model` 资产（`data: 模型内容`「导入的模型」、`data: 模型资产`）。成功即资产已建好，可以从资产库放进场景。
 - **消费者**：资产库页面、资产库抽屉和编辑器资产面板的「导入模型」，以及编辑器「添加 > 导入模型…」（导入后再按 `api: 模型存入资产库`「兼容与变更」里的放入方式放进场景）。助手不能导入。
 - **调用**：`POST /api/v1/creative/assets/from-glb`，`Idempotency-Key` 必填，外层为公共约定（`{operation_id, client_created_at, payload}`，`Idempotency-Key` 等于 `operation_id`），JSON。成功响应复用 `CreativeAssetCreateResult`（`api/openapi.yaml`）。
 - **权限**：登录账号，有创意空间写入权限（同 `/creative/assets/from-scene-model`）；所有上传必须属于当前账号。
-- **前置步骤（不属于本接口）**：浏览器先在本地解析原文件并换算（规则见 Epic 设计「导入的材质换算」），再经 `POST /creative/uploads` 以暂存目标上传：换算后的 GLB（声明类型 `model`）、拆出的每张图片（声明类型 `image`，PNG、JPEG 或 WebP）、缩略图（`image`，PNG）。等每个上传都 `ready` 后调用本接口。GLB 不合静态子集时，上传在 worker 校验阶段以 `media_unsupported` 失败，不会走到本接口。
+- **前置步骤（不属于本接口）**：浏览器先在本地解析原文件并换算（规则见 Epic 设计「导入的材质换算」），再经 `POST /creative/uploads` 以暂存目标上传：换算后的 GLB（声明类型 `model`）、拆出的每张图片（声明类型 `image`，PNG、JPEG 或 WebP）、缩略图（`image`，PNG）。等每个上传都 `ready` 后调用本接口。GLB 不合静态子集与蒙皮子集（`data: 模型内容`）时，上传在 worker 校验阶段以 `media_unsupported` 失败，不会走到本接口。带骨骼时浏览器还要识别标准人形映射（VRM 扩展、命名表或手动指定，`patterns: 标准人形骨骼`），并读出 VRM 的节点约束。
 
 ### 请求
 `payload`：
@@ -1729,6 +1732,7 @@ X-Content-Type-Options: nosniff
 | `import.attribution` | body | string ≤ 2000 | 否 | 否 | 不保存 | 来源与授权说明；空字符串等同不传 |
 | `import.source_url` | body | string ≤ 2048 | 否 | 否 | 不保存 | `http` 或 `https` 的 URL；其他协议 400 |
 | `materials` | body | `{<slot_id>: CreativeSceneMaterialSlot}` | 是 | 否 | 缺失报错 | 可以是空对象。键必须是 GLB 的槽位（manifest 的 `slots`），否则 400；值的规则同场景对象的 `material_slots`（`data: 场景文档`「材质贴图」），按场景命令同一套校验。贴图引用的 `content_revision_id` 可以是 `texture_upload_ids` 的修订，也可以是本账号已有的可用图片 |
+| `rig` | body | object | 否 | 否 | 不保存 | 结构同 `data: 模型内容` 的 `model.rig`（scene-pose-system 子项 3）。只在 GLB 带骨架时允许，否则 400；带骨架而不传时按非人形骨架保存。`rig.humanoid` 与 `rig.constraints` 各自可省 |
 | `target` | body | `CreativeUploadAssetTarget` | 是 | 否 | 缺失报错 | 沿用现有结构：`title` 必填（1–200），`description`（≤ 1000 码点）、`group_ids`、`tag_ids`、`new_tags`、`is_favorite` 可选。`title` 的前 80 个码点同时写入 `model.name_hint` |
 
 ### 成功响应
@@ -1751,7 +1755,7 @@ X-Content-Type-Options: nosniff
 
 | HTTP 状态码 | 业务错误码 | 触发条件 | 调用方处理/是否可重试 |
 |---|---|---|---|
-| 400 | `validation_failed` | `mount`、`import` 字段不合法；`materials` 的键不是 GLB 的槽位，或值不合 `material_slots` 规则（`details` 指出字段路径）；`texture_upload_ids` 有重复，或某项的修订没被 `materials` 用到；缩略图不是 PNG | 修正后重试 |
+| 400 | `validation_failed` | `mount`、`import` 字段不合法；`rig` 不合 `data: 模型内容`「骨架与人形映射」（缺必需骨骼、下标不是关节、重复映射、层级嵌入不成立、约束成环等，`details` 指出字段路径和原因），或 GLB 没有骨架却传了 `rig`；`materials` 的键不是 GLB 的槽位，或值不合 `material_slots` 规则（`details` 指出字段路径）；`texture_upload_ids` 有重复，或某项的修订没被 `materials` 用到；缩略图不是 PNG | 修正后重试 |
 | 400 | `creative_image_unavailable` | `materials` 引用的图片不属于本账号、不是 `image`、不可展示或已删除（同场景命令） | 重新上传图片后重试 |
 | 404 | `not_found` | `target` 引用的分组或标签不存在（同 `/creative/assets/from-scene-model`） | 重读资产库 |
 | 409 | `creative_upload_unavailable` | GLB、缩略图或某张图片的上传不存在、属于其他账号、声明类型不对、已过期、已消费或尚未就绪；`details.upload_id` 指出哪一个 | 重新上传后重试 |
@@ -1795,6 +1799,22 @@ Content-Type: application/json
 {"asset_id": "cast_c41d", "revision": "1", "content_revision_id": "ccrv_m8f2", "library_revision": "318", "tag_mapping": {}, "reused": false, "title": "龙纹剑", "description": "cos 道具参考"}
 ```
 
+带骨骼的 VRM 角色（scene-pose-system 子项 3），`payload` 里与上例不同的字段：
+
+```json
+{"import": {"file_name": "cos_girl.glb", "attribution": "VRoid Hub, 允许再分发与修改"},
+ "rig": {"humanoid": {"hips": 3, "spine": 4, "chest": 5, "upperChest": 6, "neck": 7, "head": 8,
+                      "leftUpperArm": 12, "leftLowerArm": 13, "leftHand": 14, "rightUpperArm": 40, "rightLowerArm": 41, "rightHand": 42,
+                      "leftUpperLeg": 68, "leftLowerLeg": 69, "leftFoot": 70, "rightUpperLeg": 73, "rightLowerLeg": 74, "rightFoot": 75},
+         "constraints": [{"node": 15, "kind": "rotation", "source": 14, "weight": 0.5}]}}
+```
+
+400（左脚挂在 IK 控制骨下，层级嵌入不成立）：
+
+```json
+{"error": {"code": "validation_failed", "message": "人形骨骼映射不成立", "details": {"field": "rig.humanoid.leftFoot", "reason": "nearest mapped ancestor is hips, not leftLowerLeg"}}}
+```
+
 409（第二张图片的上传已过期）：
 
 ```json
@@ -1802,7 +1822,9 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义，无已有消费者。新增 OpenAPI 路径与请求体 `CreativeAssetFromGLBPayload`；响应复用 `CreativeAssetCreateResult`。导入的模型的读取形态见 `data: 模型内容` 的修订说明（`CreativeModelGenerator` 按 `language` 区分，是对响应消费者的破坏性变更，前后端同一版本上线）。
+scene-pose-system 子项 3：请求加可选的 `rig`，GLB 可以带蒙皮子集。只增不改，已有调用不受影响；OpenAPI 的 `CreativeAssetFromGLBPayload` 加 `rig`，运行 `make generate`。
+
+子项 2 首次定义时，无已有消费者。新增 OpenAPI 路径与请求体 `CreativeAssetFromGLBPayload`；响应复用 `CreativeAssetCreateResult`。导入的模型的读取形态见 `data: 模型内容` 的修订说明（`CreativeModelGenerator` 按 `language` 区分，是对响应消费者的破坏性变更，前后端同一版本上线）。
 
 ## 新建角色卡
 
@@ -2275,3 +2297,42 @@ Content-Type: application/json
 ### `write_model@1`
 
 目标保持 `add` 或 `replace` 二选一。新任务给非空 `code` 或可复用的 `base_content_revision_id`。冲突重试给 `retry_job_id`，与前两种来源及 `params` 互斥。参数错误在入队前返回具体提示。
+
+## 读取内置模型文件
+
+### 用途与调用
+- **用途**（scene-pose-system 子项 3）：编辑器取内置模型的 GLB，供视口、材质预览、最终渲染、离屏出图和缩略图使用。
+- **消费者**：编辑器的模型加载（与按修订读模型 GLB 同一个缓存），包括为助手执行 `render_view` 和导出的页面。
+- **调用**：`GET /api/v1/creative/scene-models/{file}`，也支持 `HEAD`。`file` 是 `data: 内置模型库` 里某个条目 `glb.name` 的值。
+- **权限**：Bearer 认证，账号有创意空间读取权限（同读取场景）。不按账号区分内容，不走媒体票据。
+
+### 请求
+- 路径参数 `file`：必须匹配 `^[0-9a-f]{64}\.glb$`，并且出现在当前清单里。
+- 可带 `If-None-Match`；不支持 `Range`。
+
+### 成功响应
+- 200：`Content-Type: model/gltf-binary`，`Content-Length`，`ETag: "<sha256>"`，`Cache-Control: private, max-age=31536000, immutable`，`X-Content-Type-Options: nosniff`。正文是文件原样字节。
+- 304：`If-None-Match` 与 ETag 相同。
+
+### 失败响应
+| 状态码 | 错误码 | 触发条件 | 调用方处理 |
+|---|---|---|---|
+| 401 / 403 | 公共约定 | 未登录或没有创意空间读取权限 | 公共约定 |
+| 404 | `not_found` | `file` 格式不对，或不在当前清单里 | 不重试 |
+| 503 | `creative_model_file_unavailable` | 文件在清单里，但对象存储里没有（未导入）或读取失败；服务端记错误日志 | 按「模型加载失败」处理：视口占位并提示，离屏出图失败；下次需要时再试 |
+
+### 交互规则
+- 只读，幂等。不适用：分页、异步、幂等键。
+
+### 调用示例
+```http
+GET /api/v1/creative/scene-models/7c41…e2.glb
+Authorization: Bearer <token>
+```
+503（没有导入）：
+```json
+{"error": {"code": "creative_model_file_unavailable", "message": "内置模型暂时无法读取", "details": {"file": "7c41…e2.glb"}}}
+```
+
+### 兼容与变更
+首次定义，只新增路由和错误码 `creative_model_file_unavailable`，OpenAPI 加这一条后运行 `make generate`。

@@ -1,6 +1,6 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 9,
+  "revision": 11,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
@@ -54,9 +54,9 @@
       "api:读取内置贴图"
     ]
   },
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-11T02:49:49.242Z",
+  "updatedAt": "2026-11-12T09:51:06.751Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -118,8 +118,39 @@
       ".lti/snapshots/a7458fc8fa9278c8f69db66365730b9400d4553a83fc90238b4d809e46db9da4.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-12T09:50:47.655Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "按项目约定只跑定向测试，没有跑全量 make check；性能只有单机实测（M4 Pro，见 design「AC-8 实测」），接近上限角色的 worker 段重建没有单独测；Docker 卷属主只用最小镜像验证，完整镜像没有重新构建。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contract-delta",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 验收通过：内置素体、VRM/Mixamo 导入、按姿态渲染与 AC-8 实测材料已看；代码评审 10 项中 9 项已修、1 项（静止几何不计入缓存预算）按设计保留并写入 design。验证：受影响 Go 包（creativeagent、creativescene、creativeglb、httpapi、creativecanvas、creativectl、config）、前端定向单测 186 项、蒙皮 e2e AC-1/2/6/12 与资产库、角色卡 e2e 逐条通过。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e3cf40a1717bf5d32b9ab485846215b43f5dccb6187c2ef0fb92395df4a19c7e"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-12T09:51:06.329Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "closed"
 }

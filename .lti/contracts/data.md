@@ -179,13 +179,13 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `objects[].visible` / `locked` | boolean | 是 | `true` / `false` |
 | `objects[].primitive` | `{builtin:"<name>@<ver>", params:{…}, faces?}` | `kind=primitive` 时 | `builtin` 必须在服务端登记的内置清单里（C1 交付清单）；`params` 外形同模型参数值 |
 | `objects[].primitive.faces` | object，结构同 `data: 模型内容` 的 `model.faces` | 否 | 面级材质分配（C5b，修订 v13）。基础体不在物件间共用，分配直接记在物件内容上，改它只涉及 `object:<id>:content`，不产生模型修订。基础体只有一个网格，`meshes[]` 至多一项，`path` 固定为 `[["", 0]]`、`primitive` 为 0；区间 ≤ 256 个。保留还是作废只按 `data: 场景内置基础体` 的 `topology` 声明判断（编辑器与服务端同一规则），改了声明里的参数即清空，见 `api: 提交场景命令`；指纹只用于加载时兜底核对 |
-| `objects[].model` | `{content_revision_id}` | `kind=model_instance` 时 | 必须是本账号 `model` 类型、`ready` 且可展示的内容修订 |
+| `objects[].model` | `{content_revision_id}` 或 `{builtin}` | `kind=model_instance` 时 | 二者恰好写一个（scene-pose-system 子项 3）。`content_revision_id` 必须是本账号 `model` 类型、`ready` 且可展示的内容修订；`builtin` 必须是 `data: 内置模型库` 清单里的条目 ID，否则返回 400 `creative_model_unavailable`。内置模型的实例不能做面级材质分配，有效槽位取清单条目的 manifest |
 | `objects[].material_slots` | `{<slot_id>:{preset, params, maps?, mapping?, alpha_mode?, alpha_cutoff?}}` | 否 | 贴图与透明方式见下方「材质贴图」（修订 v17）。缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean。键对应物件的有效槽位（修订 v13）：基础体为 `main` 加 `primitive.faces` 分出的槽位，模型实例为模型的有效槽位（`data: 模型内容`）。服务端不按槽位清单校验键（与 C5 相同），不在有效槽位里的键照常保存、渲染时不用 |
 | `objects[].light` | 按 `type` 区分，字段与 three.js 灯光类同名同义，见下方「灯光」 | `kind=light` 时 | 只有 `type` 必填，其余缺省取 three.js 默认值，存储时补齐 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near>0, far>near（米，同 three.js `PerspectiveCamera`）, label≤40, depth_of_field:bool, f_stop:0.5…64, focus>0（米，同 three.js `PerspectiveCamera.focus`）, focus_object_id:物件 ID 或 ""}` | `kind=camera` 时 | 各字段可省略，缺省 `{35,[36,24],"3:2",0.1,1000,"",false,2.8,10,""}`，存储时补齐；景深四个字段为修订 v8 新增，旧快照在读取时补齐。朝局部 −Z 看（three.js 摄像机约定）；视场角按画面长边对应传感器长边算出：`tan(fov/2) = max(sensor_mm) / (2·focal_mm) / max(画幅宽高比, 1)`，`fov` 为 three.js 的垂直视场角（修订 v8），不写 three.js 的 `fov`。`focus_object_id` 非空时按该物件原点沿视线方向的深度对焦：写入时必须指向修改后场景里的 `primitive`、`model_instance` 或 `group`，且不是摄像机自己；之后目标被删除不算违反契约，按 `focus` 对焦。写空字符串取消对焦物件（按键合并下 `null` 等于没写）。`depth_of_field = true` 时，白模导出按光圈和对焦虚化（design「渲染模式与导出」） |
 | 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
-- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。
+- **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型和图片 `content_revision_id`（图片自修订 v17）。内置模型（`model.builtin`）不是账号内容，不进引用表。
 - **材质贴图**（修订 v17，C5c1）：槽位值的可选字段，只在 `preset = principled@1` 时允许，写在其他预设上返回 400 并指出字段。修订 v20（C5c2）：内置贴图材质（材质目录里 `kind = textured` 的预设，见 `data: 内置贴图库`）也接受 `mapping`、`alpha_mode`、`alpha_cutoff`，但不接受 `maps`（贴图由目录给出），写了返回 400；`mapping` 省略时存储为 `{kind:"triplanar", size_m:<目录里的真实尺寸>, rotation_deg:0, normal_strength:1}`，`alpha_mode` 省略时补 `opaque`。`params` 的键与范围同 `principled@1`（助手工具层按目录校验，命令接口照旧只校验外形），与目录的贴图相乘，规则同下；没写的参数取目录条目的缺省值。目录里没有的预设 ID 照旧只校验格式，但带了这三个字段时返回 400（无从判断是不是内置贴图材质）。
 
 | 字段 | 类型 | 必须 | 缺省 / 约束 |
@@ -221,10 +221,10 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **命名原则**（修订 v7）：助手要写的字段与 three.js 同名同义；three.js 没有对应字段的，保留带单位的名字（`sun_elevation_deg`、`focal_mm`、`sensor_mm`）。不接受别名，写错名字返回 400 并指出字段。变换的 `rotation` 保持四元数：three.js 里它对应 `quaternion`（three.js 的 `rotation` 是欧拉角），但两者长度不同，写错会被拒绝而不会悄悄出错，C3 试用中助手也全部写对。
 
 ### 访问模式与保证
-- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）和图片修订摘要（宽高、MIME、是否可用，修订 v17）。图片像素由编辑器按修订另取媒体读取票据（`role = original`），不经场景接口。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。
+- **读当前**：按文档 ID 读文档行和当前快照；同时批量读引用的模型修订摘要（manifest、生成参数、名称提示，不含代码和地址）和图片修订摘要（宽高、MIME、是否可用，修订 v17）。图片像素由编辑器按修订另取媒体读取票据（`role = original`），不经场景接口。GLB 和缩略图由编辑器按模型修订另取媒体读取票据（C2 修改）。内置模型不在模型修订摘要里：编辑器用随代码发布的清单副本，GLB 经 `api: 读取内置模型文件` 读取（scene-pose-system 子项 3）。
 - **写**：在文档行锁内（`SELECT … FOR UPDATE`）检查单元版本 → 应用 → 校验全部不变量 → 写新快照、修订行（`actor_kind`、`run_id`、`changed_units`、`restored_from`）和引用行 → 更新文档行的 `revision` 和 `content_revision_id`。整个过程在一个事务里，失败则不产生任何修订。
 - **不变量的保证方**：
-  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型和图片可用、单元版本单调。图片的可用性只在它第一次出现在场景里时检查，已被当前修订引用的图片批量复核，与模型相同（修订 v17）。
+  - 由应用保证：对象 ID 唯一、父子无环、`order` 不重复、引用的模型和图片可用（内置模型按清单判断）、单元版本单调。图片的可用性只在它第一次出现在场景里时检查，已被当前修订引用的图片批量复核，与模型相同（修订 v17）。
   - 由数据库保证：修订号主键唯一、`account_id` 限定、内容类型 CHECK。
 - **历史**：按 `revision DESC` 分页列出修订；`changed_units` 直接读，不比对快照。
 
@@ -241,6 +241,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - 修订 v20（C5c2 起草时）：`kind = textured` 的预设可以带 `mapping`、`alpha_mode`、`alpha_cutoff`。只放宽校验，不迁移；旧编辑器不认识这些预设，按未知预设显示中性灰，所以前后端同一版本上线。内置贴图不进引用表，也不计入单场景 64 张图片的上限。
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 - scene-pose-system 子项 2（外部 GLB 导入）：`maps` 加 `emissive`，`principled@1` 加参数 `vertex_color`。不迁移：没有这两项就是没有自发光贴图、不乘顶点色，渲染与之前相同；自发光贴图的图片进引用表、计入 64 张上限，与其他贴图相同。旧编辑器不认识 `emissive` 键会读取失败，前后端同一版本上线，回滚只做前向修复。OpenAPI 的 `CreativeSceneTextureMaps` 加可选的 `emissive`。
+- scene-pose-system 子项 3（蒙皮人形角色）：`objects[].model` 可以写 `{builtin}`（`data: 内置模型库`），与 `content_revision_id` 二选一。不迁移：已有物件都是 `content_revision_id`。渲染指纹按 `builtin` 的条目 ID 计入模型身份（条目发布后不变，与内容修订 ID 同样稳定），没有内置模型的场景指纹不变。OpenAPI 的场景模型引用改为二选一的两种结构。旧编辑器和旧后端都不认识 `builtin`，前后端同一版本上线，回滚只做前向修复。
 
 ## 场景内置基础体
 
@@ -307,6 +308,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `model.name_hint` | string ≤ 80 | 否 | 助手或摄影师起的名字 |
 | `model.faces` | object | 否 | 面级材质分配（C5b，修订 v13），见下方「面级材质分配」；缺省表示没有 |
 | `model.import` | object | `imported` 时 | 导入来源与授权说明，见下方「导入的模型」 |
+| `model.rig` | object | 否 | 骨骼的映射与约束（scene-pose-system 子项 3），见下方「骨架与人形映射」；只在 manifest 有 `skeleton` 时允许，`three-module` 没有 |
 
 **面级材质分配**（修订 v13，owner 2026-10-28）：
 
@@ -359,29 +361,71 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `model.import.source_url` | string ≤ 2048 | 否 | 素材的来源页面，只允许 `http`、`https` |
 
 - 导入时间取内容修订的 `created_at`，不另存。服务端不核实授权说明的真假，只保存和显示；授权由摄影师在上传时声明，与其他上传相同。
-- **场景里派生**：导入的模型放进场景后做面级材质分配时，`derive_model` 照常从它派生出场景自己的修订：载荷照抄 `generator`、`import`、`manifest`、`name_hint`，换 `faces`，不带 `materials`。派生出的修订仍是 `imported`。`commit_model` 的 `generator` 只接受 `three-module`，写不出导入的模型。
+- **带骨骼的模型暂不支持面级材质分配**（Epic 修订 v7，子项 3）：现有的面分配按静态网格拆分与拾取，不保留蒙皮。`derive_model` 的来源 manifest 有 `skeleton` 时拒绝；编辑器对带骨骼的模型不提供面分配。以后支持时另行设计面身份与蒙皮属性的保留。
+- **场景里派生**：导入的模型放进场景后做面级材质分配时，`derive_model` 照常从它派生出场景自己的修订：载荷照抄 `generator`、`import`、`manifest`、`name_hint`、`rig`（scene-pose-system 子项 3），换 `faces`，不带 `materials`。派生出的修订仍是 `imported`。`commit_model` 的 `generator` 只接受 `three-module`，写不出导入的模型；它的 GLB 也不能带骨架（manifest 有 `skeleton` 时拒绝，代码模型不带骨骼）。
 - **读取方**：
   - 编辑器：属性栏不显示参数和代码，显示「导入的模型」、原文件名、来源与授权说明；不能改参数、不能改代码。
   - 助手：`write_model` 以导入的模型为基础时拒绝，提示「导入的模型没有代码，只能换材质或摆放」；以它为基础的烘焙任务同样拒绝。`read_scene` 的 `include_code` 对它不返回代码。
   - 场景读取照常不带代码；导入的模型本来就没有。
+
+**骨架与人形映射**（scene-pose-system 子项 3）：
+
+- **含义**：带蒙皮的模型（导入的角色、内置素体）在 manifest 里有一份服务端从 GLB 算出的骨架摘要，在 `model.rig` 里有浏览器识别、服务端校验的标准人形映射和节点约束。姿态、换算与求值顺序见 `patterns: 标准人形骨骼`。
+- **骨架摘要 `manifest.skeleton`**（GLB 有 `skins` 时必有，否则没有）：
+
+| 路径 | 类型 | 约束 |
+|---|---|---|
+| `skeleton.joints[]` | 数组，1–512 | 所有 skin 的关节的并集，按节点下标升序 |
+| `joints[].node` | integer | 关节的节点下标 |
+| `joints[].parent` | integer \| null | 沿节点树向上最近的、也是关节的祖先的节点下标；没有时为 null |
+| `joints[].name` | string ≤ 64 | 节点名，取 GLB JSON 原文，可以为空串；只作显示 |
+| `skeleton.fingerprint` | `s1-<16 hex>` | 只看结构：对 `[关节数, (node, parent 或 0xFFFFFFFF) …]`（uint32 小端，按 `joints` 顺序）算 SHA-256，取前 16 位十六进制。名称、静止姿势不计入 |
+
+- **`model.rig`**：
+
+| 路径 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `rig.humanoid` | `{<标准骨骼名>: <节点下标>}` | 否 | 标准人形映射；缺省表示非人形骨架。键是 `patterns: 标准人形骨骼` 的骨骼名，必需骨骼齐全；值是 `skeleton.joints` 里的节点，互不重复；满足层级嵌入 |
+| `rig.constraints[]` | 数组，≤ 256 | 否 | 节点约束，语义同 VRMC_node_constraint 1.0 |
+| `constraints[].node` | integer | 是 | 被约束的节点，必须是关节，同一节点至多一条 |
+| `constraints[].kind` | `"roll"` \| `"aim"` \| `"rotation"` | 是 | — |
+| `constraints[].source` | integer | 是 | 源节点下标，必须是 `skeleton.joints` 里的关节，≠ `node`。源不是关节的 VRM 约束由浏览器在导入时去掉并提示（Epic 修订 v7） |
+| `constraints[].weight` | number 0…1 | 是 | — |
+| `constraints[].roll_axis` | `"X"` \| `"Y"` \| `"Z"` | `roll` 时 | — |
+| `constraints[].aim_axis` | `"PositiveX"` \| `"NegativeX"` \| `"PositiveY"` \| `"NegativeY"` \| `"PositiveZ"` \| `"NegativeZ"` | `aim` 时 | — |
+
+  约束的依赖无环（Epic 修订 v7）。约束 A 依赖约束 B 的条件按 A 的种类区分，「祖先」都沿 `skeleton` 的 `parent` 链判断（被约束的节点和源都是关节，所以关节祖先链足以判断）：
+  - `roll`、`rotation`：只读源的局部旋转，B 的 `node` 等于 A 的 `source` 时依赖。
+  - `aim`：读源的世界位置和被约束节点父级的世界变换，B 的 `node` 是 A 的 `source` 或它的祖先，或者是 A 的 `node` 的严格祖先时依赖。
+  依赖图必须无环，求值按依赖的拓扑顺序（`patterns: 标准人形骨骼`「求值顺序」）。
+
+- **校验分工**：服务端校验 `rig` 的外形和上表约束（含层级嵌入，Go 实现与前端共用测试向量），不读 GLB 以外的东西；姿态求值不在服务端。
+- **写入口**：导入接口（`api: 导入模型到资产库` 的 `rig`）、`derive_model`（照抄来源修订）、库副本（照抄）。内置模型的 `rig` 在清单里（`data: 内置模型库`）。改映射不另设接口：重新导入。
 
 ### 访问模式与保证
 - **接受的 GLB 子集**（worker 的 verify 阶段用 Go 实现，编辑器宿主用同一算法预检；不执行代码，文件里的任何声明都不直接采信；不在子集内的一律拒绝）：
   - 容器：magic 为 `glTF`，version 为 2，总长度与实际一致；JSON 块加至多一个 BIN 块，4 字节对齐。
   - 缓冲：至多一个 `buffer`，没有 `uri`。
   - 场景树：恰好一个 `scene`；节点下标全部有效，每个节点至多一个父节点，无环；变换只用 TRS 或 `matrix` 之一，数值有限。
-  - 网格：primitive 的 `mode` 为 4；属性只允许 `POSITION`（`FLOAT VEC3`，必有）、`NORMAL`、`TANGENT`、`TEXCOORD_0/1`、`COLOR_0`；不允许 `targets`、`JOINTS_*`、`WEIGHTS_*`。
+  - 网格：primitive 的 `mode` 为 4；属性只允许 `POSITION`（`FLOAT VEC3`，必有）、`NORMAL`、`TANGENT`、`TEXCOORD_0/1`、`COLOR_0`，以及蒙皮子集的 `JOINTS_0`、`WEIGHTS_0`；不允许 `targets`、`JOINTS_1` 及以后、`WEIGHTS_1` 及以后。
   - 访问器：不用 `sparse`；按组件对齐；`byteStride` ≥ 元素大小；全部数据落在 `bufferView` 和 BIN 内；索引值小于顶点数；索引数或非索引顶点数是 3 的倍数。
-  - 不允许 `images`、`textures`、`samplers`、`skins`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
+  - **蒙皮子集**（scene-pose-system 子项 3）：
+    - `skins` ≤ 32。每个 skin 的 `joints` 有 1–256 个互不重复、在场景树里的节点；所有 skin 的关节合计 ≤ 512。`inverseBindMatrices` 必有，`FLOAT MAT4`，个数等于关节数，数值有限；`skeleton` 可省，有则须是有效节点下标。
+    - 带 `skin` 的节点必须有 `mesh`；这个网格的每个 primitive 都有 `JOINTS_0`（`UNSIGNED_BYTE` 或 `UNSIGNED_SHORT`，`VEC4`，值小于该 skin 的关节数）和 `WEIGHTS_0`（`FLOAT VEC4`，各分量在 [0, 1]，每个顶点四个分量之和在 1 ± 1e-3 内）。不带 `skin` 的节点引用的网格不能有这两个属性；同一个网格不能同时被带 `skin` 和不带 `skin` 的节点引用。
+    - 多于 4 个影响、整数权重或权重和不为 1 的原文件，由浏览器在导入时换算（保留最大的 4 个并归一化），不进存储。
+  - 不允许 `images`、`textures`、`samplers`、`animations`、`cameras`；`extensionsRequired` 为空，`extensionsUsed` 只允许 `KHR_materials_emissive_strength`。
   - 预算：节点 ≤ 10000，遍历到的 primitive 实例 ≤ 10000，三角形 ≤ 2000000，字节 ≤ 200 MiB（修订 v5）；读取的 POSITION 顶点总数（每个访问器计一次）≤ BIN 块字节数 / 12。访问器可以指向同一段数据，少了这一项，各项计数都在预算内的文件也能让校验读上数十亿个顶点；访问器互不重叠的文件不会超出。
   - 不合规时上传以 `failed` 结束，失败码沿用现有的 `media_unsupported`。
 - **manifest 的算法**：三角形数按场景树遍历累加；每个 primitive 的局部范围**从 POSITION 实际数值算出**，并与访问器声明的 `min` / `max` 逐分量核对（必须存在且相等，否则拒绝）；包围盒取局部范围的 8 个角点经节点世界矩阵变换后合并（与 three.js `Box3.setFromObject` 非精确模式一致）；世界矩阵、包围盒与挂点坐标必须是有限值，各节点数值有限但相乘溢出时拒绝；槽位取材质名 `slot:<id>` 与 `extras.hint`，部件取节点名 `part:<id>`，挂点取节点名 `anchor:<id>` 及其世界坐标，名称取 JSON 原文；槽位 ≤ 32、部件 ≤ 200、挂点 ≤ 200；`uv` 为遍历到的每个 primitive 都有 `TEXCOORD_0` 时取 true，否则 false（修订 v18）。
+  - 蒙皮网格（scene-pose-system 子项 3）：按 glTF 的规定，带 `skin` 的节点自身的变换不计入。包围盒改为按静止姿势做 CPU 蒙皮：每个顶点 v' = Σ wᵢ · (关节ᵢ 的世界矩阵 · 逆绑定矩阵ᵢ) · v，取所有 v' 的范围；三角形数照常累加。GLB 有 `skins` 时算出 `skeleton`（见「骨架与人形映射」）。
 - **提交时**：manifest 必须与暂存形态中服务端从 GLB 算出的一致，不一致则拒绝。比对规则：`slots`、`parts`、`anchors` 先按 `id` 排序；`id`、`hint`、`triangles`、`uv` 精确相等（暂存形态在修订 v18 之前算出、没有 `uv` 时不比对 `uv`）；`bounds` 与挂点坐标容差 1e-4 m。名称取 GLB JSON 原文（three.js 加载后会删掉节点名里的 `:`）。写入完整形态时使用服务端的值。
+  - `skeleton`（scene-pose-system 子项 3）：`joints` 逐项精确相等，`fingerprint` 相等；一方有、一方没有即不一致。
 - **读取**：GLB 和缩略图走现有媒体读取票据（`IssueTicket` / `Open`），角色分别为 `original` 和 `thumbnail`（票据角色加 `thumbnail`）。
 
 ### 生命周期与演进
 - 持有方：场景修订引用表、资产、画布节点（后续若有）。三者均登记进 `creativereference.LiveOwnerCondition` 和守卫测试。没有持有方的修订按媒体 GC 规则回收。媒体 GC 的类型范围（`creativemedia/gc.go` 的 `unheldMediaRevision`）目前只含 image / video / audio，C2 必须把 `model` 加进去并登记守卫测试；上线时先升级 creative-worker，再开放模型写入。
 - scene-pose-system 子项 2（外部 GLB 导入，owner 2026-11-09）：`generator.language` 加 `imported`，`generator` 的代码与参数字段改为只在 `three-module` 时必有，新增 `model.import`。不迁移：已有修订都是 `three-module`。GLB 静态子集不变，导入时由浏览器换算进子集。修订 v5 把静态子集的预算放宽到三角形 2000000、GLB 200 MiB，所有模型共用：不迁移，已有修订都在旧预算内；OpenAPI 里 manifest 的 `triangles`、面级材质分配区间端点的最大值改为 2000000，上传 `kind: model` 的说明改为 200 MiB；回滚到旧后端时，超过旧预算的模型上传会校验失败，已写入的修订照常读取。OpenAPI 的 `CreativeModelGenerator` 改为按 `language` 区分的两种结构（`three-module` 原结构；`imported` 只有 `language`、`mount`），`CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `import`；`commit_model` 用的 `CreativeModelGeneratorInput` 不变。旧编辑器读到没有代码的 `generator` 会出错，前后端同一版本上线，回滚只做前向修复。
+- scene-pose-system 子项 3（蒙皮人形角色）：GLB 子集加蒙皮子集，manifest 加 `skeleton`，模型加 `rig`；`commit_model` 拒绝带骨架的 GLB。不迁移：已有修订都没有 `skins`。worker 先升级（认识蒙皮子集），再开放带骨骼的导入。OpenAPI 的 manifest 加可选的 `skeleton`，`CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `rig`。旧编辑器读到带骨架的模型会按静态网格加载（three 照样画蒙皮，只是不认识 `rig`），前后端同一版本上线，回滚只做前向修复。
 - 修订 v13（C5b）：新增可选的 `model.faces`，新增写入口 `derive_model`。不迁移，没有这个字段就是没有面分配。OpenAPI 的 `CreativeModelPayload` 与 `CreativeModelPreviewPayload` 加可选的 `faces`。回滚只做前向修复。
 - 修订 v14（C5b 验收）：「重新生成时」补两种作废情况和 `hints` 的保留规则，改正 `t1` 关于重排的说明。只改渲染端的带入规则，数据外形不变，不迁移。
 - 修订 v18（C5c1）：manifest 加 `uv`。不回填：之前写入的模型修订没有这个字段，读取方按「不知道」处理（编辑器按加载出的几何体判断，助手不提示），重新生成或派生自新修订后带上；`derive_model` 和库副本沿用来源修订的 manifest。OpenAPI 的 manifest 加可选的 `uv`。回滚只做前向修复。
@@ -474,7 +518,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **存储**：
   - `creative_assets.kind` 的 CHECK 加 `model`。资产库现有能力（分组、标签、评分、回收站、筛选）对 `model` 一视同仁；按画面的筛选（主色、画幅）只作用于图片，模型自然不命中。
   - **库副本**（修订 v12）：存入时新建一个模型内容，写一个完整形态的修订，资产引用它。它是场景里那个模型修订的复制品：
-    - 载荷：`format`、`generator`（含代码）、`manifest`、`faces`（修订 v13）、`name_hint` 与来源修订相同，另加两个字段：
+    - 载荷：`format`、`generator`（含代码）、`manifest`、`faces`（修订 v13）、`name_hint`、`rig`（有骨骼时，scene-pose-system 子项 3）与来源修订相同，另加两个字段：
 
       | 路径 | 类型 | 必须 | 约束 |
       |---|---|---|---|
@@ -498,7 +542,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - **读取**（修订 v11）：
   - 资产列表、资产读取返回的模型内容去掉 `generator.code`，与场景读取一致；需要代码时按内容修订读取（`GET /creative/content-revisions/{id}`）。`materials`、`source_revision_id` 照常返回（修订 v12）。
   - 助手（修订 v11）：
-    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。导入的模型没有参数名，另附 `imported: true`（scene-pose-system 子项 2）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
+    - `search_assets` 对模型项附模型要点 `model`：名称、尺寸 `size_m`（米）、`mount`、面数、材质槽（有效槽位，修订 v13）、参数名和材质分配 `materials`（修订 v12）。导入的模型没有参数名，另附 `imported: true`（scene-pose-system 子项 2）。带骨骼的模型另附 `rigged: true`，有标准人形映射时再附 `humanoid: true`（scene-pose-system 子项 3）。不附缩略图的宽高，因为 256 × 256 不是模型尺寸。
     - `materials` 里的贴图只给图片的 `content_revision_id`、宽高和名称，不附像素（修订 v17）；助手经这个库副本可以把这些图片写进场景槽位，规则见 `data: 材质资产`「助手可读」。
     - `read_asset` 读模型时返回完整模型信息：在要点之外加部件、挂点、参数定义和当前值；导入的模型没有参数，改为附 `import`（原文件名、来源与授权说明、来源页面）。字段名与 `write_model` 回报的一致，不含代码。超出单次工具结果上限时依次省略部件与挂点、参数定义，`omitted` 列出省略项（修订 v12）。
     - 缩略图作为图片附件交给模型，需要模型能看图且摄影师允许图片预览。条件不满足，或之后因图片上限省略、读不到时，只保留模型信息，在 `thumbnail_omitted` 里说明原因，不报错。
@@ -506,6 +550,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - 卡片用 `thumbnail` 角色的 PNG，查看浮窗按 `original` 角色读 GLB，都走现有媒体读取票据；查看浮窗的「材质」模式按 `materials` 着色（修订 v12）。
 - **放置**：模型资产只能放进场景（`add_objects` 的 `model.content_revision_id`），不能放到画布：没有 `core.model` 节点类型，画布的放入、填充和参考选择都不接受它。放入时实例的 `material_slots` 写资产的 `materials`：编辑器自动写，助手按 `edit_scene` 的说明写。之后在场景里换材质只改实例（修订 v12）。
 - **OpenAPI**（修订 v12）：`CreativeModelPayload` 与只用于响应的 `CreativeModelPreviewPayload` 的 `model` 加可选的 `materials`、`source_revision_id`；scene-pose-system 子项 2 再加可选的 `import`。`CreativeModelPayload` 也被请求体引用，但模型不能经通用写入口写入，放宽不产生新的写法。
+- **内置模型的实例不能存入资产库**（scene-pose-system 子项 3）：它没有模型修订可复制，编辑器不提供「存入资产库」，助手的存入工具返回错误，提示内置模型本来就能直接放入（`data: 内置模型库`）。
 - **生命周期**：回滚时如已有 `model` 资产则拒绝，前向修复。资产库不记录资产被哪个场景使用过（I7）。
 
 ## 物理天空
@@ -1024,14 +1069,15 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 | `id` | string | 是 | `^[a-z0-9_]+@[1-9][0-9]*$`，与其他预设同一命名空间；发布后条目的贴图和缺省值都不变，改外观发布新版本 |
 | `kind` | `"textured"` | 是 | — |
 | `label` | string | 是 | 界面名称，中文 |
-| `category` | string | 是 | `wood`、`stone`、`brick`、`concrete`、`metal`、`fabric`、`ground`、`tiles`、`roofing`、`leather` 之一，选材面板据此分组 |
+| `category` | string | 是 | `wood`、`stone`、`brick`、`concrete`、`metal`、`fabric`、`ground`、`tiles`、`roofing`、`leather`、`character` 之一，选材面板据此分组。`character` 是内置模型自带的贴图（scene-pose-system 子项 3） |
+| `listed` | boolean | 否 | 缺省 `true`。`false` 时不出现在选材面板、资产库的内置来源和 `search_assets` 里，仍是合法预设，场景照常引用；内置模型的贴图材质用它（`data: 内置模型库` 的 `materials`）。`read_asset` 的 `builtin_id` 仍可读取 |
 | `size_m` | number 0.01…100 | 是 | 一块贴图对应的真实宽度（米），取自来源站的标注；`mapping` 省略时的三平面尺寸 |
 | `maps` | object | 是 | 键和 `channel` 的语义同 `data: 场景文档`「材质贴图」，引用字段改为 `file`，取值为 `files` 里的文件名；至少有 `base_color` |
 | `defaults` | object | 否 | 覆盖 `principled@1` 参数的缺省值，键必须是它的参数；常用 `{color:"#ffffff", roughness:1, metalness:1}`，让贴图原样生效 |
-| `files` | `[{name, url, bytes}]` | 是 | `name` 为 `<sha256>.jpg`（小写十六进制，内容的 sha256）；`url` 是来源站的下载地址，只供导入命令使用；`bytes` 是文件大小，单个 ≤ 32 MiB |
-| `source` | `{site, asset, author, license}` | 是 | `site` 为 `polyhaven` 或 `ambientcg`，`license` 固定为 `CC0`；只作记录和致谢，不参与渲染 |
+| `files` | `[{name, url?, bytes}]` | 是 | `name` 为 `<sha256>.jpg` 或 `<sha256>.png`（小写十六进制，内容的 sha256；`.png` 自 scene-pose-system 子项 3，用于法线和带透明的贴图）；`url` 是来源站的下载地址，只供导入命令使用，来源站没有直链时省略；`bytes` 是文件大小，单个 ≤ 32 MiB |
+| `source` | `{site, asset, author, license}` | 是 | `site` 为 `polyhaven`、`ambientcg` 或 `quaternius`，`license` 固定为 `CC0`；只作记录和致谢，不参与渲染 |
 
-- 对象键：`scene-textures/<sha256>.jpg`。内容寻址：同一份文件被多个条目引用时只存一份；文件名就是校验依据。
+- 对象键：`scene-textures/<sha256>.jpg` 或 `.png`。内容寻址：同一份文件被多个条目引用时只存一份；文件名就是校验依据。
 - 示例：
 
 ```json
@@ -1045,13 +1091,13 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 ```
 
 ### 访问模式与保证
-- **导入**：`creativectl textures import` 逐个检查清单里的文件，对象已存在就跳过；不存在时从 `url` 下载，核对大小和 sha256，一致才写入（`PutImmutable`），不一致则这个文件失败、不写入，其余照常。可以重复执行，结果相同；输出一行 JSON（导入、跳过、失败的文件数和失败原因），有失败时退出码非零。`creativectl textures check` 只检查不下载，供生产预检使用。
+- **导入**：`creativectl textures import` 逐个检查清单里的文件，对象已存在就跳过；不存在时从 `url` 下载，核对大小和 sha256，一致才写入（`PutImmutable`），不一致则这个文件失败、不写入，其余照常。没有 `url` 的文件从 `--dir <目录>` 里按文件名读取（scene-pose-system 子项 3，素体贴图由转换脚本生成），没给目录或目录里没有时这个文件失败。可以重复执行，结果相同；输出一行 JSON（导入、跳过、失败的文件数和失败原因），有失败时退出码非零。`creativectl textures check` 只检查不下载，供生产预检使用。
 - **读取**：经 `api: 读取内置贴图`，只读清单里列出的文件。
 - **启动检查**：服务启动后在后台按清单检查一遍对象是否存在，缺失时记错误日志（列出缺失的条目），不阻止启动。
 - **不变量的保证方**：文件内容与文件名一致，由导入命令校验 sha256 保证；条目外形、`maps` 引用的文件都在 `files` 里、`defaults` 的键和范围，由目录加载时校验（同现有 `loadMaterials`，不合法时启动失败）和单元测试保证。
-- **展现**（修订 v20）：资产库页面、场景编辑器的资产面板和材质槽的「从资产库选」在材质下提供「内置」来源，与「我的」切换浏览，不混排。内置项来自前端的目录副本，前端按名称、品类本地过滤，不分页；不能评分、打标签、分组、收藏、进回收站，没有资产 ID、修订和入库时间。用到槽位时写 `{preset: "<id>", params: {}}`，与选程序化预设相同。
+- **展现**（修订 v20）：资产库页面、场景编辑器的资产面板和材质槽的「从资产库选」在材质下提供「内置」来源，与「我的」切换浏览，不混排。内置项来自前端的目录副本，前端按名称、品类本地过滤，不分页；不能评分、打标签、分组、收藏、进回收站，没有资产 ID、修订和入库时间。用到槽位时写 `{preset: "<id>", params: {}}`，与选程序化预设相同。`listed = false` 的条目不展示（scene-pose-system 子项 3）。
 - **助手**（修订 v20）：
-  - `search_assets` 增加可选参数 `source`：`account`（缺省，现有行为不变）或 `builtin`。`builtin` 只查目录，按 `query` 匹配名称、品类和来源资产名，可用 `kind: "material"`（其他种类返回空）；忽略分组、标签、评分、画面和排序条件，按目录顺序一次返回全部匹配项，`has_more = false`。每项给 `builtin_id`（条目 ID）、名称、品类、真实尺寸 `size_m` 和可直接写进 `material_slots` 的 `slot`（`{preset}`），不给资产 ID 和修订。
+  - `search_assets` 增加可选参数 `source`：`account`（缺省，现有行为不变）或 `builtin`。`builtin` 只查目录，按 `query` 匹配名称、品类和来源资产名，可用 `kind: "material"`（不含 `listed = false` 的条目）和 `kind: "model"`（`data: 内置模型库`，scene-pose-system 子项 3），其他种类返回空；忽略分组、标签、评分、画面和排序条件，按目录顺序一次返回全部匹配项，`has_more = false`。每项给 `builtin_id`（条目 ID）、名称、品类、真实尺寸 `size_m` 和可直接写进 `material_slots` 的 `slot`（`{preset}`），不给资产 ID 和修订。
   - `read_asset` 增加可选参数 `builtin_id`，与现有的内容修订 ID 二选一：返回条目的要点、`slot` 和参数缺省值，缩略图作为图片附件（条件同材质资产）；不给贴图原文件。
   - 内置来源不是账号数据，不检查资产库授权（consent），也不计入资产库的读取记录。未知的 `builtin_id` 返回工具错误并列出可用 ID。
   - 外部助手的同名工具（`api: MCP 只读工具`，由活动 Epic `creative-mcp-server` 负责）按「与内置同名」随之获得这两个可选参数，入参只增不改。
@@ -1063,6 +1109,7 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 不删除已发布的条目。来源站撤下文件不影响已导入的对象；重建环境时下载失败的条目按「没导入」处理，日志可查。
 - 对象存储里不再被任何条目引用的文件不自动清理，数量很少，需要时手工删除。
 - 回滚：旧后端不认识 `textured`，目录加载会失败；回滚须连同目录一起回滚，已写进场景的内置贴图材质在旧编辑器里显示为中性灰。只做前向修复。
+- scene-pose-system 子项 3：条目加 `listed`，品类加 `character`，文件可以是 `.png`，`url` 可省，来源站加 `quaternius`，导入命令加 `--dir`。只放宽，不迁移；旧后端不认识新品类和 `.png`，目录加载会失败，回滚须连同目录一起回滚，只做前向修复。
 
 ## 场景时间线
 
@@ -1354,3 +1401,77 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
   - 派发前照常复核撤销与可用性。
 - 不变：工具返回的素材、助手检索得到的内容，仍按原规则授权。授权记录不可修改、不可替换。
 - 后续：整套逐资产授权收敛为账号级同意，另开 change 处理。
+
+## 内置模型库
+
+### 用途与存储角色
+- **用途**（scene-pose-system 子项 3）：平台内置的模型，目前是两个素体（一男一女的人形角色）。所有账号都能放进场景，不能修改；以后的内置配件（发型等）也进这里。
+- **存储**：
+  - **清单**：`backend/internal/creativescene/models.json`，经 Go `embed` 读入；`make generate` 原样复制到 `frontend/src/creative-scene/builtinModels.gen.json`，`make generate-check` 比对漂移，前端不得手写另一份。
+  - **文件**：GLB 放在现有对象存储的独立前缀 `scene-models/`，驱动、bucket 和本地根目录的规则与 `scene-textures/` 相同（本地驱动的根目录是 `SCENE_MODEL_LOCAL_ROOT`，缺省为 `AVATAR_LOCAL_ROOT` 的同级目录 `scene-models`）。
+  - **贴图**：不在本条目里。素体的贴图是材质目录里不上架（`listed: false`）的内置贴图材质（`data: 内置贴图库`），条目的 `materials` 引用它们。
+  - **缩略图**：编辑器离线渲染的 256 × 256 WebP，提交在 `backend/internal/creativescene/builtin_thumbnails/models/<id 中 @ 换成 _>.webp`，后端嵌入供助手读取，`make generate` 复制到前端打包。每个条目必须有缩略图。
+- **角色**：清单是权威主数据；对象存储里的文件按清单导入。没有数据库表：内置模型不属于任何账号，ADR-001 的账号隔离不适用。读取接口要求登录（`api: 读取内置模型文件`）。
+
+### 结构与身份
+- 条目（`models[]` 的一项）：
+
+| 字段 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `id` | string | 是 | `^[a-z0-9_]+@[1-9][0-9]*$`，内置模型自己的命名空间；发布后条目的文件、manifest、`rig`、`materials` 都不变，改动发布新版本 |
+| `label` | string | 是 | 界面名称，中文，如「女素体」 |
+| `category` | `"humanoid"` | 是 | 目前只有人形角色 |
+| `mount` | `floor`/`wall`/`ceiling`/`free` | 是 | 同 `model.generator.mount` |
+| `glb` | `{name, bytes}` | 是 | `name` 为 `<sha256>.glb`（小写十六进制，内容的 sha256）；`bytes` 为文件大小。GLB 在 `data: 模型内容` 的静态子集 + 蒙皮子集内 |
+| `manifest` | object | 是 | 结构与算法同 `data: 模型内容` 的 manifest（含 `skeleton`），由导入命令从 GLB 算出后写进清单 |
+| `rig` | object | 否 | 结构与校验同 `model.rig`；人形素体必有 `humanoid` |
+| `materials` | `{<slot_id>: 槽位值}` | 是 | 放进场景时写进实例 `material_slots` 的值，结构同 `data: 场景文档` 的槽位值；键必须是 manifest 的槽位，`preset` 必须在材质目录里 |
+| `source` | `{site, asset, author, license, url}` | 是 | 素体为 `{"quaternius", "Universal Base Characters", "Quaternius", "CC0", "https://quaternius.com/packs/universalbasecharacters.html"}`；只作记录和致谢 |
+
+- 对象键：`scene-models/<sha256>.glb`，内容寻址。
+- 示例：
+
+```json
+{"id": "body_female@1", "label": "女素体", "category": "humanoid", "mount": "floor",
+ "glb": {"name": "7c41…e2.glb", "bytes": 1041208},
+ "manifest": {"bounds": {"min": [-0.86, 0, -0.14], "max": [0.86, 1.68, 0.12]}, "triangles": 15060,
+              "slots": [{"id": "body"}, {"id": "eyes"}, {"id": "brows"}], "parts": [], "anchors": [], "uv": true,
+              "skeleton": {"joints": [{"node": 4, "parent": null, "name": "root"}, {"node": 5, "parent": 4, "name": "pelvis"}, …],
+                           "fingerprint": "s1-2b9e…"}},
+ "rig": {"humanoid": {"hips": 5, "spine": 6, "chest": 7, "upperChest": 8, …, "leftLittleDistal": 33}},
+ "materials": {"body": {"preset": "ubc_female_body@1", "params": {}, "mapping": {"kind": "uv"}},
+               "eyes": {"preset": "ubc_eyes@1", "params": {}, "mapping": {"kind": "uv"}},
+               "brows": {"preset": "ubc_brows_female@1", "params": {}, "mapping": {"kind": "uv"}, "alpha_mode": "clip"}},
+ "source": {"site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0",
+            "url": "https://quaternius.com/packs/universalbasecharacters.html"}}
+```
+
+### 访问模式与保证
+- **生成与导入**：
+  - GLB 由仓库里的转换脚本从来源包生成，走与「导入模型」相同的换算（拆出贴图、材质换成槽位）。来源站没有直链，来源包需要手工下载。
+  - `creativectl models import --dir <目录>` 逐个处理清单里的 GLB：对象已存在就跳过；否则从目录读 `<sha256>.glb`，核对大小和 sha256，用 worker 的 GLB 校验（静态子集 + 蒙皮子集）检查，重算 manifest，与清单比对（规则同 `commit_model` 的 manifest 比对），全部一致才写入（`PutImmutable`）。
+  - 可以重复执行；输出一行 JSON（导入、跳过、失败数和原因），有失败时退出码非零。
+  - `creativectl models check` 只检查对象是否存在，供生产预检。
+- **目录加载**（服务启动时，不合法则启动失败；同时有单元测试）：
+  - 条目外形正确。
+  - `materials` 的键是 manifest 的槽位，预设都在材质目录里。
+  - `rig` 按 `patterns: 标准人形骨骼` 校验，下标都在 `manifest.skeleton` 里。
+  - 每个条目都有缩略图。
+- **启动检查**：服务启动后在后台检查对象是否存在，缺失时记错误日志，不阻止启动。
+- **放置**：场景物件写 `model: {builtin: "<id>"}`（`data: 场景文档`）。编辑器放入时把条目的 `materials` 写进实例的 `material_slots`；助手经 `edit_scene` 放入时，工具层在助手没写 `material_slots` 时补上。之后换材质只改实例。
+- **展现**（修订 v8）：
+  - 资产库页面和场景编辑器的资产面板在模型下提供「内置」来源，与「我的」切换浏览，不混排，做法同 `data: 内置贴图库` 的「展现」：来自前端的清单副本，按名称、品类本地过滤，不分页。资产库的查看浮窗显示 3D 预览、来源与授权；场景资产面板里拖入或双击放置。
+  - 场景编辑器的「添加」菜单另有「素体」，作为快捷入口。
+  - 内置模型不能评分、打标签、分组、收藏、进回收站，没有资产 ID 和修订。
+  - 属性栏显示「素体」、来源与授权；不能改参数、代码，不能做面级材质分配。
+- **助手**：
+  - `search_assets` 的 `source: builtin` 接受 `kind: "model"`，按 `query` 匹配名称、品类和标签（如「女」「男」「人形」「素体」）。每项给 `builtin_id`、名称、品类、`mount`、包围盒尺寸和 `humanoid: true`。
+  - `read_asset` 的 `builtin_id` 接受内置模型：返回要点、槽位、`materials` 和缩略图（图片附件）。
+  - 不检查资产库授权（consent），不计入读取记录；未知的 `builtin_id` 返回工具错误并列出可用 ID。
+  - 外部助手的同名工具按「与内置同名」随之获得。
+- **与账号内容无关**：不进 `creative_document_content_refs`、`creative_content_revision_refs`，不登记 GC 持有方，不受媒体 GC 管理，不计账号配额。
+
+### 生命周期与演进
+- 新增条目：在清单里追加，同时提交缩略图，上线前跑一次导入。改动发布新版本，旧版本保留，已有场景不变。不删除已发布的条目。
+- 对象存储里不再被任何条目引用的文件不自动清理。
+- 首次定义（scene-pose-system 子项 3），无迁移。回滚：旧后端不认识 `model.builtin`，读取放了素体的场景会失败，只做前向修复，前后端同一版本上线。
