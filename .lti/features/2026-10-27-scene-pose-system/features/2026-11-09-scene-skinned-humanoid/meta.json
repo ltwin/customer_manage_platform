@@ -1,6 +1,6 @@
 {
   "uid": "37344ff8-4255-49e5-8949-22d87171f6e6",
-  "revision": 11,
+  "revision": 12,
   "id": "scene-skinned-humanoid",
   "kind": "feature",
   "assurance": "governed",
@@ -56,7 +56,21 @@
   },
   "state": "closed",
   "createdAt": "2026-11-10T07:19:06.155Z",
-  "updatedAt": "2026-11-12T09:51:06.751Z",
+  "updatedAt": "2026-11-12T09:51:58.539Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-12T09:51:58.452Z",
+    "summary": "已 --no-ff 合入 develop（9c88d49e）；合入树与分支树完全相同（develop 的提交已在 rebase 时并入分支），分支上的验证原样适用。",
+    "method": "manual",
+    "limitations": "合入树与分支相同，没有在主检出重跑 check-merge；分支上只跑了定向测试（受影响 Go 包、前端定向单测、蒙皮相关 e2e 逐条），没有跑全量 make check。",
+    "sourceCommit": "9b833eff42fe0325d1fd1ab8b72eb3fa70c5654f",
+    "targetCommit": "9c88d49ebd21ff654dc40d413e63c49ee963034b",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "c12230f32ce40aab8039e55f9a9850650ffa2b1e2209ecbfdd969a33ff2f06b8"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
