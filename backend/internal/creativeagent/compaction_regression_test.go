@@ -62,7 +62,9 @@ func TestCurrentBudgetIncludesSkillMiddlewareAndCurrentTools(t *testing.T) {
 
 func TestHistoryGuardUsesCurrentToolsAfterConsentUpgrade(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16000 })
+	// Widened from 16000 by the built-in models in search_assets and
+	// read_asset, which come with library access.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16600 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = func(_ context.Context, request llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
@@ -116,9 +118,10 @@ func TestCompactionSmallWindowCanContinue(t *testing.T) {
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
 	// aerial perspective, the face assignment guidance (about 0.6 KB), the
-	// textures, mappings and shadow budget (about 2.6 KB) and the built-in
-	// models (about 1 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 27400 })
+	// textures, mappings and shadow budget (about 2.6 KB), the built-in models
+	// (about 1 KB) and edit_scene's structured operations schema
+	// (agent-scene-tool-inputs) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 29400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for i := 0; i < 4; i++ {
@@ -142,9 +145,10 @@ func TestCompactionOriginalsLeaveRoomForRecentTurns(t *testing.T) {
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W4's
 	// aerial perspective, the face assignment guidance (about 0.6 KB), the
-	// textures, mappings and shadow budget (about 2.6 KB) and the built-in
-	// models (about 1 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 27400 })
+	// textures, mappings and shadow budget (about 2.6 KB), the built-in models
+	// (about 1 KB) and edit_scene's structured operations schema
+	// (agent-scene-tool-inputs) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 29400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	for _, text := range []string{strings.Repeat("x", 20000), strings.Repeat("y", 20000), "最近方案甲", "最近方案乙"} {
@@ -294,9 +298,10 @@ func TestCompactionReplacementAtSameCoverageUsesNewSummary(t *testing.T) {
 	// definitions in every request), the repaint guidance for export images
 	// (about 1 KB), the materials, lighting and lit look (about 3 KB), W5's
 	// volume objects (about 1 KB), the face assignment guidance (about
-	// 0.6 KB), the textures, mappings and shadow budget (about 2.6 KB) and
-	// the built-in models (about 1 KB) were added.
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 19400 })
+	// 0.6 KB), the textures, mappings and shadow budget (about 2.6 KB), the
+	// built-in models (about 1 KB) and edit_scene's structured operations
+	// schema (agent-scene-tool-inputs) were added.
+	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 21400 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
 	f.vendor.script = compactionScript(testSummary + "\nreplacement-small-summary")
