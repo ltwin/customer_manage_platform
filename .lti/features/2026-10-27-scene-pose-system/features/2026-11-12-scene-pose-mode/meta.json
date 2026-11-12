@@ -1,0 +1,78 @@
+{
+  "uid": "b74f9e10-ec62-43c4-8f75-b94958e52d46",
+  "revision": 4,
+  "id": "scene-pose-mode",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-pose-system",
+  "designBinding": {
+    "version": 10,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "glossary:分镜",
+      "glossary:关键帧通道",
+      "patterns:关键帧求值",
+      "data:场景时间线",
+      "api:场景时间线命令",
+      "api:导出分镜",
+      "data:导出图来源",
+      "patterns:几何模块契约",
+      "architecture:场景模块",
+      "data:场景文档",
+      "data:模型内容",
+      "data:模型资产",
+      "api:导入模型到资产库",
+      "data:内置贴图库",
+      "api:读取内置贴图",
+      "api:场景模型命令",
+      "glossary:素体",
+      "glossary:标准人形骨骼",
+      "patterns:标准人形骨骼",
+      "data:内置模型库",
+      "api:读取内置模型文件",
+      "glossary:姿态"
+    ],
+    "delivers": [
+      "data:场景时间线",
+      "api:场景时间线命令",
+      "data:场景文档",
+      "glossary:姿态"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-11-12T11:34:31.058Z",
+  "updatedAt": "2026-11-12T13:07:13.186Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-12T13:07:12.885Z",
+      "contentHash": "f1c7eaa06f41c56a"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-12T13:07:12.885Z",
+      "contentHash": "45dcc494c1192f5d"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
