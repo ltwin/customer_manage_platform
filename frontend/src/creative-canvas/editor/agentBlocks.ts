@@ -33,11 +33,22 @@ const supported: Record<string, number> = {
   plan: 1,
   notice: 1,
   compaction: 1,
+  input: 1,
 }
 const processTypes = new Set(['thinking', 'tool', 'plan'])
 
 export function renderable(block: AgentBlock): boolean {
   return block.payload_version <= (supported[block.type] ?? 0)
+}
+
+// 运行里画得出来的 input 块所带的消息：对话里不再单独画一遍。画不出来的
+// 块只剩占位，那条消息仍由对话画。
+export function inputMessageIDs(blocks: AgentBlock[]): string[] {
+  return blocks.flatMap((block) =>
+    block.type === 'input' && renderable(block)
+      ? [String((block.payload as { message_id?: unknown }).message_id)]
+      : [],
+  )
 }
 
 export function fromSnapshot(snapshot: AgentRun): RunView {

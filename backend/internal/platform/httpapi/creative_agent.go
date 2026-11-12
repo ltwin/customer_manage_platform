@@ -27,6 +27,7 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/agent-runs/:id/cancel", w.CancelCreativeAgentRun)
 	r.POST("/creative/agent-runs/:id/close-reconciliation", w.CloseCreativeAgentReconciliation)
 	r.POST("/creative/agent-runs/:id/supplements", w.SupplementCreativeAgentRun)
+	r.POST("/creative/agent-runs/:id/steers", w.SteerCreativeAgentRun)
 	r.POST("/creative/agent-runs/:id/retry", w.RetryCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id/events", w.WatchCreativeAgentRun)
@@ -407,6 +408,13 @@ func (h *handlers) SupplementCreativeAgentRun(c *gin.Context, id string, _ Suppl
 		return
 	}
 	h.creativeWrite(c, "run_id", id, agent.SupplementRun)
+}
+func (h *handlers) SteerCreativeAgentRun(c *gin.Context, id string, _ SteerCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.SteerRun)
 }
 func (h *handlers) RetryCreativeAgentRun(c *gin.Context, id string, _ RetryCreativeAgentRunParams) {
 	agent, ok := h.agentService(c)

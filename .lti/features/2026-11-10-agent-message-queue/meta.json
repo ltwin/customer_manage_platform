@@ -1,12 +1,12 @@
 {
   "uid": "81e65423-dd89-46de-b95d-43333b1e7b97",
-  "revision": 5,
+  "revision": 11,
   "id": "agent-message-queue",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-11T07:09:10.244Z",
-  "updatedAt": "2026-11-11T08:33:45.417Z",
+  "updatedAt": "2026-11-12T03:26:04.441Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -50,8 +50,484 @@
       "removed": []
     }
   ],
-  "verify": [],
+  "baseline": {
+    "commit": "db4d0f3f3c2f25994a858351d8502eb13f98d0f1",
+    "at": "2026-11-11T08:35:00.420Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "0333fe68d258f78ac234c700c0439129aa4d6396b10daca66936cff53ee9ba79"
+    },
+    "preExisting": [
+      ".lti/snapshots/0333fe68d258f78ac234c700c0439129aa4d6396b10daca66936cff53ee9ba79.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-11T10:04:26.753Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 声明 checks，测试由实施者手动运行：make check-frontend（1069 通过）、creativeagent 插队定向测试与 httpapi 路由测试、截止点/送达测试 -count=10、agent-queue e2e 14 个用例与 agent-stop 10 个用例逐个通过、agent-send 整文件通过。未自动化：另一标签页看不到队列（靠 sessionStorage 按标签页隔离）、带附件/引用/Skill/场景的排队请求一致性（e2e 只比较文字，其余为代码走查）、等补充带图片（后端测试覆盖片段，前端为代码走查）。契约在批准后改过一处（插队 202 时 revision 不变、last_event_seq 前进），需 owner 确认。",
+        "coverage": [
+          {
+            "criterionId": "AC-a49e5df907db",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue: Enter while running…」：回车后 300ms 内队列出现、输入框为空、无请求"
+          },
+          {
+            "criterionId": "AC-3e327b253642",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue」：空时「停止」，有内容时 aria-label「加入排队」，无停止键"
+          },
+          {
+            "criterionId": "AC-a91d67035c37",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a run that succeeds sends the head once」只发队首、第二条留在队列、同一终态重放不再发；第二轮由 frontend/scripts/creative-agent.test.ts「a succeeded run sends the head of the queue, once」（r2 成功发出下一条）覆盖"
+          },
+          {
+            "criterionId": "AC-446f029f6228",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「pause: after stop / after partial」暂停并经「继续发送」发出；failed 与二者同一分支，由 frontend/scripts/creative-agent.test.ts「stopped, failed and partial runs pause…」覆盖"
+          },
+          {
+            "criterionId": "AC-69a9b2dea9c4",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: mid-handover…」与 frontend/scripts/creative-agent.test.ts「after a reload a message being handed over…」；未发出时清掉 settledRun 后仍会自动发出"
+          },
+          {
+            "criterionId": "AC-9853219450ef",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a refused head goes back, the queue pauses, the composer keeps its words」"
+          },
+          {
+            "criterionId": "AC-eb2e89db1d6c",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「remove: deleting a queued message sends nothing」"
+          },
+          {
+            "criterionId": "AC-d14eaf10bdc9",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: the queue is still there after a reload」；另一标签页不可见由 sessionStorage 的按标签页隔离保证（agentQueue.ts readQueue/writeQueue），未单独自动化"
+          },
+          {
+            "criterionId": "AC-8cf2d953dd42",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「same: a queued message is the request a direct send would have made」比较路径与 payload；用例只用文字，附件/引用/Skill/场景走同一个 send 对象（AgentPanel.tsx sendDraft→enqueue / sendMessage），为代码走查"
+          },
+          {
+            "criterionId": "AC-fd0f73ae8ea6",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerDuringAToolReachesTheNextRequestOnce；同帧气泡见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble shows in the same frame…」"
+          },
+          {
+            "criterionId": "AC-4debd07d331d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerAfterTheFinalAnswerIsAnsweredInTheSameRun、TestSteerContinuationResumesFromItsCheckpoint（-count=10 通过）"
+          },
+          {
+            "criterionId": "AC-91c6640a381d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（final answer recorded）；前端 409 回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409…」；成功后作为下一轮发出见「auto」"
+          },
+          {
+            "criterionId": "AC-b5b38ec28c9a",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement…」断言插队走 supplements 且带 expected_revision/waiting_token/instruction_segments；后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments"
+          },
+          {
+            "criterionId": "AC-6607a8e164ea",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（failed/cancelled 拒绝）；前端被拒放回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409」，运行结束后的自动发出见「auto」"
+          },
+          {
+            "criterionId": "AC-42980d03d888",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（12 batches → ErrLimit/413）；前端 409/413 同一分支给出该提示，e2e 以 409 验证"
+          },
+          {
+            "criterionId": "AC-1a51ab939f48",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerImagesKeepTheirOrder、TestSteerReferencesAreCheckedForAccountAndRevocation（未列入清单的本账号修订被接收并展开）"
+          },
+          {
+            "criterionId": "AC-cbbeac048961",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation「unlisted own revision accepted」"
+          },
+          {
+            "criterionId": "AC-9c24925fad96",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation（他人修订 ErrNotFound、撤销 ErrConsentRevoked，不写入）；前端明确拒绝回队首走同一 putBack 分支"
+          },
+          {
+            "criterionId": "AC-5b0444ae7002",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「blocked: a message with a Skill or an image can only wait, and says why」"
+          },
+          {
+            "criterionId": "AC-127edde263a2",
+            "status": "verified",
+            "evidence": "后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments（片段含 content_ref）；前端等补充改用 PromptEditor 并开放「+」添加（AgentPanel.tsx），带图片的补充未做 e2e，为代码走查"
+          },
+          {
+            "criterionId": "AC-c60652db1227",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「steer: an unknown result is sent again as the same request」（同 idempotency key、同请求体）；服务端只记一次见 backend/internal/creativeagent/steer_test.go TestSteerIsOneBatchOneMessageAndOneBlock 回放"
+          },
+          {
+            "criterionId": "AC-2da730ee1c00",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement says to stop and continue」（413）"
+          },
+          {
+            "criterionId": "AC-2fcadf5a04dc",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（stopped / model failed）；前端「助手没有读到这条」见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble…」interrupted 断言"
+          },
+          {
+            "criterionId": "AC-5f1d6f35ed77",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（worker stopped → partial, creative_steer_undelivered）；partial 暂停见 frontend/scripts/agent-queue.e2e.mjs「pause: after partial」"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "24 条验收标准逐条映射到测试；设计清单外 6 个文件已说明理由；契约 4 条 ADD 与实现一致；living spec MODIFY 停止运行 + ADD 消息排队与插队；信任边界与并发项见报告。技术检查通过，等待 owner 验收。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "d3dec8ecb158cfaa625bf025acc67d26908aed3a354fedef8ca788d667de8fac"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-11-11T12:50:06.777Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，测试为手动定向运行。未自动化：另一标签页看不到队列（sessionStorage 保证）；带附件/引用/Skill/场景的排队请求与直接发送一致（e2e 只比较纯文字）；等补充时附图片发出（后端覆盖片段，前端为代码走查）；停止落在请求准备与派发之间的窗口由预算耗尽用例代表。",
+        "coverage": [
+          {
+            "criterionId": "AC-a49e5df907db",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue: Enter while running…」：回车后 300ms 内队列出现、输入框为空、无请求"
+          },
+          {
+            "criterionId": "AC-3e327b253642",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue」：空时「停止」，有内容时 aria-label「加入排队」，无停止键"
+          },
+          {
+            "criterionId": "AC-a91d67035c37",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a run that succeeds sends the head once」只发队首、第二条留在队列、同一终态重放不再发；第二轮由 frontend/scripts/creative-agent.test.ts「a succeeded run sends the head of the queue, once」（r2 成功发出下一条）覆盖"
+          },
+          {
+            "criterionId": "AC-446f029f6228",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「pause: after stop / after partial」暂停并经「继续发送」发出；failed 与二者同一分支，由 frontend/scripts/creative-agent.test.ts「stopped, failed and partial runs pause…」覆盖"
+          },
+          {
+            "criterionId": "AC-69a9b2dea9c4",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: mid-handover…」与 frontend/scripts/creative-agent.test.ts「after a reload a message being handed over…」；未发出时清掉 settledRun 后仍会自动发出"
+          },
+          {
+            "criterionId": "AC-9853219450ef",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a refused head goes back, the queue pauses, the composer keeps its words」"
+          },
+          {
+            "criterionId": "AC-eb2e89db1d6c",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「remove: deleting a queued message sends nothing」"
+          },
+          {
+            "criterionId": "AC-d14eaf10bdc9",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: the queue is still there after a reload」；另一标签页不可见由 sessionStorage 的按标签页隔离保证（agentQueue.ts readQueue/writeQueue），未单独自动化"
+          },
+          {
+            "criterionId": "AC-8cf2d953dd42",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「same: a queued message is the request a direct send would have made」比较路径与 payload；用例只用文字，附件/引用/Skill/场景走同一个 send 对象（AgentPanel.tsx sendDraft→enqueue / sendMessage），为代码走查"
+          },
+          {
+            "criterionId": "AC-fd0f73ae8ea6",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerDuringAToolReachesTheNextRequestOnce；同帧气泡见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble shows in the same frame…」"
+          },
+          {
+            "criterionId": "AC-4debd07d331d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerAfterTheFinalAnswerIsAnsweredInTheSameRun、TestSteerContinuationResumesFromItsCheckpoint（-count=10 通过）"
+          },
+          {
+            "criterionId": "AC-91c6640a381d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（final answer recorded）；前端 409 回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409…」；成功后作为下一轮发出见「auto」"
+          },
+          {
+            "criterionId": "AC-b5b38ec28c9a",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement…」断言插队走 supplements 且带 expected_revision/waiting_token/instruction_segments；后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments"
+          },
+          {
+            "criterionId": "AC-6607a8e164ea",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（failed/cancelled 拒绝）；前端被拒放回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409」，运行结束后的自动发出见「auto」"
+          },
+          {
+            "criterionId": "AC-42980d03d888",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（12 batches → ErrLimit/413）；前端 409/413 同一分支给出该提示，e2e 以 409 验证"
+          },
+          {
+            "criterionId": "AC-1a51ab939f48",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerImagesKeepTheirOrder、TestSteerReferencesAreCheckedForAccountAndRevocation（未列入清单的本账号修订被接收并展开）"
+          },
+          {
+            "criterionId": "AC-cbbeac048961",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation「unlisted own revision accepted」"
+          },
+          {
+            "criterionId": "AC-9c24925fad96",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation（他人修订 ErrNotFound、撤销 ErrConsentRevoked，不写入）；前端明确拒绝回队首走同一 putBack 分支"
+          },
+          {
+            "criterionId": "AC-5b0444ae7002",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「blocked: a message with a Skill or an image can only wait, and says why」"
+          },
+          {
+            "criterionId": "AC-127edde263a2",
+            "status": "verified",
+            "evidence": "后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments（片段含 content_ref）；前端等补充改用 PromptEditor 并开放「+」添加（AgentPanel.tsx），带图片的补充未做 e2e，为代码走查"
+          },
+          {
+            "criterionId": "AC-c60652db1227",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「steer: an unknown result is sent again as the same request」（同 idempotency key、同请求体）；服务端只记一次见 backend/internal/creativeagent/steer_test.go TestSteerIsOneBatchOneMessageAndOneBlock 回放"
+          },
+          {
+            "criterionId": "AC-2da730ee1c00",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement says to stop and continue」（413）"
+          },
+          {
+            "criterionId": "AC-2fcadf5a04dc",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（stopped / model failed）；前端「助手没有读到这条」见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble…」interrupted 断言"
+          },
+          {
+            "criterionId": "AC-5f1d6f35ed77",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（worker stopped → partial, creative_steer_undelivered）；partial 暂停见 frontend/scripts/agent-queue.e2e.mjs「pause: after partial」"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "代码审计 8 项缺陷已修复（各有先红后绿的测试），合并冲突在合入 develop 时重新生成 api.gen.go。make check-frontend 通过（1070）；后端插队、补充、检查点、授权、压缩相关定向测试通过，截止点用例连跑 5 次全绿，golangci-lint 0 问题；agent-queue 15 个、agent-stop 10 个 e2e 用例逐个通过。等待 owner 验收。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "0ff1ecab3c3d6a169247a0d28846acd314f9189631058212c0c06d43fa2395fe"
+      }
+    },
+    {
+      "by": "claude",
+      "at": "2026-11-12T03:25:52.876Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，测试为手动定向运行。未自动化：另一标签页看不到队列（sessionStorage 保证）；带附件/引用/Skill/场景的排队请求与直接发送一致（e2e 只比较纯文字）；等补充时附图片发出（后端覆盖片段，前端为代码走查）；e2e 用模拟接口，真实路由由 httpapi 冒烟测试覆盖。",
+        "coverage": [
+          {
+            "criterionId": "AC-a49e5df907db",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue: Enter while running…」：回车后 300ms 内队列出现、输入框为空、无请求"
+          },
+          {
+            "criterionId": "AC-3e327b253642",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「enqueue」：空时「停止」，有内容时 aria-label「加入排队」，无停止键"
+          },
+          {
+            "criterionId": "AC-a91d67035c37",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a run that succeeds sends the head once」只发队首、第二条留在队列、同一终态重放不再发；第二轮由 frontend/scripts/creative-agent.test.ts「a succeeded run sends the head of the queue, once」（r2 成功发出下一条）覆盖"
+          },
+          {
+            "criterionId": "AC-446f029f6228",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「pause: after stop / after partial」暂停并经「继续发送」发出；failed 与二者同一分支，由 frontend/scripts/creative-agent.test.ts「stopped, failed and partial runs pause…」覆盖"
+          },
+          {
+            "criterionId": "AC-69a9b2dea9c4",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: mid-handover…」与 frontend/scripts/creative-agent.test.ts「after a reload a message being handed over…」；未发出时清掉 settledRun 后仍会自动发出"
+          },
+          {
+            "criterionId": "AC-9853219450ef",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「auto: a refused head goes back, the queue pauses, the composer keeps its words」"
+          },
+          {
+            "criterionId": "AC-eb2e89db1d6c",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「remove: deleting a queued message sends nothing」"
+          },
+          {
+            "criterionId": "AC-d14eaf10bdc9",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「reload: the queue is still there after a reload」；另一标签页不可见由 sessionStorage 的按标签页隔离保证（agentQueue.ts readQueue/writeQueue），未单独自动化"
+          },
+          {
+            "criterionId": "AC-8cf2d953dd42",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「same: a queued message is the request a direct send would have made」比较路径与 payload；用例只用文字，附件/引用/Skill/场景走同一个 send 对象（AgentPanel.tsx sendDraft→enqueue / sendMessage），为代码走查"
+          },
+          {
+            "criterionId": "AC-fd0f73ae8ea6",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerDuringAToolReachesTheNextRequestOnce；同帧气泡见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble shows in the same frame…」"
+          },
+          {
+            "criterionId": "AC-4debd07d331d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerAfterTheFinalAnswerIsAnsweredInTheSameRun、TestSteerContinuationResumesFromItsCheckpoint（-count=10 通过）"
+          },
+          {
+            "criterionId": "AC-91c6640a381d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（final answer recorded）；前端 409 回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409…」；成功后作为下一轮发出见「auto」"
+          },
+          {
+            "criterionId": "AC-b5b38ec28c9a",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement…」断言插队走 supplements 且带 expected_revision/waiting_token/instruction_segments；后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments"
+          },
+          {
+            "criterionId": "AC-6607a8e164ea",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（failed/cancelled 拒绝）；前端被拒放回队首见 frontend/scripts/agent-queue.e2e.mjs「steer: refused with 409」，运行结束后的自动发出见「auto」"
+          },
+          {
+            "criterionId": "AC-42980d03d888",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerIsRefusedWhenTheRunCannotTakeIt（12 batches → ErrLimit/413）；前端 409/413 同一分支给出该提示，e2e 以 409 验证"
+          },
+          {
+            "criterionId": "AC-1a51ab939f48",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerImagesKeepTheirOrder、TestSteerReferencesAreCheckedForAccountAndRevocation（未列入清单的本账号修订被接收并展开）"
+          },
+          {
+            "criterionId": "AC-cbbeac048961",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation「unlisted own revision accepted」"
+          },
+          {
+            "criterionId": "AC-9c24925fad96",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestSteerReferencesAreCheckedForAccountAndRevocation（他人修订 ErrNotFound、撤销 ErrConsentRevoked，不写入）；前端明确拒绝回队首走同一 putBack 分支"
+          },
+          {
+            "criterionId": "AC-5b0444ae7002",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「blocked: a message with a Skill or an image can only wait, and says why」"
+          },
+          {
+            "criterionId": "AC-127edde263a2",
+            "status": "verified",
+            "evidence": "后端 backend/internal/creativeagent/steer_test.go TestSupplementCarriesSegments（片段含 content_ref）；前端等补充改用 PromptEditor 并开放「+」添加（AgentPanel.tsx），带图片的补充未做 e2e，为代码走查"
+          },
+          {
+            "criterionId": "AC-c60652db1227",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「steer: an unknown result is sent again as the same request」（同 idempotency key、同请求体）；服务端只记一次见 backend/internal/creativeagent/steer_test.go TestSteerIsOneBatchOneMessageAndOneBlock 回放"
+          },
+          {
+            "criterionId": "AC-2da730ee1c00",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-queue.e2e.mjs「waiting: a refused supplement says to stop and continue」（413）"
+          },
+          {
+            "criterionId": "AC-2fcadf5a04dc",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（stopped / model failed）；前端「助手没有读到这条」见 frontend/scripts/agent-queue.e2e.mjs「steer: the bubble…」interrupted 断言"
+          },
+          {
+            "criterionId": "AC-5f1d6f35ed77",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/steer_test.go TestAnUndeliveredSteerIsShownAsUnread（worker stopped → partial, creative_steer_undelivered）；partial 暂停见 frontend/scripts/agent-queue.e2e.mjs「pause: after partial」"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "合入 develop（迁移 0082、角色卡）并重新生成 api.gen.go；补注册插队路由，冒烟测试改为断言服务层文案（先红后绿）。合并后后端插队/补充/检查点/角色卡/路由定向测试、0082 迁移测试通过，前端类型检查、lint 与 36 个智能助手单测通过；此前审计修复的 agent-queue 16 个、agent-stop 10 个 e2e 逐个通过。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "023fc2061119fa974d08f421f0a7c2d1d023b69979640704279058669d7aaeeb"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-12T03:25:55.494Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，测试为手动定向运行。未自动化：另一标签页看不到队列（sessionStorage 保证）；带附件/引用/Skill/场景的排队请求与直接发送一致（e2e 只比较纯文字）；等补充时附图片发出（后端覆盖片段，前端为代码走查）；e2e 用模拟接口，真实路由由 httpapi 冒烟测试覆盖。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "spec",
+        "tests"
+      ],
+      "summary": "owner 在 worktree 实际试用后确认可以收尾；接受批准后的契约调整（插队受理 revision 不变、last_event_seq 前进）、设计外文件与未自动化项。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "023fc2061119fa974d08f421f0a7c2d1d023b69979640704279058669d7aaeeb"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-12T03:26:04.159Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import type { components } from '../../api/schema'
 import * as api from './api.ts'
+import { ApiError } from '../../api/transport.ts'
 import {
   agentPendingKey,
   agentStep,
@@ -40,8 +41,27 @@ import {
   untitledConversation as untitled,
   type AgentDraft,
   type AgentRun,
+  type ChainOutcome,
   type PendingAgentChain,
 } from './agentState.ts'
+import {
+  agentQueueKey,
+  emptyQueue,
+  enqueue,
+  markSending,
+  nextQueueAction,
+  putBack,
+  readQueue,
+  recoverQueue,
+  removeQueued,
+  resumeQueue,
+  steerBlocked,
+  steerSegments,
+  writeQueue,
+  type ConversationQueue,
+  type QueuedMessage,
+} from './agentQueue.ts'
+import { AgentQueue } from './AgentQueue.tsx'
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
 import Picker, { type PickerOption } from './Picker.tsx'
 import {
@@ -58,7 +78,7 @@ import { useEgressNotice } from './EgressNotice.tsx'
 import { agentModelOptions, defaultAgentModel } from './agentOptions.tsx'
 import { SkillPanel, SkillTag, SlashMenu } from './AgentSkills.tsx'
 import { useSlashMenu } from './useSlashMenu.ts'
-import { RunTurn, TurnLoading } from './AgentBlocks.tsx'
+import { RunTurn, TurnLoading, UserMessage } from './AgentBlocks.tsx'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { useAgentScroll } from './useAgentScroll.ts'
 import {
@@ -70,7 +90,7 @@ import {
   type PageReader,
   type ThreadWindow,
 } from './agentThread.ts'
-import { currentStep, isFinished } from './agentBlocks.ts'
+import { currentStep, inputMessageIDs, isFinished } from './agentBlocks.ts'
 import {
   AgentTurnContext,
   followRun,
@@ -97,6 +117,7 @@ import {
 import { AgentContextRing } from './AgentContextRing.tsx'
 import {
   acceptOutgoing,
+  isRunInput,
   messageParts,
   outgoingIn,
   outgoingParts,
@@ -112,6 +133,7 @@ import { SceneSelectionTag } from './AgentScene.tsx'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
+type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Conversation = components['schemas']['CreativeAgentConversation']
 type MessagePage = components['schemas']['CreativeAgentMessagePage']
 type Consent = components['schemas']['CreativeEgressConsent']
@@ -119,6 +141,17 @@ type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
 // One empty list, so an empty thread is the same value from render to render.
 const noMessages: Message[] = []
+// 一次发送的结局；skipped 是链没落盘、请求没有发出。
+type SendOutcome = ChainOutcome | { kind: 'skipped' }
+
+// 队列只是这个标签页的便利：存储不可用时只留在内存里。
+function queueStorage(): Storage | null {
+  try {
+    return sessionStorage
+  } catch {
+    return null
+  }
+}
 
 // 自动命名在回答结束后异步完成，期间按这个间隔重读几次会话列表。
 const namingPolls = 4
@@ -318,6 +351,20 @@ function AgentConversation({
   // 发出去、运行还没建好时点了停止：建好就取消它。界面上已经显示停止。
   const stopOnStart = useRef(false)
   const [startStopped, setStartStopped] = useState(false)
+  // 运行中写下的消息排在这里，每个对话一份，只存在这个标签页。
+  const queueRef = useRef<{ key: string; queue: ConversationQueue }>({
+    key: '',
+    queue: emptyQueue,
+  })
+  const [queueState, setQueueState] = useState(queueRef.current)
+  // 插进运行的一条：出现在运行的块里之前先画出来。seq 是受理回执的事件序号。
+  const [steering, setSteering] = useState<{
+    run: string
+    parts: MessagePart[]
+    seq?: string
+  } | null>(null)
+  // 发出过的引用标题：输入框清空以后，消息里的引用仍叫原来的名字。
+  const knownTitles = useRef(new Map<string, string>())
   const thread =
     threadWindow?.conversation === conversation ? threadWindow.items : noMessages
   const {
@@ -342,6 +389,10 @@ function AgentConversation({
   const latest = active ?? waiting
   const approvedIDs = referenced.map((item) => item.id)
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
+  // 插队和补充用的是这次运行的模型，不是输入框里选的。
+  const runImageInput = !!catalog?.models.find(
+    (item) => item.model_key === latest?.model_key,
+  )?.capability.image_input
   const usage = conversation
     ? latestUsage([
         pageUsage?.conversation === conversation ? pageUsage.usage : null,
@@ -355,9 +406,10 @@ function AgentConversation({
   const scene = useStore(sceneContext)
   const sceneNames = scene && !waiting && !command ? selectedNames(scene) : []
   const locked = busy || !!pending || storageBroken
+  const hasImage = referenced.some((item) => item.kind === 'image')
   const unsupportedImage =
-    referenced.some((item) => item.kind === 'image') &&
-    !chosenModel?.capability.image_input
+    hasImage &&
+    !(waiting ? runImageInput : chosenModel?.capability.image_input)
   const referenceLimit =
     approvedIDs.length > 200 ||
     referenced.length > (catalog?.limits.attachments ?? 10) ||
@@ -389,6 +441,36 @@ function AgentConversation({
       setError(e instanceof Error ? e.message : '待确认操作暂不可读')
     }
   }, [storageKey])
+  const queueKey = conversation ? agentQueueKey(account, conversation) : ''
+  const queue = queueState.key === queueKey ? queueState.queue : emptyQueue
+  // 待确认链拿着的那条由链显示（气泡、重新发送）；它仍留在队列里，被拒时放回队首。
+  const shownQueue = queue.items.filter(
+    (item) => item.id !== pending?.draft?.queueItem,
+  )
+  // 换到一个对话就读它的队列；刷新前正在交接的那条，按待确认链认领（见 recoverQueue）。
+  useEffect(() => {
+    const value = queueKey
+      ? recoverQueue(readQueue(queueStorage(), queueKey), pendingRef.current)
+      : emptyQueue
+    queueRef.current = { key: queueKey, queue: value }
+    setQueueState(queueRef.current)
+    if (queueKey) writeQueue(queueStorage(), queueKey, value)
+  }, [queueKey])
+  function updateQueue(
+    key: string,
+    change: (queue: ConversationQueue) => ConversationQueue,
+  ) {
+    if (!key) return
+    const own = queueRef.current.key === key
+    const next = change(
+      own ? queueRef.current.queue : readQueue(queueStorage(), key),
+    )
+    writeQueue(queueStorage(), key, next)
+    if (own && mounted.current) {
+      queueRef.current = { key, queue: next }
+      setQueueState(queueRef.current)
+    }
+  }
   useEffect(() => {
     const abort = new AbortController()
     void Promise.all([
@@ -545,8 +627,16 @@ function AgentConversation({
   }
   // keepDraft leaves the composer alone: compacting from the ring is not
   // sending what the creator is still writing.
-  async function perform(command: PendingAgentChain, keepDraft = false) {
-    if (performing.current || !mounted.current) return
+  // 来自队列的一条（draft.queueItem）不碰输入框：送达才移出队列，结果未知时留在
+  // 队列里显示发送中，被拒由调用方放回队首。
+  async function perform(
+    command: PendingAgentChain,
+    keepDraft = false,
+  ): Promise<SendOutcome> {
+    if (performing.current || !mounted.current) return { kind: 'skipped' }
+    const queued = command.draft?.queueItem
+    // 插队和补充不是一条新消息：刚发出的那条消息与它无关。
+    const input = isRunInput(command)
     performing.current = true
     setBusy(true)
     setError('')
@@ -555,29 +645,31 @@ function AgentConversation({
       // 输入框随 busy 锁着，后面的消息不会被吞掉；这时又点了停止，就不发了。
       const ready = await afterStop()
       if (!ready || stopOnStart.current) {
-        if (mounted.current) {
-          setOutgoing(null)
-          restoreDraft(command.draft)
-        }
-        return
+        if (mounted.current && !input) setOutgoing(null)
+        if (mounted.current && !queued) restoreDraft(command.draft)
+        return { kind: 'skipped' }
       }
-      if (!savePending(pendingRef.current, command)) return
+      if (!savePending(pendingRef.current, command)) return { kind: 'skipped' }
       const outcome = await performAgentChain(
         command,
         { owns, save: savePending },
         (path, body, operation) =>
           api.send<Reply>(account, path, body, operation),
       )
+      if (queued && command.draft && (outcome.kind === 'done' || outcome.kind === 'lost'))
+        updateQueue(agentQueueKey(account, command.draft.conversation), (q) =>
+          removeQueued(q, queued),
+        )
       if (outcome.kind === 'lost') {
-        if (mounted.current) setOutgoing(null)
-        return
+        if (mounted.current && !input) setOutgoing(null)
+        return outcome
       }
       if (outcome.kind === 'done') {
         const reply = outcome.reply as Reply
         if ('trigger_message_id' in reply) {
-          setOutgoing((old) => old && acceptOutgoing(old, reply))
+          if (!input) setOutgoing((old) => old && acceptOutgoing(old, reply))
           setConversation(reply.conversation_id)
-          if (!keepDraft) {
+          if (!keepDraft && !queued) {
             setDraft('')
             setMaterials([])
             attachments.clear()
@@ -606,15 +698,14 @@ function AgentConversation({
       if (outcome.kind === 'rejected' || outcome.kind === 'unknown') {
         // 原文回到输入框：明确被拒时链已清掉，可以改了再发；结果未知时链还在，
         // 输入框随链锁着，等确认送达或重新发送。建好的对话照样留着。
-        setOutgoing(null)
-        restoreDraft(outcome.chain.draft)
+        if (!input) setOutgoing(null)
+        if (!queued) restoreDraft(outcome.chain.draft)
       }
-      if (
-        outcome.kind === 'done' &&
-        refreshAfterSend(command, outcome.reply) === 'thread'
-      )
-        setThreadRefresh((value) => value + 1)
-      else setRefresh((value) => value + 1)
+      const reread =
+        outcome.kind === 'done' ? refreshAfterSend(command, outcome.reply) : 'all'
+      if (reread === 'thread') setThreadRefresh((value) => value + 1)
+      else if (reread === 'all') setRefresh((value) => value + 1)
+      return outcome
     } finally {
       performing.current = false
       stopOnStart.current = false
@@ -628,7 +719,11 @@ function AgentConversation({
     setError('')
   }
   // 点停止立刻显示已停止，请求在后台发出；失败时恢复成运行中并提示。
+  // 队列随显示的停止当帧暂停，停止失败时一起复原，这一轮结束后照常发出队首。
   function stop(run: AgentRun) {
+    const key = agentQueueKey(account, run.conversation_id)
+    const before =
+      queueRef.current.key === key ? queueRef.current.queue : readQueue(queueStorage(), key)
     freezeStopping(run)
     setError('')
     const request = cancelUntilFinished(run.id).then(
@@ -640,6 +735,11 @@ function AgentConversation({
       },
       () => {
         releaseStopping(run.id)
+        updateQueue(key, (q) =>
+          q.settledRun === run.id
+            ? { ...q, paused: before.paused, settledRun: before.settledRun }
+            : q,
+        )
         if (mounted.current) setError('停止没有成功，请重试')
         return false
       },
@@ -712,7 +812,8 @@ function AgentConversation({
       sendCommand(command)
       return
     }
-    if ((!draft.trim() && !uploaded.length) || locked || active || attachments.uploading || attachments.failed) return
+    if ((!draft.trim() && !uploaded.length) || locked || attachments.uploading || attachments.failed) return
+    if (unsupportedImage || referenceLimit) return
     const saved = {
       conversation,
       model,
@@ -720,25 +821,7 @@ function AgentConversation({
       text: [revisionText(draft, references), ...uploaded.filter((item) => !mentioned.some((m) => m.id === item.id)).map((item) => `@[${item.id}]`)].filter(Boolean).join(' '),
       materials: referenced,
     }
-    if (waiting) {
-      void perform(
-        single(
-          `/agent-runs/${waiting.id}/supplements`,
-          {
-            expected_revision: waiting.revision,
-            waiting_token: waiting.waiting_token,
-            text: draft,
-          },
-          saved,
-        ),
-      )
-      return
-    }
-    if (!chosenModel?.available || unsupportedImage || referenceLimit) return
-    const selected = catalog?.skills.find(
-      (item) => item.skill_version_id === skill,
-    )
-    let segments: components['schemas']['CreativeAgentInstructionSegment'][]
+    let segments: Segment[]
     try {
       segments = agentSegments(draft, references)
       for (const item of uploaded) {
@@ -748,6 +831,26 @@ function AgentConversation({
       setError(e instanceof Error ? e.message : '引用不可用')
       return
     }
+    for (const item of referenced) knownTitles.current.set(item.id, item.title)
+    // 补充和插队一样带片段：文字、引用、附件都可以。
+    if (waiting) {
+      void perform(
+        single(
+          `/agent-runs/${waiting.id}/supplements`,
+          {
+            expected_revision: waiting.revision,
+            waiting_token: waiting.waiting_token,
+            instruction_segments: steerSegments(segments) ?? [],
+          },
+          saved,
+        ),
+      )
+      return
+    }
+    if (!chosenModel?.available) return
+    const selected = catalog?.skills.find(
+      (item) => item.skill_version_id === skill,
+    )
     if (selected)
       segments.unshift({
         type: 'skill_ref',
@@ -755,59 +858,210 @@ function AgentConversation({
         skill_version_id: selected.skill_version_id,
       })
     const editing = sceneContext.getState()
-    // 第一条消息顺带建对话，三步一起记进待确认链：建对话的结果不确定时，
-    // 重放的也是同一个操作，不会多出空对话。
-    const chain = {
-      steps: [
-        ...(conversation ? [] : [conversationStep(canvasID)]),
-        ...messageSteps(conversation || conversationSlot, {
-          model,
-          imageInput: chosenModel.capability.image_input,
-          revisionIDs: approvedIDs,
-          segments,
-          scene: editing,
-        }),
-      ],
-      draft: saved,
+    const parts = outgoingParts(
+      segments,
+      titleOf,
+      selected?.display_name,
+      editing ? selectedNames(editing) : [],
+    )
+    const send: QueuedMessage['send'] = {
+      model,
+      imageInput: chosenModel.capability.image_input,
+      revisionIDs: approvedIDs,
+      segments,
+      scene: editing,
     }
+    const running = !!active
     // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框。
     void notice.confirm().then((ok) => {
       if (!ok) return
-      showOutgoing(
-        outgoingParts(
-          segments,
-          titleOf,
-          selected?.display_name,
-          editing ? selectedNames(editing) : [],
-        ),
-      )
-      void perform(chain)
+      if (running) {
+        // 运行中写下的一条先排队：输入框同帧清空，本轮成功结束后自动发出。
+        updateQueue(queueKey, (q) =>
+          enqueue(q, {
+            id: crypto.randomUUID(),
+            parts,
+            draft: saved,
+            send,
+            steer: steerSegments(segments),
+            hasImage,
+          }),
+        )
+        clearComposer()
+        return
+      }
+      showOutgoing(parts)
+      void sendMessage(send, saved)
     })
+  }
+  // 输入框和队列共用这一段：队列发出的请求与当时直接发送的完全一致。第一条
+  // 消息顺带建对话，几步一起记进待确认链：建对话的结果不确定时，重放的也是
+  // 同一个操作，不会多出空对话。
+  function sendMessage(send: QueuedMessage['send'], saved: AgentDraft) {
+    return perform({
+      steps: [
+        ...(saved.conversation ? [] : [conversationStep(canvasID)]),
+        ...messageSteps(saved.conversation || conversationSlot, send),
+      ],
+      draft: saved,
+    })
+  }
+  // 队首发出：没发出去或被拒，放回队首并暂停，等摄影师点「继续发送」。
+  async function sendQueued(item: QueuedMessage) {
+    showOutgoing(item.parts, false)
+    const outcome = await sendMessage(item.send, {
+      ...item.draft,
+      queueItem: item.id,
+    })
+    if (outcome.kind === 'rejected' || outcome.kind === 'skipped')
+      updateQueue(agentQueueKey(account, item.draft.conversation), (q) =>
+        putBack(q, item, true),
+      )
+  }
+  // 插队：运行进行中走 steers，等补充时走 supplements。气泡同帧出现，
+  // 受理后等运行的块里有了它再撤掉；被拒放回队首，本轮结束后照常发出。
+  async function steerQueued(item: QueuedMessage) {
+    const run = latest
+    if (!run || !item.steer || locked) return
+    const key = queueKey
+    const supplementing = run.state === 'waiting_input'
+    updateQueue(key, (q) => markSending(q, item.id))
+    setSteering({ run: run.id, parts: item.parts })
+    followLatest()
+    const draft = { ...item.draft, queueItem: item.id }
+    const outcome = await perform(
+      supplementing
+        ? single(
+            `/agent-runs/${run.id}/supplements`,
+            {
+              expected_revision: run.revision,
+              waiting_token: run.waiting_token,
+              instruction_segments: item.steer,
+            },
+            draft,
+          )
+        : single(
+            `/agent-runs/${run.id}/steers`,
+            { instruction_segments: item.steer },
+            draft,
+          ),
+    )
+    if (!mounted.current) return
+    if (outcome.kind === 'done') {
+      const seq = (outcome.reply as AgentRun).last_event_seq
+      setSteering((old) => old && { ...old, seq })
+    } else if (outcome.kind !== 'unknown') setSteering(null)
+    if (outcome.kind !== 'rejected' && outcome.kind !== 'skipped') return
+    updateQueue(key, (q) => putBack(q, item))
+    steerRefused(outcome, supplementing)
+  }
+  function steerRefused(outcome: SendOutcome, supplementing: boolean) {
+    if (
+      outcome.kind === 'rejected' &&
+      outcome.error instanceof ApiError &&
+      [409, 413].includes(outcome.error.status)
+    )
+      setError(
+        supplementing
+          ? '这一轮不能再补充，停止本轮后点「继续发送」'
+          : '这一轮不能再插入，会在本轮结束后发送',
+      )
+  }
+  // 重放待确认链。来自队列的那条结果未知时还在队列里（发送中）：被拒就放回
+  // 队首，和第一次被拒一样，输入框里正在写的不动。
+  async function resend() {
+    const saved = pendingRef.current
+    if (!saved) return
+    const outcome = await perform(saved)
+    if (!mounted.current) return
+    const input = isRunInput(saved)
+    const queued = saved.draft?.queueItem
+    if (queued && saved.draft && outcome.kind === 'rejected') {
+      updateQueue(agentQueueKey(account, saved.draft.conversation), (q) => {
+        const item = q.items.find((other) => other.id === queued)
+        return item ? putBack(q, item, !input) : q
+      })
+      if (input)
+        steerRefused(outcome, saved.steps[0]?.path.endsWith('/supplements') ?? false)
+    }
+    if (!input) return
+    if (outcome.kind === 'done') {
+      const seq = (outcome.reply as AgentRun).last_event_seq
+      setSteering((old) => old && { ...old, seq })
+    } else if (outcome.kind !== 'unknown') setSteering(null)
+  }
+  // 「继续发送」：运行还在进行就只解除暂停，等它结束；否则立刻发出队首。
+  function resumeSending() {
+    if (locked) return
+    if (latest) {
+      updateQueue(queueKey, (q) => ({ ...q, paused: false }))
+      return
+    }
+    let next: QueuedMessage | undefined
+    updateQueue(queueKey, (q) => {
+      const resumed = resumeQueue(q)
+      next = resumed.send
+      return resumed.queue
+    })
+    if (next) void sendQueued(next)
+  }
+  // 最新一轮成功结束就发出队首；停止、失败、中途出错则暂停（见 nextQueueAction）。
+  // 只看正在看的这个对话。
+  const newest = live.at(0)
+  const queueReady = !busy && !pending && !storageBroken && !archivedView
+  useEffect(() => {
+    if (!queueKey || queueRef.current.key !== queueKey) return
+    const { queue: next, send } = nextQueueAction(
+      queueRef.current.queue,
+      newest,
+      queueReady,
+    )
+    if (next !== queueRef.current.queue) updateQueue(queueKey, () => next)
+    if (send) void sendQueued(send)
+    // 按最新一轮的状态和队列本身求值；函数只读 ref 和当前对话。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueKey, newest?.id, newest?.state, queueReady, queue.items.length, queue.paused])
+  // 插进去的那条已经出现在运行的块里：乐观气泡让位。
+  const steeredSeq = useAgentRuns((store) =>
+    steering ? shownRun(store, steering.run)?.seq : undefined,
+  )
+  useEffect(() => {
+    if (
+      steering?.seq &&
+      steeredSeq &&
+      BigInt(steeredSeq) >= BigInt(steering.seq)
+    )
+      setSteering(null)
+  }, [steering, steeredSeq])
+  function clearComposer() {
+    setDraft('')
+    setSkill('')
+    setMaterials([])
+    attachments.clear()
   }
   // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。
   function showOutgoing(parts: MessagePart[], clear = true) {
     stopOnStart.current = false
     setStartStopped(false)
     setOutgoing({ conversation, parts })
-    if (clear) {
-      setDraft('')
-      setSkill('')
-      setMaterials([])
-      attachments.clear()
-    }
+    if (clear) clearComposer()
     followLatest()
   }
   // 引用的标题：画布或素材库里选的，或者刚上传的附件。
   function titleOf(revisionID: string) {
     return (
       references.find((item) => item.revisionID === revisionID)?.title ??
-      uploaded.find((item) => item.id === revisionID)?.title
+      uploaded.find((item) => item.id === revisionID)?.title ??
+      knownTitles.current.get(revisionID)
     )
   }
+  const titleRef = useRef(titleOf)
+  titleRef.current = titleOf
   const turn = useMemo<TurnContext>(
     () => ({
       canvas,
       account,
+      titleOf: (revisionID) => titleRef.current(revisionID),
       retry:
         locked || archivedView
           ? undefined
@@ -828,6 +1082,13 @@ function AgentConversation({
   )
   const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
   const followedRuns = new Set(triggers.values())
+  // 插队和补充的消息由运行里的 input 块画出，对话里不再单独画一遍。
+  const inputMessages = useAgentRuns(
+    useShallow((store) =>
+      runs.flatMap((run) => inputMessageIDs(shownRun(store, run.id)?.blocks ?? [])),
+    ),
+  )
+  const shownInRun = new Set(inputMessages)
   // 往前接上整轮。同时只读一次；读的过程中换了会话或刷新换掉了窗口，结果作废。
   function loadOlder() {
     const from = windowRef.current
@@ -912,6 +1173,7 @@ function AgentConversation({
   }))
   function show(id: string) {
     attachments.clear()
+    setSteering(null)
     setConversation(id)
     setThreadWindow(null)
     setRuns([])
@@ -1043,7 +1305,7 @@ function AgentConversation({
   }
   const slash = useSlashMenu(
     draft,
-    waiting || locked || active ? [] : slashSuggestions(draft, skills),
+    waiting || locked ? [] : slashSuggestions(draft, skills),
     chooseSlash,
   )
   const compactBlocked = !conversation
@@ -1094,7 +1356,7 @@ function AgentConversation({
     (item) => item.state === 'failed',
   )
   function addFiles(files: File[]) {
-    if (locked || active || waiting) return
+    if (locked) return
     void attachments.addFiles(files).then((keys) => {
       if (keys.length) setInserting(keys)
     })
@@ -1110,17 +1372,29 @@ function AgentConversation({
     else if (value === 'compact')
       sendCommand({ name: 'compact', args: '' }, true)
   }
-  // 运行中发送键就是停止键；等补充时，输入框空着才是停止。
-  const stoppable = active ?? (waiting && !draft.trim() ? waiting : undefined)
+  // 运行中或等补充时，输入框空着发送键就是停止键；有内容时是排队或补充。
+  const hasDraft = !!draft.trim() || uploaded.length > 0
+  const stoppable = hasDraft ? undefined : latest
+  // 压缩是对整个对话的操作，不进队列。
+  const commandBlocked = !!command && !!active
   // 刚发出、运行还没建好：前端先当它在跑，不等请求返回。
   const starting = !!sending && !sending.run && !startStopped && !stoppable
   const sendable =
     !locked &&
-    !active &&
-    (!!draft.trim() || uploaded.length > 0) &&
+    hasDraft &&
     !attachments.uploading && !attachments.failed &&
-    (!!waiting ||
-      (!!chosenModel?.available && !unsupportedImage && !referenceLimit))
+    !unsupportedImage &&
+    !referenceLimit &&
+    !commandBlocked &&
+    (!!waiting || !!chosenModel?.available)
+  const sendLabel = waiting ? '补充并继续' : active ? '加入排队' : '发送'
+  // 插队按钮为什么不能用；没有可以插进去的运行时不出现。
+  function steerReason(item: QueuedMessage): string | null {
+    if (!latest) return null
+    if (locked) return '请稍候'
+    if (latest.kind === 'compact') return '正在压缩上下文，结束后发送'
+    return steerBlocked(item, runImageInput)
+  }
   return (
     <aside className="cc-agent-panel" aria-label="创作助手">
       <header>
@@ -1214,12 +1488,7 @@ function AgentConversation({
       {pending && !busy && (
         <div className="cc-agent-notice" role="status">
           <span>上一条还没有确认送达。</span>
-          <button
-            onClick={() => {
-              const saved = pendingRef.current
-              if (saved) void perform(saved)
-            }}
-          >
+          <button onClick={() => void resend()}>
             重新发送
           </button>
         </div>
@@ -1285,11 +1554,16 @@ function AgentConversation({
           <AgentTurnContext.Provider value={turn}>
             {thread.map((message) => {
               const runID = triggers.get(message.id)
+              if (message.role === 'user' && shownInRun.has(message.id))
+                return null
               if (message.role === 'user')
                 return (
                   <div className="cc-agent-exchange" key={message.id}>
                     <UserMessage parts={messageParts(message.body.blocks, titleOf)} />
                     {runID && <RunTurn runID={runID} />}
+                    {runID && steering?.run === runID && (
+                      <UserMessage parts={steering.parts} sending />
+                    )}
                   </div>
                 )
               // Runs from before blocks existed have only their messages.
@@ -1310,6 +1584,9 @@ function AgentConversation({
                   <p className="cc-agent-note">已停止</p>
                 ) : (
                   <TurnLoading />
+                )}
+                {sending.run && steering?.run === sending.run && (
+                  <UserMessage parts={steering.parts} sending />
                 )}
               </div>
             )}
@@ -1334,7 +1611,7 @@ function AgentConversation({
       ) : (
         <form
           className="cc-agent-compose"
-          onDragOver={(event) => { if (!locked && !active && !waiting && event.dataTransfer.types.includes('Files')) event.preventDefault() }}
+          onDragOver={(event) => { if (!locked && event.dataTransfer.types.includes('Files')) event.preventDefault() }}
           onDrop={(event) => {
             if (!event.dataTransfer.files.length) return
             event.preventDefault()
@@ -1346,6 +1623,17 @@ function AgentConversation({
             sendDraft()
           }}
         >
+          {shownQueue.length > 0 && (
+            <AgentQueue
+              items={shownQueue}
+              paused={queue.paused}
+              locked={locked}
+              steerReason={steerReason}
+              onSteer={(item) => void steerQueued(item)}
+              onRemove={(id) => updateQueue(queueKey, (q) => removeQueued(q, id))}
+              onResume={resumeSending}
+            />
+          )}
           {(latest || starting) && <RunStatus run={latest} />}
           <div className="cc-agent-box">
             <SlashMenu
@@ -1359,7 +1647,7 @@ function AgentConversation({
                 {selectedSkill && (
                   <SkillTag
                     skill={selectedSkill}
-                    disabled={locked || !!active}
+                    disabled={locked}
                     onRemove={() => chooseSkill('')}
                   />
                 )}
@@ -1371,110 +1659,101 @@ function AgentConversation({
             <label className="sr-only" htmlFor="creative-agent-draft">
               {waiting ? '补充内容' : '创作问题'}
             </label>
-            {waiting ? (
-              <textarea
-                id="creative-agent-draft"
-                className="resize-none"
-                value={draft}
-                disabled={locked || !!active}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault()
-                    event.currentTarget.form?.requestSubmit()
-                  }
-                }}
-                placeholder="补充原任务所需的信息…"
-                rows={3}
-              />
-            ) : (
-              <PromptEditor
-                ref={editor}
-                text={draft}
-                references={references}
-                thumbnails={thumbnails}
-                disabled={locked || !!active}
-                label="创作问题"
-                referenceTitle="可引用的画布素材"
-                placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
-                onChange={(text) => {
-                  setMaterials(referencedMaterials(text, materialRefs))
-                  const typed = typedSkill(text, skills)
-                  if (typed) {
-                    setSkill(typed.skill.skill_version_id)
-                    completeDraft(typed.text)
-                  } else setDraft(text)
-                }}
-                onKey={slash.onKey}
-                onGenerate={() => sendDraft()}
-                onLibrary={() => setPickingMaterial(true)}
-                onFiles={addFiles}
-              />
-            )}
-            {!waiting && failedUploads.length > 0 && (
+            <PromptEditor
+              ref={editor}
+              text={draft}
+              references={references}
+              thumbnails={thumbnails}
+              disabled={locked}
+              label={waiting ? '补充内容' : '创作问题'}
+              referenceTitle="可引用的画布素材"
+              placeholder={
+                waiting
+                  ? '补充原任务所需的信息…'
+                  : active
+                    ? '写下一条，会在这一轮结束后发送…'
+                    : '想讨论什么创作方向？输入 @ 引用画布素材…'
+              }
+              onChange={(text) => {
+                setMaterials(referencedMaterials(text, materialRefs))
+                const typed = waiting ? null : typedSkill(text, skills)
+                if (typed) {
+                  setSkill(typed.skill.skill_version_id)
+                  completeDraft(typed.text)
+                } else setDraft(text)
+              }}
+              onKey={slash.onKey}
+              onGenerate={() => sendDraft()}
+              onLibrary={() => setPickingMaterial(true)}
+              onFiles={addFiles}
+            />
+            {failedUploads.length > 0 && (
               <ul className="cc-agent-uploads" aria-label="上传失败的图片">
                 {failedUploads.map((item) => <li key={item.key}>
                   <span>「{item.title}」上传失败{item.error ? `：${item.error}` : ''}</span>
-                  <button type="button" disabled={locked || !!active} onClick={() => attachments.retry(item.key)}>重试</button>
-                  <button type="button" disabled={locked || !!active} onClick={() => dropUpload(item.key)}>移除</button>
+                  <button type="button" disabled={locked} onClick={() => attachments.retry(item.key)}>重试</button>
+                  <button type="button" disabled={locked} onClick={() => dropUpload(item.key)}>移除</button>
                 </li>)}
               </ul>
             )}
-            {!waiting && attachments.message && <p role="status">{attachments.message}</p>}
+            {attachments.message && <p role="status">{attachments.message}</p>}
             {command && (
               <p className="cc-agent-hint" role="status">
-                发送后会把较早的对话整理成交接摘要，最近两轮保持原样；可以接着写要特别保留的内容。
+                {commandBlocked
+                  ? '这次运行结束后才能压缩。'
+                  : '发送后会把较早的对话整理成交接摘要，最近两轮保持原样；可以接着写要特别保留的内容。'}
               </p>
             )}
-            {!waiting && unsupportedImage && (
+            {unsupportedImage && (
               <p className="cc-agent-hint" role="status">
-                当前模型不支持图片理解，请切换视觉模型或移除图片引用。
+                {waiting
+                  ? '这次运行的模型不支持图片理解，请移除图片引用。'
+                  : '当前模型不支持图片理解，请切换视觉模型或移除图片引用。'}
               </p>
             )}
-            {!waiting && referenceLimit && (
+            {referenceLimit && (
               <p className="cc-agent-hint" role="status">
                 引用数量超过本轮上限，请减少素材。
               </p>
             )}
             <div className="cc-agent-composer-foot">
-              {!waiting && (
-                <div className="cc-agent-options">
-                  <Picker
-                    className="cc-agent-add"
-                    label="添加"
-                    value=""
-                    options={addOptions}
-                    minWidth={300}
-                    disabled={locked || !!active}
-                    action
-                    onChange={add}
-                  >
-                    <Plus size={15} />
-                  </Picker>
-                  <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; addFiles(files) }} />
-                  <SkillPanel
-                    skills={skills}
-                    loading={!catalog}
-                    value={skill}
-                    disabled={locked || !!active}
-                    onChange={chooseSkill}
-                  />
-                  <Picker
-                    className="cc-agent-model"
-                    label="模型"
-                    align="end"
-                    value={model}
-                    options={modelOptions}
-                    minWidth={240}
-                    disabled={locked || !!active}
-                    onChange={setModel}
-                  />
-                </div>
-              )}
+              <div className="cc-agent-options">
+                <Picker
+                  className="cc-agent-add"
+                  label="添加"
+                  value=""
+                  options={addOptions}
+                  minWidth={300}
+                  disabled={locked}
+                  action
+                  onChange={add}
+                >
+                  <Plus size={15} />
+                </Picker>
+                <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; addFiles(files) }} />
+                {/* 补充沿用这次运行的 Skill 和模型。 */}
+                {!waiting && (
+                  <>
+                    <SkillPanel
+                      skills={skills}
+                      loading={!catalog}
+                      value={skill}
+                      disabled={locked}
+                      onChange={chooseSkill}
+                    />
+                    <Picker
+                      className="cc-agent-model"
+                      label="模型"
+                      align="end"
+                      value={model}
+                      options={modelOptions}
+                      minWidth={240}
+                      disabled={locked}
+                      onChange={setModel}
+                    />
+                  </>
+                )}
+              </div>
               {!waiting && (
                 <AgentContextRing
                   view={ring}
@@ -1497,8 +1776,8 @@ function AgentConversation({
               ) : (
                 <button
                   className="cc-agent-send"
-                  aria-label={waiting ? '补充并继续' : '发送'}
-                  title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
+                  aria-label={sendLabel}
+                  title={`${sendLabel} · Enter`}
                   type="submit"
                   disabled={!sendable}
                 >
@@ -1550,48 +1829,6 @@ function shortTime(value: string): string {
   return date.toDateString() === new Date().toDateString()
     ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
-}
-
-// What the creator sent: their words, with what they referenced as chips. A
-// message still on its way is drawn the same, only fainter.
-function UserMessage({
-  parts,
-  sending = false,
-}: {
-  parts: MessagePart[]
-  sending?: boolean
-}) {
-  // 选中的物体单独一行，挂在气泡上方。
-  const scenes = parts.filter(
-    (part): part is Extract<MessagePart, { kind: 'scene' }> =>
-      part.kind === 'scene',
-  )
-  return (
-    <>
-      {scenes.map((part, index) => (
-        <div className="cc-agent-user-scene" key={index}>
-          <SceneSelectionTag names={part.names} />
-        </div>
-      ))}
-      <div className="cc-agent-user" aria-busy={sending || undefined}>
-        {parts.map((part, index) =>
-          part.kind === 'scene' ? null : part.kind === 'command' ? (
-            <span key={index}>
-              <span className="cc-agent-command">/{part.command}</span>
-              {part.text && ` ${part.text}`}
-            </span>
-          ) : part.kind === 'text' ? (
-            <span key={index}>{part.text}</span>
-          ) : (
-            <span className="cc-agent-chip" key={index}>
-              {part.title}
-            </span>
-          ),
-        )}
-        {sending && <span className="sr-only">发送中</span>}
-      </div>
-    </>
-  )
 }
 
 // A followed run is still being read until its snapshot arrives; showing the

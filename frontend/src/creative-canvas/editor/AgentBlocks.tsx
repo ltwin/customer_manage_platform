@@ -31,12 +31,18 @@ import {
 } from './agentRuns.ts'
 import { runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
-import { SceneRunChanges, SceneShot } from './AgentScene.tsx'
+import {
+  SceneRunChanges,
+  SceneSelectionTag,
+  SceneShot,
+} from './AgentScene.tsx'
+import { messageParts, type MessagePart } from './agentOutgoing.ts'
 import { tokenLabel } from './agentContext.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind } from './media.ts'
 
 type Detail = components['schemas']['CreativeAgentBlockDetail']
+type InputPayload = components['schemas']['CreativeAgentInputPayload']
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -335,6 +341,7 @@ export const BlockView = memo(function BlockView({
   else if (block.type === 'tool') body = <ToolRow block={block} />
   else if (block.type === 'plan') body = <PlanCard block={block} />
   else if (block.type === 'compaction') body = <CompactionDivider block={block} />
+  else if (block.type === 'input') body = <InputMessage block={block} />
   else body = <p className="cc-agent-note">{text(block.payload.message)}</p>
   return (
     <div
@@ -347,6 +354,64 @@ export const BlockView = memo(function BlockView({
     </div>
   )
 })
+
+// 运行中插进来的一条：和对话里的用户消息一样画。运行在助手读到它之前就结束了，
+// 照实说出来，不让人以为它被回答了。
+function InputMessage({ block }: { block: AgentBlock }) {
+  const { titleOf } = useContext(AgentTurnContext)
+  const payload = block.payload as unknown as InputPayload
+  const parts = messageParts(payload.body.blocks, titleOf ?? (() => undefined))
+  return (
+    <>
+      <UserMessage parts={parts} />
+      {block.state === 'interrupted' && (
+        <p className="cc-agent-note">助手没有读到这条</p>
+      )}
+    </>
+  )
+}
+
+// What the creator sent: their words, with what they referenced as chips. A
+// message still on its way is drawn the same, only fainter.
+export function UserMessage({
+  parts,
+  sending = false,
+}: {
+  parts: MessagePart[]
+  sending?: boolean
+}) {
+  // 选中的物体单独一行，挂在气泡上方。
+  const scenes = parts.filter(
+    (part): part is Extract<MessagePart, { kind: 'scene' }> =>
+      part.kind === 'scene',
+  )
+  return (
+    <>
+      {scenes.map((part, index) => (
+        <div className="cc-agent-user-scene" key={index}>
+          <SceneSelectionTag names={part.names} />
+        </div>
+      ))}
+      <div className="cc-agent-user" aria-busy={sending || undefined}>
+        {parts.map((part, index) =>
+          part.kind === 'scene' ? null : part.kind === 'command' ? (
+            <span key={index}>
+              <span className="cc-agent-command">/{part.command}</span>
+              {part.text && ` ${part.text}`}
+            </span>
+          ) : part.kind === 'text' ? (
+            <span key={index}>{part.text}</span>
+          ) : (
+            <span className="cc-agent-chip" key={index}>
+              {part.title}
+            </span>
+          ),
+        )}
+        {sending && <span className="sr-only">发送中</span>}
+      </div>
+    </>
+  )
+}
 
 function Segment({
   id,

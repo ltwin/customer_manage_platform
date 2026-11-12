@@ -60,6 +60,8 @@ export type AgentDraft = {
   skill: string
   text: string
   materials?: AgentMaterial[]
+  // 来自队列的发送：链落盘后队列移出这一条，被拒时放回队首而不是回填输入框。
+  queueItem?: string
 }
 // 每张画布一个待确认槽位，每个标签页一份。
 export const agentPendingKey = (account: string, canvasID: string) =>
@@ -262,7 +264,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 const stepPath =
-  /^\/(canvases\/[^/]+\/conversations|conversations\/[^/]+\/(egress-consents|runs)|agent-runs\/[^/]+\/(cancel|close-reconciliation|supplements|retry))$/
+  /^\/(canvases\/[^/]+\/conversations|conversations\/[^/]+\/(egress-consents|runs)|agent-runs\/[^/]+\/(cancel|close-reconciliation|supplements|steers|retry))$/
 function readStep(value: unknown): AgentStep {
   if (
     !record(value) ||
@@ -308,6 +310,9 @@ function readDraft(d: unknown): AgentDraft {
     skill: d.skill,
     text: d.text,
     ...(d.materials ? { materials: d.materials as AgentMaterial[] } : {}),
+    ...(typeof d.queueItem === 'string' && d.queueItem
+      ? { queueItem: d.queueItem }
+      : {}),
   }
 }
 // 旧版本存的是「当前一步 + 可选的下一次运行」，转换成链；请求体逐字保留，

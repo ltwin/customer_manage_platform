@@ -1592,7 +1592,7 @@ paths:
     post:
       tags: [creative-foundation]
       operationId: supplementCreativeAgentRun
-      summary: 在原授权和期限内补充文字继续运行
+      summary: 在原授权和期限内补充文字或引用，继续运行
       parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
       - {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
@@ -1609,6 +1609,35 @@ paths:
               schema: {$ref: '#/components/schemas/CreativeAgentRun'}
         default:
           description: 请求失败；证据不足或不支持的步骤拒绝自动恢复
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent-runs/{id}/steers:
+    post:
+      tags: [creative-foundation]
+      operationId: steerCreativeAgentRun
+      summary: 运行进行中插入一条摄影师消息，在下一次调用模型前送达
+      description: >-
+        运行处于 queued、running、waiting_client 时可用。202 只表示已接收：消息已写入本轮输入并以 input 块出现（pending）；
+        某次模型请求带上它后块变为 delivered，运行在送达前结束则变为 interrupted。最新模型步骤已给出最终回答并入账后拒绝（409），
+        这时这一轮正在收尾。片段里的引用由账号级同意覆盖，仍校验归属、可用性、撤销与数据类别。
+        回执以 (account_id, operation_id) 为键，结果未知时用原请求重放。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeAgentSteerRequest'}
+      responses:
+        '202':
+          description: 已接收；运行状态不变，last_event_seq 前进；幂等回放原响应
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentRun'}
+        default:
+          description: 请求失败
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -9622,11 +9651,43 @@ components:
     CreativeAgentSupplementPayload:
       type: object
       additionalProperties: false
-      required: [expected_revision, waiting_token, text]
+      required: [expected_revision, waiting_token]
+      description: text 与 instruction_segments 恰好给一个。
       properties:
         expected_revision: {$ref: '#/components/schemas/CreativeRevision'}
         waiting_token: {type: string, minLength: 1}
         text: {type: string, minLength: 1, maxLength: 32768}
+        instruction_segments:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/CreativeAgentSupplementSegment'}
+    CreativeAgentSupplementSegment:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: >-
+        运行中摄影师加入的一个片段：只有文字和引用，一轮的 Skill 与命令在开始时已定。判别联合同 CreativeAgentInstructionSegment。
+      properties:
+        type: {type: string, enum: [text, content_ref]}
+        text: {type: string}
+        content_revision_id: {type: string}
+    CreativeAgentSteerPayload:
+      type: object
+      additionalProperties: false
+      required: [instruction_segments]
+      properties:
+        instruction_segments:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/CreativeAgentSupplementSegment'}
+    CreativeAgentSteerRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeAgentSteerPayload'}
     CreativeAgentSupplementRequest:
       type: object
       additionalProperties: false
@@ -9730,7 +9791,7 @@ components:
         type:
           type: string
           description: >-
-            本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions
+            本期 text、thinking、tool、plan、notice、compaction、input（运行中插队或补充的摄影师消息，状态 pending、delivered，通用终态 interrupted 表示助手没有读到）；question、confirm、proposal、changes、suggestions
             由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。
         state:
           type: string
@@ -9842,6 +9903,14 @@ components:
       properties:
         code: {type: string}
         message: {type: string}
+    CreativeAgentInputPayload:
+      type: object
+      additionalProperties: false
+      required: [message_id, body]
+      description: input 块的载荷：对话里那条摄影师消息及其正文，用于在这一轮里原位显示。
+      properties:
+        message_id: {type: string}
+        body: {$ref: '#/components/schemas/CreativeAgentMessageBody'}
     CreativeAgentBlockPatch:
       type: object
       additionalProperties: false

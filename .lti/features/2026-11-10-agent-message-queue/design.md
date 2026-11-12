@@ -96,7 +96,7 @@ interface ConversationQueue { items: QueuedMessage[]; paused: boolean; settledRu
 **插队**：
 - 运行在进行中时，走 `perform(single('/agent-runs/{id}/steers', {instruction_segments}, saved))`；运行处于 `waiting_input` 时，走 `perform(single(supplements, {expected_revision, waiting_token, instruction_segments}, saved))`。条目在交接期间同样标记 `sending`。
 - 链落盘的同一帧，条目移出队列，`RunTurn` 末尾出现乐观气泡。
-- 202：快照的 `revision` 达到响应的 `revision` 时，`input` 块已经在快照里（同一事务写入），撤掉乐观气泡。
+- 202：运行视图的事件序号达到响应的 `last_event_seq` 时，`input` 块已经在视图里（同一事务写入），撤掉乐观气泡。
 - 结果未知：链保留，显示现有的待确认提示和「重新发送」，重放同一个请求。
 - 明确被拒（409 / 413 / 422 / 403）：撤掉气泡，放回队首并提示，提示文案按运行状态区分（见 proposal）。
 
@@ -136,7 +136,7 @@ Apply:
   finalModelStepInTx(c.ID) → ErrRunState          // R2
   consent ← readConsentForUpdate; coversRun(consent, c.ConversationID, nil)
   appendInputBatchInTx(c, segments, consent, model)
-  revision+1，runStateChangedInTx                // 前端拿到新 revision
+  // 运行状态与 revision 不变；input 块事件让 last_event_seq 前进
   return runOutcome(run, 202)
 ```
 
@@ -238,6 +238,8 @@ succeeded 快照 → nextQueueAction → 队首标 sending（落盘）→ sendMe
 
 ## 未决事项
 
-| 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
-|---|---|---|---|
-| U1：`AfterAgent` 拿到的 `state.Messages` 能否直接作为 `runner.Run` 的输入续跑（系统指令是否重复、`Extra` 是否保留、复用检查点 ID 有无副作用） | 续跑（R4） | 第一个任务做穿刺，用 stubVendor 跑三个用例：①「最终回答 → 插队 → 续跑」，断言第二次模型请求的消息序列；② 续跑中遇到工具等待，从检查点恢复；③ 续跑前崩溃，走 R7。不可行时退回 `WrapModel` 方案，并先回报 owner | 续跑任务开始前 |
+无。U1（续跑能否以 `AfterAgent` 的消息作为 `runner.Run` 的输入）已在任务 1.1 穿刺验证可行：
+- 框架会把指令作为系统消息放进状态，`finalMessages` 去掉系统消息，由框架重新加上。
+- `Extra` 原样保留，插队只送达一次。
+- 续跑停在工具上时，检查点和恢复照常工作。
+- 「续跑前崩溃」的用例依赖 R7，并入任务 3.1。

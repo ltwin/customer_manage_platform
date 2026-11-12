@@ -1073,6 +1073,24 @@ func (e CreativeAgentStepSummaryState) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentSupplementSegmentType.
+const (
+	CreativeAgentSupplementSegmentTypeContentRef CreativeAgentSupplementSegmentType = "content_ref"
+	CreativeAgentSupplementSegmentTypeText       CreativeAgentSupplementSegmentType = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentSupplementSegmentType enum.
+func (e CreativeAgentSupplementSegmentType) Valid() bool {
+	switch e {
+	case CreativeAgentSupplementSegmentTypeContentRef:
+		return true
+	case CreativeAgentSupplementSegmentTypeText:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentToolEffectClass.
 const (
 	Generate CreativeAgentToolEffectClass = "generate"
@@ -4180,34 +4198,34 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindAudio     ListCreativeAssetsParamsKind = "audio"
-	ListCreativeAssetsParamsKindCharacter ListCreativeAssetsParamsKind = "character"
-	ListCreativeAssetsParamsKindImage     ListCreativeAssetsParamsKind = "image"
-	ListCreativeAssetsParamsKindLink      ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindMaterial  ListCreativeAssetsParamsKind = "material"
-	ListCreativeAssetsParamsKindModel     ListCreativeAssetsParamsKind = "model"
-	ListCreativeAssetsParamsKindText      ListCreativeAssetsParamsKind = "text"
-	ListCreativeAssetsParamsKindVideo     ListCreativeAssetsParamsKind = "video"
+	Audio     ListCreativeAssetsParamsKind = "audio"
+	Character ListCreativeAssetsParamsKind = "character"
+	Image     ListCreativeAssetsParamsKind = "image"
+	Link      ListCreativeAssetsParamsKind = "link"
+	Material  ListCreativeAssetsParamsKind = "material"
+	Model     ListCreativeAssetsParamsKind = "model"
+	Text      ListCreativeAssetsParamsKind = "text"
+	Video     ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
-	case ListCreativeAssetsParamsKindAudio:
+	case Audio:
 		return true
-	case ListCreativeAssetsParamsKindCharacter:
+	case Character:
 		return true
-	case ListCreativeAssetsParamsKindImage:
+	case Image:
 		return true
-	case ListCreativeAssetsParamsKindLink:
+	case Link:
 		return true
-	case ListCreativeAssetsParamsKindMaterial:
+	case Material:
 		return true
-	case ListCreativeAssetsParamsKindModel:
+	case Model:
 		return true
-	case ListCreativeAssetsParamsKindText:
+	case Text:
 		return true
-	case ListCreativeAssetsParamsKindVideo:
+	case Video:
 		return true
 	default:
 		return false
@@ -4997,7 +5015,7 @@ type CreativeAgentBlock struct {
 	// State 类型自身的状态，另有通用终态 interrupted。
 	State string `json:"state"`
 
-	// Type 本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。
+	// Type 本期 text、thinking、tool、plan、notice、compaction、input（运行中插队或补充的摄影师消息，状态 pending、delivered，通用终态 interrupted 表示助手没有读到）；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。
 	Type string `json:"type"`
 }
 
@@ -5524,6 +5542,18 @@ type CreativeAgentSkillVersion struct {
 // CreativeAgentSkillVersionOrigin defines model for CreativeAgentSkillVersion.Origin.
 type CreativeAgentSkillVersionOrigin string
 
+// CreativeAgentSteerPayload defines model for CreativeAgentSteerPayload.
+type CreativeAgentSteerPayload struct {
+	InstructionSegments []CreativeAgentSupplementSegment `json:"instruction_segments"`
+}
+
+// CreativeAgentSteerRequest defines model for CreativeAgentSteerRequest.
+type CreativeAgentSteerRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAgentSteerPayload `json:"payload"`
+}
+
 // CreativeAgentStepPage defines model for CreativeAgentStepPage.
 type CreativeAgentStepPage struct {
 	Items []CreativeAgentStepSummary `json:"items"`
@@ -5545,20 +5575,33 @@ type CreativeAgentStepSummaryKind string
 // CreativeAgentStepSummaryState defines model for CreativeAgentStepSummary.State.
 type CreativeAgentStepSummaryState string
 
-// CreativeAgentSupplementPayload defines model for CreativeAgentSupplementPayload.
+// CreativeAgentSupplementPayload text 与 instruction_segments 恰好给一个。
 type CreativeAgentSupplementPayload struct {
 	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	ExpectedRevision CreativeRevision `json:"expected_revision"`
-	Text             string           `json:"text"`
-	WaitingToken     string           `json:"waiting_token"`
+	ExpectedRevision    CreativeRevision                  `json:"expected_revision"`
+	InstructionSegments *[]CreativeAgentSupplementSegment `json:"instruction_segments,omitempty"`
+	Text                *string                           `json:"text,omitempty"`
+	WaitingToken        string                            `json:"waiting_token"`
 }
 
 // CreativeAgentSupplementRequest defines model for CreativeAgentSupplementRequest.
 type CreativeAgentSupplementRequest struct {
-	ClientCreatedAt time.Time                      `json:"client_created_at"`
-	OperationId     openapi_types.UUID             `json:"operation_id"`
-	Payload         CreativeAgentSupplementPayload `json:"payload"`
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+
+	// Payload text 与 instruction_segments 恰好给一个。
+	Payload CreativeAgentSupplementPayload `json:"payload"`
 }
+
+// CreativeAgentSupplementSegment 运行中摄影师加入的一个片段：只有文字和引用，一轮的 Skill 与命令在开始时已定。判别联合同 CreativeAgentInstructionSegment。
+type CreativeAgentSupplementSegment struct {
+	ContentRevisionId *string                            `json:"content_revision_id,omitempty"`
+	Text              *string                            `json:"text,omitempty"`
+	Type              CreativeAgentSupplementSegmentType `json:"type"`
+}
+
+// CreativeAgentSupplementSegmentType defines model for CreativeAgentSupplementSegment.Type.
+type CreativeAgentSupplementSegmentType string
 
 // CreativeAgentTool defines model for CreativeAgentTool.
 type CreativeAgentTool struct {
@@ -10054,6 +10097,11 @@ type RetryCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// SteerCreativeAgentRunParams defines parameters for SteerCreativeAgentRun.
+type SteerCreativeAgentRunParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // SupplementCreativeAgentRunParams defines parameters for SupplementCreativeAgentRun.
 type SupplementCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -10868,6 +10916,9 @@ type CloseCreativeAgentReconciliationJSONRequestBody = CreativeAgentControlReque
 
 // RetryCreativeAgentRunJSONRequestBody defines body for RetryCreativeAgentRun for application/json ContentType.
 type RetryCreativeAgentRunJSONRequestBody = CreativeAgentRetryRequest
+
+// SteerCreativeAgentRunJSONRequestBody defines body for SteerCreativeAgentRun for application/json ContentType.
+type SteerCreativeAgentRunJSONRequestBody = CreativeAgentSteerRequest
 
 // SupplementCreativeAgentRunJSONRequestBody defines body for SupplementCreativeAgentRun for application/json ContentType.
 type SupplementCreativeAgentRunJSONRequestBody = CreativeAgentSupplementRequest
@@ -13701,10 +13752,13 @@ type ServerInterface interface {
 	// 恢复一个已记录且可证明安全的固定 Skill 资源读取步骤
 	// (POST /creative/agent-runs/{id}/retry)
 	RetryCreativeAgentRun(c *gin.Context, id string, params RetryCreativeAgentRunParams)
+	// 运行进行中插入一条摄影师消息，在下一次调用模型前送达
+	// (POST /creative/agent-runs/{id}/steers)
+	SteerCreativeAgentRun(c *gin.Context, id string, params SteerCreativeAgentRunParams)
 	// 运行步骤摘要，不返回模型私有推理
 	// (GET /creative/agent-runs/{id}/steps)
 	ListCreativeAgentRunSteps(c *gin.Context, id string)
-	// 在原授权和期限内补充文字继续运行
+	// 在原授权和期限内补充文字或引用，继续运行
 	// (POST /creative/agent-runs/{id}/supplements)
 	SupplementCreativeAgentRun(c *gin.Context, id string, params SupplementCreativeAgentRunParams)
 	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
@@ -14855,6 +14909,60 @@ func (siw *ServerInterfaceWrapper) RetryCreativeAgentRun(c *gin.Context) {
 	}
 
 	siw.Handler.RetryCreativeAgentRun(c, id, params)
+}
+
+// SteerCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) SteerCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SteerCreativeAgentRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SteerCreativeAgentRun(c, id, params)
 }
 
 // ListCreativeAgentRunSteps operation middleware
@@ -21023,6 +21131,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/close-reconciliation", wrapper.CloseCreativeAgentReconciliation)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id/events", wrapper.WatchCreativeAgentRun)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/retry", wrapper.RetryCreativeAgentRun)
+	router.POST(options.BaseURL+"/creative/agent-runs/:id/steers", wrapper.SteerCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id/steps", wrapper.ListCreativeAgentRunSteps)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/supplements", wrapper.SupplementCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)

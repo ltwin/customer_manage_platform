@@ -9,6 +9,7 @@ import {
   type Outgoing,
 } from '../src/creative-canvas/editor/agentOutgoing.ts'
 import {
+  agentStep,
   conversationStep,
   conversationSlot,
   messageSteps,
@@ -160,4 +161,10 @@ test('a send into an existing conversation rereads only the thread', () => {
   assert.equal(refreshAfterSend(created, run), 'all')
   // A reply that is not a run says nothing about the thread: reread all.
   assert.equal(refreshAfterSend(into, { id: 'consent-1' }), 'all')
+  // A steer or a supplement shows up as the run's input block; nothing to reread.
+  for (const path of ['/agent-runs/run-1/steers', '/agent-runs/run-1/supplements'])
+    assert.equal(
+      refreshAfterSend({ steps: [agentStep(path, { instruction_segments: [] })] }, run),
+      'none',
+    )
 })

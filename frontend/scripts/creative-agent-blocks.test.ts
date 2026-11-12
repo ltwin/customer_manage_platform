@@ -4,6 +4,7 @@ import {
   applyEvent,
   currentStep,
   fromSnapshot,
+  inputMessageIDs,
   layout,
   mergeSnapshot,
   renderable,
@@ -232,6 +233,17 @@ test('only what this page understands is rendered as itself', () => {
   assert.equal(renderable(block(1, 'text', 'complete')), true)
   assert.equal(renderable(block(1, 'text', 'complete', {}, { payload_version: 2 })), false)
   assert.equal(renderable(block(1, 'question', 'waiting')), false)
+})
+
+test('a steered message leaves the thread only for an input block this page can draw', () => {
+  assert.deepEqual(
+    inputMessageIDs([
+      block(1, 'input', 'pending', { message_id: 'm1' }),
+      block(2, 'input', 'delivered', { message_id: 'm2' }, { payload_version: 2 }),
+      block(3, 'text', 'complete'),
+    ]),
+    ['m1'],
+  )
 })
 
 test('the status row names the step in progress', () => {

@@ -558,3 +558,34 @@ Skill 索引按最近使用顺序保留能放下的条目。命令消息（`/com
 
 **称谓**：模型可见文字（基础指令、工具描述、拒绝说明、标题生成）用「创作者」；
 `TestModelVisibleTextNamesNoProfession` 用语法树扫描包内全部字符串字面量。
+
+## 2026-11-11：插队、补充片段与续跑（agent-message-queue）
+
+**写入**：`SteerRun`（`steer.go`）和 `SupplementRun` 都经 `appendInputBatchInTx`（`waiting.go`）写入，同一事务里追加用户消息、`creative_run_inputs` 新批次（`batch_ordinal >= 1`）和 `input` 块（`pending`）。
+`resolveInput` 只收 `text` / `content_ref`，文字片段不能为空白；每次运行最多 12 批。
+引用逐项 `RequireUsable`；图片还要检查运行模型的图片能力和同意里的 `image_preview`。
+引用批次同时写 `body = referenceLabel(id)`，回滚到老 worker 时读成标签文字。
+
+**拒绝**：压缩运行（`kind = compact`）不收插队，返回 409，前端置灰「插队」。
+
+**截止点**：插队在运行行锁（`lockControlledRun`）下检查 `finalModelStepInTx`。最新模型步骤不在准备中、输出也不含工具调用（即最终回答已入账）时拒绝（`ErrRunState` → 409）。
+模型结果消费（`planInTx` → `admitDispatchInTx` → `admitRunInTx`）拿同一把锁，两者串行，不存在「已接收却既没送达也没续跑」的插队。
+
+**送达**：`BeforeModelRewriteState` 用 `unseenInputs` 取出未带过的批次，按 `Extra["creative_supplement"]` 去重；文字成为用户消息，引用经 `resolveReference` 展开并加入 `h.revisions`。
+带上的批次号经 `setDelivery` 记在 handler 上，网关派发事务里的 `Admit` 在复核授权后用 `markInputsDeliveredInTx` 把对应 `input` 块写成 `delivered`；准备好却没派发（额度不足、停止）的请求不算送达。
+网关重放已付费结果时不调 `Admit`，所以 `prepareModelStep` 遇到已有步骤时也标一次。旧版本写入、没有 `input` 块的补充批次不标。
+恢复运行时，已送达批次里的引用在检查点里，不经 `unseenInputs`；`newRunExecution` 用 `deliveredInputRevisions` 把它们并入 `h.revisions`，派发前照常复核撤销。
+
+**续跑**：`runExecution.run` 在框架跑完后查 `undeliveredInputs`；还有 `pending` 的 `input` 块就以 `AfterAgent` 留下的最终消息（去掉系统消息）在同一 checkpoint ID 下再跑一轮，直到没有未送达的输入。
+续跑与原执行共用 handler、网关适配器和检查点存储，步骤序号接着库里的计数。
+
+**未送达**：运行结束时仍为 `pending` 的块由 `settleBlocksInTx` 记为 `interrupted`。`sweepRun` 发现已交付回答却还有未送达输入时，以 `creative_steer_undelivered` 结束为 `partial`。
+
+**前端**：队列状态机在 `agentQueue.ts`（`nextQueueAction`、`recoverQueue` 等），按对话存 `sessionStorage`（`creative-agent-queue:<account>:<conversation>`）。
+面板（`AgentPanel.tsx`）运行中有内容时发送键为「加入排队」；最新一轮 `succeeded` 时发出队首，`cancelled` / `failed` / `partial` 时暂停，点「继续发送」恢复。
+队首发出、插队与补充都走待确认链（`draft.queueItem`）：条目送达才移出队列，链待确认期间仍在队列里但不显示；明确被拒（含「重新发送」时被拒）放回队首，不碰输入框。
+停止请求失败时，队列随乐观停止记下的暂停和 `settledRun` 一起复原。
+插队的乐观气泡在运行视图的 `seq` 达到回执的 `last_event_seq` 时撤掉。
+已知边界：只有正在看的那个对话会自动发出队首；插队不能带 Skill 或命令。
+
+**验证**：`steer_test.go`（截止点两种顺序、续跑、引用归属与撤销、未送达显示）、`scripts/creative-agent.test.ts`（队列状态机与交接恢复）、`scripts/agent-queue.e2e.mjs`（`AGENT_QUEUE_E2E_ONLY` 单用例过滤）。

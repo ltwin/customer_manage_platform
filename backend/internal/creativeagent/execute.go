@@ -724,7 +724,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 // The ordinal comes from the run's own counter under its row lock, so two
 // workers cannot hand out the same position.
 func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim, previousModel string,
-	chat llmgateway.ChatRequest, composition contextComposition) (stepID, bindingKey string, err error) {
+	chat llmgateway.ChatRequest, composition contextComposition, replayed ...int) (stepID, bindingKey string, err error) {
 	// The 256 KiB input contract, checked on the request as assembled — the
 	// system prompt the skill contributed, the history, the quoted bodies, the
 	// separators and the tool definitions, all of it.
@@ -802,7 +802,9 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 				return errCheckpointJournal
 			}
 			bindingKey = turnBindingKey(held.RunID, existingOrdinal)
-			return nil
+			// A replayed turn may return the result it paid for without a
+			// dispatch, so the inputs it carried are marked here too.
+			return markInputsDeliveredInTx(ctx, tx, held.RunID, replayed)
 		}
 		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='tool' AND state='prepared'", held.RunID)
 		if err != nil {

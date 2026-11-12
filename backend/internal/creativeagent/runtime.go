@@ -71,6 +71,59 @@ type runtimeHandler struct {
 	// skillIndex is the frozen index of skill versions the conversation used
 	// before; load_skill may load any of them besides the run's own.
 	skillIndex []skillIndexEntry
+	// final is the framework's conversation when the agent last finished; a
+	// steer that arrived during the final answer continues from it.
+	final []*schema.Message
+	// delivering is the input batches the next request carries for the first
+	// time; its dispatch, or the replay of its step, marks them delivered.
+	delivering []int
+}
+
+func (h *runtimeHandler) setDelivery(batches []int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.delivering = batches
+}
+
+func (h *runtimeHandler) delivery() []int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.delivering
+}
+
+// AfterAgent keeps the finished conversation so the run can answer a steer
+// the model did not see without starting the turn over.
+func (h *runtimeHandler) AfterAgent(ctx context.Context, state *adk.ChatModelAgentState) (context.Context, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.final = append(h.final[:0], state.Messages...)
+	return ctx, nil
+}
+
+// undeliveredInputs reports an input no model request has carried yet. It
+// reads the input blocks, the same fact the run sweep reads after a crash.
+func (h *runtimeHandler) undeliveredInputs(ctx context.Context) (bool, error) {
+	return undeliveredInputsIn(ctx, h.scope, h.held.RunID)
+}
+
+func undeliveredInputsIn(ctx context.Context, q interface {
+	Exists(context.Context, string, string, ...any) (bool, error)
+}, runID string) (bool, error) {
+	return q.Exists(ctx, "creative_agent_blocks", "run_id=$2 AND type='input' AND state='pending'", runID)
+}
+
+// finalMessages is the input of a continuation. The framework prepends the
+// instruction again, so the system messages it put there are dropped.
+func (h *runtimeHandler) finalMessages() []*schema.Message {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	messages := make([]*schema.Message, 0, len(h.final))
+	for _, m := range h.final {
+		if m.Role != schema.System {
+			messages = append(messages, m)
+		}
+	}
+	return messages
 }
 
 func (h *runtimeHandler) setComposition(c contextComposition) {

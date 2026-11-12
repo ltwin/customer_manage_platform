@@ -808,8 +808,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 在原授权和期限内补充文字继续运行 */
+        /** 在原授权和期限内补充文字或引用，继续运行 */
         post: operations["supplementCreativeAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/steers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 运行进行中插入一条摄影师消息，在下一次调用模型前送达
+         * @description 运行处于 queued、running、waiting_client 时可用。202 只表示已接收：消息已写入本轮输入并以 input 块出现（pending）； 某次模型请求带上它后块变为 delivered，运行在送达前结束则变为 interrupted。最新模型步骤已给出最终回答并入账后拒绝（409）， 这时这一轮正在收尾。片段里的引用由账号级同意覆盖，仍校验归属、可用性、撤销与数据类别。 回执以 (account_id, operation_id) 为键，结果未知时用原请求重放。
+         */
+        post: operations["steerCreativeAgentRun"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4320,10 +4340,29 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAgentControlPayload"];
         };
+        /** @description text 与 instruction_segments 恰好给一个。 */
         CreativeAgentSupplementPayload: {
             expected_revision: components["schemas"]["CreativeRevision"];
             waiting_token: string;
-            text: string;
+            text?: string;
+            instruction_segments?: components["schemas"]["CreativeAgentSupplementSegment"][];
+        };
+        /** @description 运行中摄影师加入的一个片段：只有文字和引用，一轮的 Skill 与命令在开始时已定。判别联合同 CreativeAgentInstructionSegment。 */
+        CreativeAgentSupplementSegment: {
+            /** @enum {string} */
+            type: "text" | "content_ref";
+            text?: string;
+            content_revision_id?: string;
+        };
+        CreativeAgentSteerPayload: {
+            instruction_segments: components["schemas"]["CreativeAgentSupplementSegment"][];
+        };
+        CreativeAgentSteerRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentSteerPayload"];
         };
         CreativeAgentSupplementRequest: {
             /** Format: uuid */
@@ -4399,7 +4438,7 @@ export interface components {
             id: string;
             run_id: string;
             ordinal: components["schemas"]["CreativeRevision"];
-            /** @description 本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。 */
+            /** @description 本期 text、thinking、tool、plan、notice、compaction、input（运行中插队或补充的摄影师消息，状态 pending、delivered，通用终态 interrupted 表示助手没有读到）；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。 */
             type: string;
             /** @description 类型自身的状态，另有通用终态 interrupted。 */
             state: string;
@@ -4494,6 +4533,11 @@ export interface components {
         CreativeAgentNoticePayload: {
             code: string;
             message: string;
+        };
+        /** @description input 块的载荷：对话里那条摄影师消息及其正文，用于在这一轮里原位显示。 */
+        CreativeAgentInputPayload: {
+            message_id: string;
+            body: components["schemas"]["CreativeAgentMessageBody"];
         };
         /** @description 只有两种形式：append 把 text 追加到 payload[path]；set 整体替换 payload。 */
         CreativeAgentBlockPatch: {
@@ -10614,6 +10658,43 @@ export interface operations {
                 };
             };
             /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    steerCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentSteerRequest"];
+            };
+        };
+        responses: {
+            /** @description 已接收；运行状态不变，last_event_seq 前进；幂等回放原响应 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败 */
             default: {
                 headers: {
                     [name: string]: unknown;
