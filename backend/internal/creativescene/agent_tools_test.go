@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -814,5 +815,93 @@ func TestAgentReadsTheSun(t *testing.T) {
 	chengdu["sun_mode"] = "manual"
 	if manual := edit(env(chengdu)); sunOf(manual) != nil || moonOf(manual) != nil {
 		t.Fatalf("manual mode: %v", manual)
+	}
+}
+
+func TestAgentAddsObjectsWithPlacementDefaults(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	branch := objectID(10)
+	addObjects(t, f.a, doc, group(branch, nil, 10), group(objectID(11), &branch, 8))
+	a := shotAgent{t: t, scope: f.a, doc: doc}
+
+	explicit := objectID(20)
+	res := a.mustEdit("", op{"op": "add_objects", "objects": []any{
+		map[string]any{"kind": "group", "name": "根级 A"},
+		map[string]any{"kind": "group", "name": "显式", "id": explicit, "order": 30, "visible": false, "locked": true},
+		map[string]any{"kind": "group", "name": "根级 B"},
+		map[string]any{"kind": "group", "name": "子级", "parent_id": branch},
+	}})
+	if len(res.AddedObjectIDs) != 4 || res.AddedObjectIDs[1] != explicit {
+		t.Fatalf("added ids %v", res.AddedObjectIDs)
+	}
+	scene := readScene(t, f.a, doc)
+	for i, expected := range []struct {
+		order           int
+		parent          *string
+		visible, locked bool
+	}{
+		{order: 31, visible: true},
+		{order: 30, locked: true},
+		{order: 32, visible: true},
+		{order: 9, parent: &branch, visible: true},
+	} {
+		id := res.AddedObjectIDs[i]
+		if !strings.HasPrefix(id, "sobj_") || len(id) != 26 {
+			t.Fatalf("invalid id %q", id)
+		}
+		o := scene.object(t, id)
+		if o.Order != expected.order || o.Visible != expected.visible || o.Locked != expected.locked {
+			t.Fatalf("item %d: order %d visible %t locked %t", i, o.Order, o.Visible, o.Locked)
+		}
+		if expected.parent == nil && o.ParentID != nil || expected.parent != nil && (o.ParentID == nil || *o.ParentID != *expected.parent) {
+			t.Fatalf("item %d: unexpected parent %v", i, o.ParentID)
+		}
+		if !slices.Equal(o.Transform.Position, []float64{0, 0, 0}) ||
+			!slices.Equal(o.Transform.Rotation, []float64{0, 0, 0, 1}) ||
+			!slices.Equal(o.Transform.Scale, []float64{1, 1, 1}) {
+			t.Fatalf("item %d: default transform %+v", i, o.Transform)
+		}
+	}
+}
+
+func TestAgentPartialTransformKeepsOtherShotChannels(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+	cam, subject := objectID(1), objectID(2)
+	addObjects(t, f.a, doc, camera(cam, 1), box(subject, nil, 2))
+	a := shotAgent{t: t, scope: f.a, doc: doc}
+	update := func(shot string, fields map[string]any) {
+		fields["object_id"] = subject
+		a.mustEdit(shot, op{"op": "update_objects", "updates": []any{fields}})
+	}
+
+	update("", map[string]any{"yaw_deg": 90, "transform": map[string]any{"scale": []int{2, 3, 4}}})
+	base := a.object("", subject).Transform
+	if !closeTo(base.Rotation, []float64{0, math.Sqrt(0.5), 0, math.Sqrt(0.5)}) {
+		t.Fatalf("yaw rotation %v", base.Rotation)
+	}
+	shots := a.mustEdit("", addShot("主镜头", cam), addShot("侧面", cam)).AddedShots
+	update(shots[1], map[string]any{"yaw_deg": 180})
+	priorRotation := a.object(shots[1], subject).Transform.Rotation
+
+	// A base move still works while only rotation is animated.
+	update("", map[string]any{"transform": map[string]any{"position": []int{4, 5, 6}}})
+	update(shots[1], map[string]any{"transform": map[string]any{"position": []int{7, 8, 9}}})
+	for _, tc := range []struct {
+		shot               string
+		position, rotation []float64
+	}{
+		{"", []float64{4, 5, 6}, base.Rotation},
+		{shots[0], []float64{4, 5, 6}, base.Rotation},
+		{shots[1], []float64{7, 8, 9}, priorRotation},
+	} {
+		got := a.object(tc.shot, subject)
+		if !closeTo(got.Transform.Position, tc.position) || !closeTo(got.Transform.Rotation, tc.rotation) || !closeTo(got.Transform.Scale, base.Scale) {
+			t.Fatalf("shot %q got %+v", tc.shot, got.Transform)
+		}
+		if slices.Contains(got.Animated, "transform.scale") {
+			t.Fatalf("unexpected scale key in %v", got.Animated)
+		}
 	}
 }

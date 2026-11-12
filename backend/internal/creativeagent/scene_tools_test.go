@@ -549,8 +549,7 @@ func TestSceneWritesReplayTheirReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	args, _ := json.Marshal(map[string]any{"document_id": doc, "based_on_revision": 1, "operations": []any{map[string]any{"op": "add_objects", "objects": []any{map[string]any{
-		"id": sceneObjectID("replayed"), "kind": "primitive", "name": "柱", "parent_id": nil, "order": 11, "transform": identityAt(0), "visible": true, "locked": false,
-		"primitive": map[string]any{"builtin": "box@1"}}}}}})
+		"kind": "primitive", "name": "柱", "primitive": map[string]any{"builtin": "box@1"}}}}}})
 	first, err := execution.runtime.editScene(t.Context(), "step-replayed", string(args))
 	if err != nil {
 		t.Fatal(err)
@@ -562,6 +561,10 @@ func TestSceneWritesReplayTheirReceipt(t *testing.T) {
 	var a, b map[string]any
 	if json.Unmarshal(first.(json.RawMessage), &a) != nil || json.Unmarshal(again.(json.RawMessage), &b) != nil || fmt.Sprint(a) != fmt.Sprint(b) {
 		t.Fatalf("replay answered %s, first %s", again, first)
+	}
+	ids, _ := a["added_object_ids"].([]any)
+	if len(ids) != 1 || len(f.objectsOf(doc)) != 2 {
+		t.Fatalf("generated object not preserved by replay: %v", a)
 	}
 	if n := f.count("creative_document_revisions", "document_id=$1 AND run_id=$2", doc, run.ID); n != 1 {
 		t.Fatalf("revisions after a replay: %d", n)
@@ -898,5 +901,69 @@ func TestSceneToolsDescribeTheCostModel(t *testing.T) {
 		if !strings.Contains(info.Desc, want) {
 			t.Errorf("%s does not say %q", tool, want)
 		}
+	}
+}
+
+func TestSceneToolRefusalsTellTheAssistantHowToFixTheCall(t *testing.T) {
+	f, c, consent, doc := visualScene(t, false)
+	add := func(callID string, object map[string]any) llmgateway.ToolCall {
+		object["kind"], object["name"] = "camera", "主机位"
+		if _, ok := object["camera"]; !ok {
+			object["camera"] = map[string]any{}
+		}
+		return sceneCall(callID, editSceneTool, map[string]any{
+			"document_id": doc, "based_on_revision": 1,
+			"operations": []any{map[string]any{"op": "add_objects", "objects": []any{object}}},
+		})
+	}
+	model := func(callID string, args map[string]any) llmgateway.ToolCall {
+		args["document_id"] = doc
+		args["target"] = map[string]any{"add": map[string]any{"name": "模型", "transform": identityAt(0)}}
+		return sceneCall(callID, writeModelTool, args)
+	}
+	cases := []struct {
+		call llmgateway.ToolCall
+		want string
+	}{
+		{add("nested", map[string]any{"camera": map[string]any{"look_at": []int{0, 0, 0}}}), "把 objects[0].camera.look_at 移到 objects[0].look_at"},
+		{add("orient", map[string]any{"look_at": []int{0, 0, 0}, "transform": identityAt(1)}), "省略 rotation"},
+		{add("aim", map[string]any{"look_at": []int{0, 0, 0}}), "objects[0] 用 look_at 时须写 transform.position"},
+		{add("quaternion", map[string]any{"transform": map[string]any{"rotation": []int{1, 1, 1, 1}}}), "旋转须为单位四元数"},
+		{add("id", map[string]any{"id": "sobj_vol_cloud_ceiling_00001"}), "新增时可省略"},
+		{add("order", map[string]any{"order": f.objectsOf(doc)[0].Order}), "顺序重复"},
+		{model("baseline", map[string]any{"code": testPillarCode}), "先用 read_scene"},
+		{model("source", map[string]any{"based_on_revision": 1}), "缺少模型来源"},
+		{model("multiple", map[string]any{"based_on_revision": 1, "code": testPillarCode, "base_content_revision_id": "ccrv_example"}), "code 和 base_content_revision_id 互斥"},
+	}
+	s := &script{}
+	for _, tc := range cases {
+		s.turns = append(s.turns, func(r llmgateway.ProviderRequest) llmgateway.Result { return scriptedResult(r, tc.call) })
+	}
+	s.turns = append(s.turns, func(r llmgateway.ProviderRequest) llmgateway.Result {
+		return scriptedResult(r, add("fixed", map[string]any{
+			"transform": map[string]any{"position": []int{3, 2, 4}}, "look_at": []int{0, 1, 0},
+		}))
+	})
+	f.vendor.script = s.answer
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "搭建机位"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run.ID); got.State != RunSucceeded {
+		t.Fatalf("run %s %s", got.State, got.ErrorCode)
+	}
+	for i, tc := range cases {
+		got := lastTool(s.request(i + 2))
+		if got["code"] != "creative_tool_refused" || !strings.Contains(fmt.Sprint(got["message"]), tc.want) {
+			t.Errorf("%s: got %v, want %q", tc.call.ID, got, tc.want)
+		}
+	}
+	fixed := lastTool(s.request(len(cases) + 2))
+	ids, _ := fixed["added_object_ids"].([]any)
+	if len(ids) != 1 || fixed["written_revision"] != 2.0 {
+		t.Fatalf("the corrected call did not write exactly one object: %v", fixed)
+	}
+	if n := f.count("creative_scene_jobs", "run_id=$1", run.ID); n != 0 {
+		t.Fatalf("bad calls queued %d jobs", n)
 	}
 }

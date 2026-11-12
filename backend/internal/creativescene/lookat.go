@@ -2,12 +2,13 @@ package creativescene
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 )
 
 // look_at is an edit_scene convenience: an add_objects or update_objects item
 // may name a world point instead of a rotation. resolveLookAt turns it into a
-// whole transform the way three.js Object3D.lookAt would, before the batch
+// rotation the way three.js Object3D.lookAt would, before the batch
 // reaches the scene command, so the command's strict decoding never sees it.
 // Cameras and lights point their local −Z at the target, other objects +Z.
 
@@ -440,7 +441,7 @@ func resolveLookAt(ops []json.RawMessage, cur Scene) ([]json.RawMessage, error) 
 		changed := false
 		next := make([]json.RawMessage, len(items))
 		for j, raw := range items {
-			resolved, ok, err := s.resolveItem(raw, h.Op == "add_objects", reparented, moved)
+			resolved, ok, err := s.resolveItem(raw, j, h.Op == "add_objects", reparented, moved)
 			if err != nil {
 				return nil, err
 			}
@@ -470,8 +471,9 @@ func resolveLookAt(ops []json.RawMessage, cur Scene) ([]json.RawMessage, error) 
 }
 
 // resolveItem returns the item with look_at turned into transform; ok is
-// false when the item has no look_at.
-func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, moved map[string]bool) (json.RawMessage, bool, error) {
+// false when the item has no look_at. index is the item's place in its
+// operation.
+func (s *lookAtScene) resolveItem(raw json.RawMessage, index int, add bool, reparented, moved map[string]bool) (json.RawMessage, bool, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
 		return nil, false, nil
@@ -483,15 +485,17 @@ func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, mov
 	if err := json.Unmarshal(raw, &it); err != nil {
 		return nil, false, invalid("look_at 须为 [x, y, z]")
 	}
-	id := it.ObjectID
+	id, label := it.ObjectID, "物件 "+it.ObjectID
 	if add {
-		id = it.ID
+		// A new object's id may be one the server assigned, which the
+		// assistant has not seen: it knows the item by its place.
+		id, label = it.ID, fmt.Sprintf("objects[%d]", index)
 	}
 	if len(it.LookAt) != 3 || !finite(it.LookAt[0]) || !finite(it.LookAt[1]) || !finite(it.LookAt[2]) {
-		return nil, false, invalid("物件 %s 的 look_at 须为 [x, y, z] 世界坐标", id)
+		return nil, false, invalid("%s 的 look_at 须为 [x, y, z] 世界坐标", label)
 	}
 	if it.Transform != nil && it.Transform.Rotation != nil {
-		return nil, false, invalid("物件 %s 不能同时写 look_at 和 transform.rotation", id)
+		return nil, false, invalid("%s 不能同时写 look_at 和 transform.rotation", label)
 	}
 
 	kind, parent := it.Kind, it.ParentID
@@ -502,7 +506,7 @@ func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, mov
 	if !add {
 		o, ok := s.objects[id]
 		if !ok {
-			return nil, false, invalid("物件 %s 不存在", id)
+			return nil, false, invalid("%s 不存在", label)
 		}
 		kind, parent = o.Kind, o.ParentID
 		if position == nil {
@@ -513,32 +517,32 @@ func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, mov
 		}
 	}
 	if position == nil {
-		return nil, false, invalid("新增物件 %s 用 look_at 时须写 transform.position", id)
+		return nil, false, invalid("%s 用 look_at 时须写 transform.position", label)
 	}
 	if scale == nil {
 		scale = []float64{1, 1, 1}
 	}
 	if len(position) != 3 || len(scale) != 3 {
-		return nil, false, invalid("物件 %s 的 transform 须为 position[3]、scale[3]", id)
+		return nil, false, invalid("%s 的 transform 须为 position[3]、scale[3]", label)
 	}
 
 	if reparented[id] {
-		return nil, false, invalid("物件 %s 在同一次修改里也被改了父级，请分两次提交", id)
+		return nil, false, invalid("%s 在同一次修改里也被改了父级，请分两次提交", label)
 	}
 	ancestors, ok := s.ancestors(id, parent)
 	if !ok {
-		return nil, false, invalid("物件 %s 的父级链成环", id)
+		return nil, false, invalid("%s 的父级链成环", label)
 	}
 	for _, p := range ancestors {
 		if reparented[p] || moved[p] {
-			return nil, false, invalid("物件 %s 的父级在同一次修改里也被移动，请分两次提交", id)
+			return nil, false, invalid("%s 的父级在同一次修改里也被移动，请分两次提交", label)
 		}
 	}
 	var parentWorld *mat4
 	if parent != nil {
 		m, ok := s.worldMatrix(*parent)
 		if !ok {
-			return nil, false, invalid("物件 %s 的父级 %s 不存在", id, *parent)
+			return nil, false, invalid("%s 的父级 %s 不存在", label, *parent)
 		}
 		parentWorld = &m
 	}
@@ -549,15 +553,18 @@ func (s *lookAtScene) resolveItem(raw json.RawMessage, add bool, reparented, mov
 	}
 	target := vec3(it.LookAt)
 	if eye.sub(target).lengthSq() < 1e-12 {
-		return nil, false, invalid("物件 %s 的 look_at 目标点与物件位置重合", id)
+		return nil, false, invalid("%s 的 look_at 目标点与物件位置重合", label)
 	}
 	q := lookAtRotation(kind, eye, target, parentWorld)
-	transform, err := json.Marshal(Transform{Position: position, Rotation: q[:], Scale: scale})
-	if err != nil {
-		return nil, false, err
+	transform := map[string]json.RawMessage{"rotation": mustJSON(q[:])}
+	if add || it.Transform != nil && it.Transform.Position != nil {
+		transform["position"] = mustJSON(position)
+	}
+	if add || it.Transform != nil && it.Transform.Scale != nil {
+		transform["scale"] = mustJSON(scale)
 	}
 	delete(fields, "look_at")
-	fields["transform"] = transform
+	fields["transform"] = mustJSON(transform)
 	out, err := json.Marshal(fields)
 	return out, true, err
 }
