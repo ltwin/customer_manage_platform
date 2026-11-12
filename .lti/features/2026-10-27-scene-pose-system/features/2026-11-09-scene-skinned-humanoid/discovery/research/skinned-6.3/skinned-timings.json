@@ -1,0 +1,55 @@
+{
+  "machine": {
+    "model": "Mac16,8",
+    "chip": "Apple M4 Pro",
+    "os": "darwin 26.5"
+  },
+  "chromium": "145.0.7632.6",
+  "export_rest_ms": 3260,
+  "pose_changes": [
+    {
+      "pose": "arms-down",
+      "packed_ms": 67,
+      "converged_ms": 418,
+      "commit_ms": 0,
+      "settle_frames": 52
+    },
+    {
+      "pose": "reach",
+      "packed_ms": 50,
+      "converged_ms": 425,
+      "commit_ms": 0,
+      "settle_frames": 52
+    },
+    {
+      "pose": "arms-down-again",
+      "packed_ms": 17,
+      "converged_ms": 425,
+      "commit_ms": 0,
+      "settle_frames": 52
+    }
+  ],
+  "export_posed_ms": 3279,
+  "body_cpu": {
+    "vertices": 8844,
+    "load_ms": 6,
+    "pose_ms": 0.1,
+    "skin_ms": 0.7,
+    "bvh_ms": 2.7,
+    "skinned_triangles": 15060,
+    "joints": 65
+  },
+  "near_limit": {
+    "bytes": 105747876,
+    "triangles": 1896176,
+    "copies": 148,
+    "write_ms": 557,
+    "vertices": 1091648,
+    "load_ms": 317,
+    "pose_ms": 0.1,
+    "skin_ms": 96.3,
+    "bvh_ms": 467.5,
+    "skinned_triangles": 1896176,
+    "joints": 65
+  }
+}

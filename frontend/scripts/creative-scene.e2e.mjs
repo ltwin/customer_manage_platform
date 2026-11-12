@@ -9945,6 +9945,199 @@ await check('skinned AC-12: a body whose GLB is not imported is a grey block wit
   await context.close()
 })
 
+// scene-skinned-humanoid 6.3, for the owner: the two bodies before a mirror wall in material preview, in the
+// real-time GI and in the lit export, at rest and posed; AC-8's timings of a pose change under the real-time GI;
+// and a near-limit imported character (the female body copied up to ~1.9 M triangles) loaded and posed. Only with
+// the body files and SCENE_E2E_EVIDENCE; the numbers go to the console and <evidence>/skinned-timings.json.
+const armsDown = { leftUpperArm: [0, 0, Math.sin(-Math.PI * 7 / 36), Math.cos(Math.PI * 7 / 36)], rightUpperArm: [0, 0, Math.sin(Math.PI * 7 / 36), Math.cos(Math.PI * 7 / 36)] }
+// The left arm reaching forward, the right one down.
+const reach = { leftUpperArm: [0, Math.sin(-Math.PI / 4), 0, Math.cos(Math.PI / 4)], rightUpperArm: armsDown.rightUpperArm }
+await check('skinned 6.3 evidence: the bodies in the real-time GI and the lit export; AC-8 timings; a near-limit character', async () => {
+  const dir = bodyFiles()
+  if (!dir || !process.env.SCENE_E2E_EVIDENCE) return
+  const out = process.env.SCENE_E2E_EVIDENCE
+  const [female, male] = ['body_female@1', 'body_male@1'].map((id) => bodyCatalog().find((m) => m.id === id))
+  const her = gid('her')
+  const cam = gid('cam')
+  const server = new SceneServer()
+  server.builtinDir = dir
+  server.scene = {
+    environment: { sky: { kind: 'procedural', sun_elevation_deg: 35, sun_azimuth_deg: 135, turbidity: 3 }, ambient: { color: '#ffffff', intensity: 0.4 }, fog: null },
+    render: { mode: 'lit', exposure_ev: 0, engine: 'realtime_gi', resolution: '2k', exposure_ev100: 15, exposure_mode: 'ambient', exposure_compensation: 0 },
+    objects: [
+      { id: gid('floor'), kind: 'primitive', name: '地面', parent_id: null, order: 1, transform: { ...identity(), position: [0, -0.01, 0] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 8, height: 0.02, depth: 8 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#b8b2a8', roughness: 0.7 } } } },
+      { id: gid('mirror'), kind: 'primitive', name: '镜墙', parent_id: null, order: 2, transform: { ...identity(), position: [0, 1.2, -1.2] }, visible: true, locked: false, primitive: { builtin: 'box@1', params: { width: 3.6, height: 2.4, depth: 0.02 } }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0.02 } } } },
+      bodyObject('女素体', 3, 'body_female@1', female.materials, [-0.9, 0, 0]),
+      bodyObject('男素体', 4, 'body_male@1', male.materials, [0.9, 0, 0]),
+      cameraObject(cam, '机位', 5, { focal_mm: 28, exposure_mode: 'manual', exposure_compensation: 0 }, [0, 1.0, 4.6]),
+    ],
+  }
+  server.scene.objects[2].id = her
+  server.history[0] = server.record(['*'], [], null)
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  const timings = { machine: machineInfo(), chromium: gpu.version() }
+  try {
+    const { context, page, errors } = await open(server, { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }), query: '?host=1' })
+    await page.getByRole('treeitem', { name: /机位/ }).click()
+    await page.keyboard.press('Digit0')
+    const frame = page.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    await page.mouse.move(5, 5)
+    const fb = await frame.boundingBox()
+    const clip = { x: Math.round(fb.x), y: Math.round(fb.y), width: Math.round(fb.width), height: Math.round(fb.height) }
+    await shading(page, '材质预览')
+    await waitFor(() => [female, male].every((m) => server.modelReads.includes(m.glb.name)), 'both GLBs read', 30_000)
+    await sleep(2000)
+    await writeFile(`${out}/body-preview.png`, await settledShot(page, clip))
+
+    await shading(page, '最终渲染')
+    // The switch reaches the renderer a few frames on: before then the preview's counts still read as settled.
+    await sleep(3000)
+    const ready = (v) => page.evaluate((v) => {
+      const g = window.__sceneGPU
+      const s = g.traceStats
+      return g.compiling === 0 && s?.state === 'ready' && s.pending === 0 && s.geometryVersion > v && g.viewportFrames >= g.viewportSettle
+    }, v)
+    await waitFor(async () => (await ready(-1)) || (await page.evaluate(() => window.__sceneGPU.invalidateViewport?.()), false), 'the real-time GI converges', 120_000)
+    await writeFile(`${out}/body-rendered-rest.png`, await settledShot(page, clip))
+
+    // AC-8: from the pose set to the layer packing it, and on to the viewport converged again (frames counted
+    // from the reset the new layer brings). The live path: React's effect skins on the CPU, the worker builds.
+    const exportLit = async (name) => {
+      const id = `csj_${name}`
+      const started = Date.now()
+      server.claimable = [{ id, document_id: DOC, kind: 'render_view', request: { camera_object_id: cam, mode: 'lit' }, attempt: 0, claim_token: `tok_${name}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+      await page.evaluate(() => window.__invalidate())
+      await waitFor(() => server.completes.some((c) => c.id === id), `${name}: render_view done`, 180_000)
+      const done = server.completes.find((c) => c.id === id).payload
+      assert.equal(done.outcome, 'succeeded', JSON.stringify(done.error))
+      await writeFile(`${out}/body-lit-${name}.jpg`, server.uploadBytes.get(done.render.image_upload_id))
+      return Date.now() - started
+    }
+    await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+    timings.export_rest_ms = await exportLit('rest')
+    timings.pose_changes = []
+    for (const [name, q] of [['arms-down', armsDown], ['reach', reach], ['arms-down-again', armsDown]]) {
+      const before = await page.evaluate(() => window.__sceneGPU.traceStats?.geometryVersion ?? -1)
+      const t = await page.evaluate(([id, q, before]) => new Promise((resolve) => {
+        const g = window.__sceneGPU
+        const start = performance.now()
+        let packed = null
+        // The viewport starts over once the packed layer reaches it; settled again, it has converged.
+        let restarted = false
+        window.__scenePose.set(id, q)
+        const tick = () => {
+          const s = g.traceStats
+          const now = performance.now() - start
+          if (packed === null && s && s.state === 'ready' && s.geometryVersion > before && s.pending === 0) packed = now
+          if (packed !== null && g.viewportFrames < g.viewportSettle) restarted = true
+          if (packed !== null && restarted && g.compiling === 0 && g.viewportFrames >= g.viewportSettle)
+            return resolve({ packed_ms: Math.round(packed), converged_ms: Math.round(now), commit_ms: Math.round(s.commitMs), settle_frames: g.viewportSettle })
+          // Settled at the packing and never starting over: the layer came in with frames already counted.
+          if (packed !== null && !restarted && now - packed > 5000)
+            return resolve({ packed_ms: Math.round(packed), converged_ms: null, note: 'no restart after packing', settle_frames: g.viewportSettle })
+          if (now > 120_000) return resolve({ packed_ms: packed && Math.round(packed), converged_ms: null })
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }), [her, q, before])
+      console.log(`  ${name}: packed ${t.packed_ms} ms, converged ${t.converged_ms} ms (${t.settle_frames} frames)`)
+      timings.pose_changes.push({ pose: name, ...t })
+      if (name !== 'arms-down-again') await writeFile(`${out}/body-rendered-${name}.png`, await settledShot(page, clip))
+      if (name === 'reach') timings.export_posed_ms = await exportLit('reach')
+    }
+
+    // The CPU's part, on its own: the skeleton posed (bones, constraints), each skinned part skinned into its static
+    // geometry, and the picking BVH a first click builds; median of 9 poses each, none of them cached.
+    const bvhURL = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).find((n) => /three-mesh-bvh\.js/.test(n)))
+    const cpu = async (key, glbB64, summary, n = 9) => page.evaluate(async ([key, glbB64, summary, bvhURL, n]) => {
+      const { ModelCache } = await import('/src/creative-scene/models/cache.ts')
+      const { posableOf, pose, poseOf, setPose } = await import('/src/creative-scene/rig/pose.ts')
+      const { staticGeometry } = await import('/src/creative-scene/rig/skin.ts')
+      const { MeshBVH } = await import(bvhURL)
+      // The near-limit file stays in the page (window.__nearLimit): too big to pass about.
+      const bytes = glbB64 === null ? window.__nearLimit : Uint8Array.from(atob(glbB64), (c) => c.charCodeAt(0)).buffer
+      const cache = new ModelCache(async () => bytes)
+      let t = performance.now()
+      const parts = await cache.load(key, null)
+      const load = performance.now() - t
+      const p = posableOf(parts.skeleton.template, summary.rig, summary.manifest.skeleton)
+      const runs = { pose: [], skin: [], bvh: [] }
+      let triangles = 0
+      for (let i = 0; i < n; i++) {
+        const a = (i + 1) * 0.07
+        // As __scenePose.set takes it: the arrays made rotations.
+        setPose('timing', { leftUpperArm: [0, 0, Math.sin(-a), Math.cos(a)], rightLowerArm: [0, Math.sin(a), 0, Math.cos(a)] })
+        const q = poseOf('timing')
+        t = performance.now()
+        pose(p, q)
+        runs.pose.push(performance.now() - t)
+        t = performance.now()
+        const gs = p.instance.skinned.map((part) => staticGeometry(part, p.instance.root))
+        runs.skin.push(performance.now() - t)
+        t = performance.now()
+        for (const g of gs) new MeshBVH(g, { indirect: true })
+        runs.bvh.push(performance.now() - t)
+        triangles = gs.reduce((n, g) => n + (g.index ? g.index.count : g.getAttribute('position').count) / 3, 0)
+        for (const g of gs) g.dispose()
+      }
+      const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+      const vertices = p.instance.skinned.reduce((n, part) => n + part.mesh.geometry.getAttribute('position').count, 0)
+      return { vertices, load_ms: Math.round(load), pose_ms: +med(runs.pose).toFixed(2), skin_ms: +med(runs.skin).toFixed(2), bvh_ms: +med(runs.bvh).toFixed(2), skinned_triangles: triangles, joints: summary.manifest.skeleton.joints.length }
+    }, [key, glbB64, summary, bvhURL, n])
+    const herGLB = readFileSync(existsSync(join(dir, 'models', female.glb.name)) ? join(dir, 'models', female.glb.name) : join(dir, female.glb.name))
+    timings.body_cpu = await cpu('ccrv_bodytiming', herGLB.toString('base64'), { manifest: female.manifest, rig: female.rig })
+    console.log(`  body CPU: ${JSON.stringify(timings.body_cpu)}`)
+
+    // Near the import budget (200 MiB, 2 M triangles): her body mesh copied, slightly apart, to ~1.9 M triangles,
+    // written as the import writes, with her mapping followed onto the written nodes.
+    const big = await page.evaluate(async ([glbB64, humanoid]) => {
+      const { parseModelGLB } = await import('/src/creative-scene/sandbox/gltf.ts')
+      const { writeGLB } = await import('/src/creative-scene/import/write.ts')
+      const parsed = await parseModelGLB(Uint8Array.from(atob(glbB64), (c) => c.charCodeAt(0)).buffer)
+      const meshes = []
+      parsed.scene.traverse((o) => o.isSkinnedMesh && meshes.push(o))
+      const body = meshes.reduce((a, b) => (b.geometry.index.count > a.geometry.index.count ? b : a))
+      for (const m of meshes) if (m !== body) m.removeFromParent()
+      const src = body.geometry
+      const copies = Math.floor(1_900_000 / (src.index.count / 3))
+      const n = src.getAttribute('position').count
+      const BufferAttribute = src.index.constructor
+      const g = new src.constructor()
+      for (const [name, a] of Object.entries(src.attributes)) {
+        const arr = new a.array.constructor(a.array.length * copies)
+        for (let k = 0; k < copies; k++) arr.set(a.array, k * a.array.length)
+        if (name === 'position') for (let k = 1; k < copies; k++) for (let i = 0; i < n; i++) arr[(k * n + i) * 3 + 2] += k * 1e-4
+        g.setAttribute(name, new BufferAttribute(arr, a.itemSize, a.normalized))
+      }
+      const index = new Uint32Array(src.index.count * copies)
+      for (let k = 0; k < copies; k++) for (let i = 0; i < src.index.count; i++) index[k * src.index.count + i] = src.index.array[i] + k * n
+      g.setIndex(new BufferAttribute(index, 1))
+      body.geometry = g
+      // Its textures left out: what is timed is the mesh.
+      body.material = body.material.clone()
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap']) body.material[k] = null
+      const byNode = new Map([...parsed.nodes].map(([o, i]) => [i, o]))
+      const bones = Object.entries(humanoid).map(([b, i]) => [b, byNode.get(i)])
+      const t = performance.now()
+      const written = await writeGLB(parsed.scene, bones.map(([, o]) => o))
+      const write = performance.now() - t
+      const mapped = Object.fromEntries(bones.map(([b, o]) => [b, written.nodes.get(o)]))
+      window.__nearLimit = written.glb
+      return { manifest: written.manifest, rig: { humanoid: mapped }, write_ms: Math.round(write), bytes: written.glb.byteLength, copies }
+    }, [herGLB.toString('base64'), female.rig.humanoid])
+    console.log(`  near-limit written: ${JSON.stringify({ bytes: big.bytes, triangles: big.manifest.triangles, write_ms: big.write_ms })}`)
+    const near = await cpu('ccrv_nearlimit', null, { manifest: big.manifest, rig: big.rig }, 3)
+    timings.near_limit = { bytes: big.bytes, triangles: big.manifest.triangles, copies: big.copies, write_ms: big.write_ms, ...near }
+    console.log(`  near-limit: ${JSON.stringify(timings.near_limit)}`)
+    await writeFile(`${out}/skinned-timings.json`, `${JSON.stringify(timings, null, 2)}\n`)
+    assert.deepEqual(errors, [], errors.join('\n').slice(0, 2000))
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
 if (process.env.SCENE_E2E_TRACE) await check('glb-import AC-1/AC-9: an imported GLB glows and is cut in the preview and the mirror of the lit export; its source shows; one undo', async () => {
   const gpu = await chromium.launch({ headless: true, args: metal })
   try {

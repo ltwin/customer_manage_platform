@@ -209,8 +209,19 @@
     - 资产库页面：`LibraryTree` 加「内置模型」（只在资产库页面列出，给槽位选材质的选择器不列），网址 `source=builtin-models`；`BuiltinBrowser.tsx:BuiltinModelBrowser` 是只读网格；`BuiltinViewer.tsx:BuiltinModelViewer` 经 `MediaViewer` 的 `builtinModel` 按模型键画 3D 预览，列出品类、骨骼、三角形数和来源。
     - 测试：单测 `scripts/creative-scene-builtin-models.test.ts`（清单、放置、换素体带材质、筛选与缩略图）。e2e `creative-scene.e2e.mjs` 的「skinned AC-1」「skinned AC-12」，`creative-assets.e2e.mjs` 的「skinned-builtin-models」。素体文件来自手工下载的来源包，不进仓库：e2e 读 `SCENE_E2E_BUILTIN_DIR` 或 `<tmp>/creative-scene-e2e/bodies`（convert.mjs 的输出），没有时 AC-1 跳过、资产库用例不画 3D 预览；AC-12 不需要文件。
     - AC-1 的 e2e 只截了材质预览：实时 GI 镜中与 `lit` 导出的截图要 GPU 浏览器，放进 6.3 给 owner 的材料。
-- [ ] 6.3 实测与 owner 材料：
+- [x] 6.3 实测与 owner 材料：
   - AC-8：在实时 GI 下给素体换一个姿态，记录 CPU 蒙皮、静态化、段重建、GI 收敛到可导出的耗时。
   - 一个接近上限的导入角色的加载与静态化耗时。
   - 结果写进 design。
   - AC-1、AC-2、AC-6 的截图放进 `discovery/research/`，交 owner 看图。
+  - 实施记录：
+    - 测量：e2e「skinned 6.3 evidence」，只在有素体文件且设了 `SCENE_E2E_EVIDENCE` 时运行，用 GPU 浏览器。
+      - 换姿态：从 `__scenePose.set` 计到追踪层 `geometryVersion` 增加且没有待建段，再计到视口累积满 `viewportSettle` 帧。
+      - 主线程分项：用新的 `ModelCache` 加载，求姿态、`staticGeometry`、`MeshBVH` 各跑 9 次取中位数。
+      - 接近上限的角色：女素体身体复制 148 份，经 `writeGLB` 写出（约 190 万三角形），分项跑 3 次。
+    - 结果写进 design「AC-8 实测」。材料在 `discovery/research/2026-11-12-skinned-measurements.md` 和 `skinned-6.3/`。
+    - AC-1 的实时 GI 镜中截图和 `lit` 导出截图在这里补齐（5.2 记录的遗留）。AC-2、AC-6 的截图来自单条 e2e 加 `SCENE_E2E_EVIDENCE`。
+    - 优化：第一次测量时素体的静态化需要 2.9 ms，`rig/skin.ts:staticGeometry` 改为直接混合矩阵。
+      - 法线用余子式，相当于逆转置，与改前等价：法线最多差 0.022°，位置和切线一致。
+      - 改后素体 0.7 ms，接近上限的角色 96 ms。
+      - 单测 `rig-skin`、`import-rig` 和 e2e「skinned AC-6」通过。

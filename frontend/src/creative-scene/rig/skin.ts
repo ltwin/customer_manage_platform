@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Matrix3, Matrix4, Vector3, Vector4, type InterleavedBufferAttribute, type Object3D } from 'three'
+import { BufferAttribute, BufferGeometry, Matrix4, type InterleavedBufferAttribute, type Object3D } from 'three'
 import { MeshBVH } from 'three-mesh-bvh'
 import { disposePieceViews } from '../render/pieces.ts'
 import { sha256 } from '../models/sha256.ts'
@@ -50,46 +50,90 @@ function shareOf(a: Attribute): BufferAttribute {
   return a.clone()
 }
 
+/** A skinned geometry's inputs as plain arrays, read once per geometry: a pose then reads arrays, not attributes. */
+type Flat = { position: Float32Array; normal: Float32Array | null; tangent: Float32Array | null; joints: Uint32Array; weights: Float32Array }
+const flats = new WeakMap<BufferGeometry, Flat>()
+
+function flatOf(g: BufferGeometry): Flat {
+  const hit = flats.get(g)
+  if (hit) return hit
+  const read = (a: Attribute, size: number) => {
+    const out = new Float32Array(a.count * size)
+    for (let i = 0; i < a.count; i++) for (let k = 0; k < size; k++) out[i * size + k] = a.getComponent(i, k)
+    return out
+  }
+  const skinIndex = g.getAttribute('skinIndex')
+  const joints = new Uint32Array(skinIndex.count * 4)
+  for (let i = 0; i < skinIndex.count; i++) for (let k = 0; k < 4; k++) joints[i * 4 + k] = skinIndex.getComponent(i, k)
+  const flat: Flat = {
+    position: read(g.getAttribute('position'), 3),
+    normal: g.hasAttribute('normal') ? read(g.getAttribute('normal'), 3) : null,
+    tangent: g.hasAttribute('tangent') ? read(g.getAttribute('tangent'), 4) : null,
+    joints,
+    weights: read(g.getAttribute('skinWeight'), 4),
+  }
+  flats.set(g, flat)
+  return flat
+}
+
 /**
  * The part's mesh skinned at its skeleton's current state, in root's space.
- * The world matrices of root and the joints must be up to date.
+ * The world matrices of root and the joints must be up to date. Each vertex
+ * blends the 3 × 4 it needs of its joints' matrices; normals take the inverse
+ * transpose of the blend's 3 × 3, tangents the 3 × 3 itself, both normalized.
  */
 export function staticGeometry(part: SkinnedPart, root: Object3D): BufferGeometry {
   const { geometry: src, skeleton } = part.mesh
   const toRoot = root.matrixWorld.clone().invert()
-  const joints = skeleton.bones.map((b, i) => new Matrix4().multiplyMatrices(toRoot, b.matrixWorld).multiply(skeleton.boneInverses[i]).multiply(part.mesh.bindMatrix))
-  const position = src.getAttribute('position')
-  const normal = src.hasAttribute('normal') ? src.getAttribute('normal') : null
-  const tangent = src.hasAttribute('tangent') ? src.getAttribute('tangent') : null
-  const skinIndex = src.getAttribute('skinIndex')
-  const skinWeight = src.getAttribute('skinWeight')
-  const count = position.count
+  const joint = new Matrix4()
+  const matrices = new Float32Array(skeleton.bones.length * 16)
+  skeleton.bones.forEach((b, i) => {
+    joint.multiplyMatrices(toRoot, b.matrixWorld).multiply(skeleton.boneInverses[i]).multiply(part.mesh.bindMatrix)
+    matrices.set(joint.elements, i * 16)
+  })
+  const { position, normal, tangent, joints, weights } = flatOf(src)
+  const count = position.length / 3
   const outPosition = new Float32Array(count * 3)
   const outNormal = normal ? new Float32Array(count * 3) : null
   const outTangent = tangent ? new Float32Array(count * 4) : null
-  const blend = new Matrix4()
-  const e = blend.elements
-  const normalMatrix = new Matrix3()
-  const v = new Vector3()
-  const t = new Vector4()
   for (let i = 0; i < count; i++) {
-    e.fill(0)
+    // Column-major, the bottom row left out: e0 e1 e2 | e4 e5 e6 | e8 e9 e10 | e12 e13 e14.
+    let e0 = 0, e1 = 0, e2 = 0, e4 = 0, e5 = 0, e6 = 0, e8 = 0, e9 = 0, e10 = 0, e12 = 0, e13 = 0, e14 = 0
     for (let k = 0; k < 4; k++) {
-      const w = skinWeight.getComponent(i, k)
+      const w = weights[i * 4 + k]
       if (w === 0) continue
-      const m = joints[skinIndex.getComponent(i, k)].elements
-      for (let c = 0; c < 16; c++) e[c] += w * m[c]
+      const o = joints[i * 4 + k] * 16
+      e0 += w * matrices[o]; e1 += w * matrices[o + 1]; e2 += w * matrices[o + 2]
+      e4 += w * matrices[o + 4]; e5 += w * matrices[o + 5]; e6 += w * matrices[o + 6]
+      e8 += w * matrices[o + 8]; e9 += w * matrices[o + 9]; e10 += w * matrices[o + 10]
+      e12 += w * matrices[o + 12]; e13 += w * matrices[o + 13]; e14 += w * matrices[o + 14]
     }
-    v.fromBufferAttribute(position, i).applyMatrix4(blend)
-    v.toArray(outPosition, i * 3)
+    const x = position[i * 3], y = position[i * 3 + 1], z = position[i * 3 + 2]
+    outPosition[i * 3] = e0 * x + e4 * y + e8 * z + e12
+    outPosition[i * 3 + 1] = e1 * x + e5 * y + e9 * z + e13
+    outPosition[i * 3 + 2] = e2 * x + e6 * y + e10 * z + e14
     if (normal && outNormal) {
-      normalMatrix.getNormalMatrix(blend)
-      v.fromBufferAttribute(normal, i).applyMatrix3(normalMatrix).normalize().toArray(outNormal, i * 3)
+      // The inverse transpose of the blend's 3 × 3 without inverting it: its columns are c1 × c2, c2 × c0 and
+      // c0 × c1 over the determinant, whose sign alone matters once normalized.
+      const a = normal[i * 3], b = normal[i * 3 + 1], c = normal[i * 3 + 2]
+      const x0 = e5 * e10 - e6 * e9, y0 = e6 * e8 - e4 * e10, z0 = e4 * e9 - e5 * e8
+      const x1 = e9 * e2 - e10 * e1, y1 = e10 * e0 - e8 * e2, z1 = e8 * e1 - e9 * e0
+      const x2 = e1 * e6 - e2 * e5, y2 = e2 * e4 - e0 * e6, z2 = e0 * e5 - e1 * e4
+      const sign = e0 * x0 + e1 * y0 + e2 * z0 < 0 ? -1 : 1
+      const nx = sign * (a * x0 + b * x1 + c * x2), ny = sign * (a * y0 + b * y1 + c * y2), nz = sign * (a * z0 + b * z1 + c * z2)
+      const l = Math.hypot(nx, ny, nz) || 1
+      outNormal[i * 3] = nx / l
+      outNormal[i * 3 + 1] = ny / l
+      outNormal[i * 3 + 2] = nz / l
     }
     if (tangent && outTangent) {
-      t.set(tangent.getX(i), tangent.getY(i), tangent.getZ(i), tangent.getW(i))
-      v.set(t.x, t.y, t.z).transformDirection(blend).toArray(outTangent, i * 4)
-      outTangent[i * 4 + 3] = t.w
+      const a = tangent[i * 4], b = tangent[i * 4 + 1], c = tangent[i * 4 + 2]
+      const tx = e0 * a + e4 * b + e8 * c, ty = e1 * a + e5 * b + e9 * c, tz = e2 * a + e6 * b + e10 * c
+      const l = Math.hypot(tx, ty, tz) || 1
+      outTangent[i * 4] = tx / l
+      outTangent[i * 4 + 1] = ty / l
+      outTangent[i * 4 + 2] = tz / l
+      outTangent[i * 4 + 3] = tangent[i * 4 + 3]
     }
   }
   const out = new BufferGeometry()
