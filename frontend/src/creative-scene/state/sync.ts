@@ -145,7 +145,11 @@ export function namesUnknownModel(intent: Pick<Intent, 'ops'>, known: Readonly<R
 export function namesUnknownImage(intent: Pick<Intent, 'ops'>, known: Readonly<Record<string, unknown>> | undefined): boolean {
   const names = (slots: SceneObject['material_slots']) => Object.values(slots ?? {}).some((s) => Object.values(s.maps ?? {}).some((m) => !known?.[m.content_revision_id]))
   return intent.ops.some((op) =>
-    op.op === 'add_objects' ? op.objects.some((o) => names(o.material_slots)) : op.op === 'update_objects' && op.updates.some((u) => names(u.material_slots)),
+    op.op === 'add_objects'
+      ? op.objects.some((o) => names(o.material_slots))
+      : op.op === 'update_objects'
+        ? op.updates.some((u) => names(u.material_slots))
+        : op.op === 'set_instance_model' && names(op.material_slots),
   )
 }
 

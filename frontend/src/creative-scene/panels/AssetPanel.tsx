@@ -7,7 +7,9 @@ import { blank, type LibraryQuery } from '../../creative-canvas/assets/query.ts'
 import { boxSelection, clickSelection, type Box, type Selection } from '../../creative-canvas/assets/selection.ts'
 import { useAssetList, useCatalog } from '../../creative-canvas/assets/useLibrary.ts'
 import { assetMaterial, materialRows, modelInfo } from '../../creative-canvas/viewer/modelInfo.ts'
-import { builtinSlot, filterBuiltin, type BuiltinMaterial } from '../../creative-canvas/assets/builtin.ts'
+import { builtinModelCategories, builtinModelThumbnail, builtinSlot, filterBuiltin, filterBuiltinModels, type BuiltinMaterial } from '../../creative-canvas/assets/builtin.ts'
+import type { BuiltinModel } from '../models/catalog.ts'
+import { builtinKey } from '../models/key.ts'
 import type { LibraryAsset } from '../saveModel.ts'
 import { ContextMenu, type MenuItem } from './ContextMenu.tsx'
 
@@ -51,7 +53,10 @@ function facts(a: LibraryAsset): string[] {
  * blank clears. A double click or Enter puts that card's model under the
  * view's centre, 「放入场景」 puts all selected ones in a row there, a drag
  * puts one where it is let go. The panel stays open, so more can follow.
- * Organizing the library is left to the library page.
+ * Organizing the library is left to the library page. Both kinds have a
+ * 内置 source beside the account's (我的): the built-in materials, dragged
+ * like a material asset, and the built-in models (scene-pose-system), put in
+ * like a model asset, one at a time.
  */
 export function AssetPanel({
   refresh,
@@ -63,6 +68,8 @@ export function AssetPanel({
   onPlace,
   onDrag,
   onDragBuiltin,
+  onPlaceBuiltinModel,
+  onDragBuiltinModel,
   onExit,
   onImport,
 }: {
@@ -83,15 +90,20 @@ export function AssetPanel({
   onDrag: (asset: LibraryAsset | null) => void
   /** A built-in textured material (C5c2) is dragged towards the viewport or a slot (the slot it writes), or the drag ends (null). */
   onDragBuiltin: (material: { title: string; slot: MaterialSlot } | null) => void
+  /** Puts a built-in model into the scene, under the view's centre. */
+  onPlaceBuiltinModel: (model: BuiltinModel) => void
+  /** A built-in model is dragged towards the viewport, or the drag ends (null). */
+  onDragBuiltinModel: (model: BuiltinModel | null) => void
   /** Escape in an empty search box: keys go back to the editor. */
   onExit: () => void
   /** 「导入模型」: picks a GLB and imports it into the library (scene-glb-import); without it the button is hidden. */
   onImport?: () => void
 }) {
   const [kind, setKind] = useState<Kind>('model')
-  /** Which materials show: the account's (我的) or the built-in ones (内置), never mixed. */
+  /** Which assets show: the account's (我的) or the built-in ones (内置), never mixed; one choice for both kinds. */
   const [source, setSource] = useState<'mine' | 'builtin'>('mine')
   const [builtinPick, setBuiltinPick] = useState<BuiltinMaterial | null>(null)
+  const [builtinModelPick, setBuiltinModelPick] = useState<BuiltinModel | null>(null)
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('')
@@ -262,8 +274,51 @@ export function AssetPanel({
     ]
   }
 
-  const builtinView = kind === 'material' && source === 'builtin'
-  const builtinItems = builtinView ? filterBuiltin(text) : []
+  const builtinView = source === 'builtin'
+  const builtinItems = builtinView && kind === 'material' ? filterBuiltin(text) : []
+  const builtinModelItems = builtinView && kind === 'model' ? filterBuiltinModels(text) : []
+  const builtinModelCard = (m: BuiltinModel) => (
+    <div
+      key={m.id}
+      data-builtin-model={m.id}
+      className={`cc-scene-asset${builtinModelPick?.id === m.id ? ' is-selected' : ''}`}
+      role="option"
+      aria-selected={builtinModelPick?.id === m.id}
+      aria-label={m.label}
+      tabIndex={0}
+      title={`${m.label} · 双击放入场景`}
+      draggable={!readOnly}
+      onClick={(e) => {
+        e.currentTarget.focus()
+        setBuiltinModelPick(m)
+      }}
+      onDoubleClick={() => !readOnly && onPlaceBuiltinModel(m)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          setBuiltinModelPick(m)
+          if (!readOnly) onPlaceBuiltinModel(m)
+        } else if (e.key === 'Escape' && builtinModelPick) {
+          e.stopPropagation()
+          setBuiltinModelPick(null)
+        }
+      }}
+      onDragStart={(e: DragEvent) => {
+        if (readOnly) return e.preventDefault()
+        // Like a model asset's drag: the viewport checks the id; the entry comes through onDragBuiltinModel.
+        e.dataTransfer.setData('application/creative-asset+json', JSON.stringify([{ id: builtinKey(m.id) }]))
+        e.dataTransfer.effectAllowed = 'copy'
+        onDragBuiltinModel(m)
+      }}
+      onDragEnd={() => onDragBuiltinModel(null)}
+    >
+      <span className="cc-scene-asset-thumb">
+        <img src={builtinModelThumbnail(m.id)} alt="" draggable={false} />
+      </span>
+      <span className="cc-scene-asset-name">{m.label}</span>
+    </div>
+  )
   const builtinCard = (m: BuiltinMaterial) => (
     <div
       key={m.id}
@@ -335,6 +390,8 @@ export function AssetPanel({
                 onClick={() => {
                   setKind(k)
                   setSelection(none)
+                  setBuiltinPick(null)
+                  setBuiltinModelPick(null)
                 }}
               >
                 {kindName[k]}
@@ -343,31 +400,30 @@ export function AssetPanel({
           </div>
         </div>
         <div className="cc-scene-assets-row">
-          {kind === 'model' && onImport && (
+          {kind === 'model' && onImport && !builtinView && (
             <button type="button" className="cc-scene-assets-import" title="导入 GLB 模型到资产库" onClick={onImport}>
               <Upload size={13} aria-hidden="true" />
               导入模型
             </button>
           )}
-          {kind === 'material' && (
-            <div className="cc-scene-assets-kinds" role="tablist" aria-label="材质来源">
-              {(['mine', 'builtin'] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  role="tab"
-                  aria-selected={source === s}
-                  onClick={() => {
-                    setSource(s)
-                    setSelection(none)
-                    setBuiltinPick(null)
-                  }}
-                >
-                  {s === 'mine' ? '我的' : '内置'}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="cc-scene-assets-kinds" role="tablist" aria-label={`${kindName[kind]}来源`}>
+            {(['mine', 'builtin'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={source === s}
+                onClick={() => {
+                  setSource(s)
+                  setSelection(none)
+                  setBuiltinPick(null)
+                  setBuiltinModelPick(null)
+                }}
+              >
+                {s === 'mine' ? '我的' : '内置'}
+              </button>
+            ))}
+          </div>
           {builtinView ? <span className="cc-scene-assets-fill" /> : <>
           <select aria-label="分组" value={group} onChange={(e) => setGroup(e.target.value)}>
             <option value="">全部分组</option>
@@ -438,7 +494,17 @@ export function AssetPanel({
             style={{ left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top }}
           />
         )}
-        {builtinView ? (
+        {builtinView && kind === 'model' ? (
+          <section aria-label="内置模型">
+            {builtinModelItems.length ? (
+              <div className="cc-scene-assets-grid" role="listbox" aria-label="内置模型">
+                {builtinModelItems.map(builtinModelCard)}
+              </div>
+            ) : (
+              <p className="cc-scene-assets-note">没有符合条件的内置模型</p>
+            )}
+          </section>
+        ) : builtinView ? (
           <section aria-label="内置材质">
             {builtinItems.length ? (
               <div className="cc-scene-assets-grid" role="listbox" aria-label="内置材质">
@@ -492,7 +558,24 @@ export function AssetPanel({
         </>}
       </div>
       <footer className="cc-scene-assets-detail">
-        {builtinView ? (
+        {builtinView && kind === 'model' ? (
+          builtinModelPick ? (
+            <>
+              <strong>{builtinModelPick.label}</strong>
+              <small>
+                内置模型 · {builtinModelCategories[builtinModelPick.category] ?? builtinModelPick.category} · {builtinModelPick.source.author}，{builtinModelPick.source.license}
+              </small>
+              <small>带骨骼，放入后带上它自己的材质</small>
+              <span className="cc-scene-assets-actions">
+                <button type="button" className="btn btn-primary" disabled={readOnly} onClick={() => onPlaceBuiltinModel(builtinModelPick)}>
+                  放入场景
+                </button>
+              </span>
+            </>
+          ) : (
+            <small>{readOnly ? '当前不能编辑场景' : '平台提供的素体，双击放到视图中心，或拖到想放的位置'}</small>
+          )
+        ) : builtinView ? (
           builtinPick ? (
             <>
               <strong>{builtinPick.label}</strong>

@@ -47,6 +47,8 @@ export type ViewerItem = {
   unavailable?: boolean
   /** 内置贴图材质（C5c2）：没有内容修订，直接给槽位和打包进来的缩略图。 */
   builtin?: { slot: MaterialSlot; thumbnail: string }
+  /** 内置模型（data: 内置模型库）：按模型键加载，带条目的 manifest、材质和打包进来的缩略图。 */
+  builtinModel?: { key: string; manifest: components['schemas']['CreativeModelManifest']; materials: components['schemas']['CreativeSceneMaterialSlots']; thumbnail: string }
 }
 /** 通用查看外框；宿主负责列表、详情读取、信息面板与动作。 */
 export default function MediaViewer({
@@ -250,6 +252,26 @@ function ModelStage({ item }: { item: ViewerItem }) {
     'thumbnail',
     true,
   )
+  const builtin = item.builtinModel
+  if (builtin)
+    return (
+      <Suspense
+        fallback={
+          <div className="v-model">
+            <img className="v-model-still" src={builtin.thumbnail} alt={item.title} />
+          </div>
+        }
+      >
+        <ModelPreview
+          revision={builtin.key}
+          manifest={builtin.manifest}
+          materials={builtin.materials}
+          faces={null}
+          title={item.title}
+          thumbnail={builtin.thumbnail}
+        />
+      </Suspense>
+    )
   const manifest = modelManifest(item.content)
   if (!item.content || !manifest)
     return (

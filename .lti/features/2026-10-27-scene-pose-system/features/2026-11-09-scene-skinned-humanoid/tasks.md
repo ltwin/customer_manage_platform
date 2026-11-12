@@ -190,7 +190,7 @@
     - 2026-11-11 owner 同意后导入共享对象存储：`textures import --dir` 导入 12 个、`models import --dir` 导入 2 个，`textures check` 与 `models check` 都是 ready。
     - compose：`scene_model_data:/var/lib/crm/scene-models`；预检的卷集合与挂载检查加上它，`models check` 一步失败时给 `run-creativectl-models-import` 或 `fix-scene-model-storage`；`test-production-preflight.sh` 补了缺文件、存储不可读、未挂卷三例，`make check-ops` 通过。
     - 锁定的数量随之更新：Go 侧贴图材质 29 个、文件 84 个，`publishedTextured` 加 5 条，`TestBuiltinModelCatalog` 锁定两个素体；助手测试的 `search_assets(kind: model)` 改为返回两个素体，内置来源总数不含 `ubc_*`；前端材质目录 44 条（贴图材质 29，其中不上架 5）。
-- [ ] 6.2 素体的界面与验收：
+- [x] 6.2 素体的界面与验收：
   - `SceneEditor.tsx` 加「添加 > 素体」快捷入口；`AssetPanel.tsx` 的模型类加「我的 / 内置」切换（Epic 修订 v8，取代单独的「素体」分区）。
   - 资产库页面：`LibraryTree` 加「内置模型」，`BuiltinBrowser` 支持模型，`BuiltinViewer` 显示 3D 预览、来源与授权。
   - `editing.ts:newModelInstance` 改为接收模型引用。
@@ -199,6 +199,16 @@
   - 选材面板与资产库的内置来源过滤 `listed: false`。
   - e2e（单条）：AC-1，含资产库内置模型、资产面板拖入、换素体与撤销。
   - e2e：把 GLB 请求改成 503，检查占位与导出失败（AC-12）。
+  - 实施记录：
+    - 放置：`SceneEditor.tsx:placeBuiltin` 写 `{builtin}` 和条目的 `materials`，经 `newModelInstance`（第一个参数改为模型引用）。来源有三处：「添加 > 素体」（菜单在指针处打开时放在指针处）、资产面板「内置」的双击或「放入场景」（视图中心下方）、拖进视口（松手处，拖动时有幽灵）。拖动沿用 `DragModel`，内置模型以模型键同时充当资产 ID 和修订。
+    - 资产面板：「我的 / 内置」改为两类共用一个来源选择；模型的「内置」一次放一个，不做多选和最近使用。第二行（导入、来源、分组、标签、卡片大小）在窄侧栏里放不下时换行：筛选区原来按内容撑宽，把「模型 / 材质」挤到视口下面，改为一列与面板同宽。
+    - 属性栏：内置模型的信息块是新文件 `panels/BuiltinModelInfo.tsx`（与 `ImportedModelInfo.tsx` 同一种做法），没有放进 `ModelParams.tsx`。它显示名称、来源与授权，同品类其他条目各一个「换成…」按钮；文件读不到时提示「文件暂时读不到」（AC-12 的提示）。属性栏顶部的模型说明原来一律写「代码模型」，改为按来源写「代码模型 / 导入的模型 / 内置模型」。
+    - 换素体：一次编辑发 `set_instance_model`（带目标条目的 `material_slots`）；物件名还是原条目名时同批改名。前端投影 `state/apply.ts` 原来只换模型引用，补上 `material_slots` 整体替换，与服务端一致；`namesUnknownImage` 也检查它。
+    - 面编辑、存入资产库与改参数在 5.1 已对内置模型关闭，e2e 核对了提示。
+    - AC-12：5.1 的记录说导出同样失败，实际 `host/render.ts:loadModels` 对加载失败的模型一律画灰块、导出照常。改为内置模型读不到时抛错，导出和 `render_view` 失败并说明「内置模型「女素体」的文件暂时读不到，请稍后再试」；账号自己的模型保持原样（灰块）。
+    - 资产库页面：`LibraryTree` 加「内置模型」（只在资产库页面列出，给槽位选材质的选择器不列），网址 `source=builtin-models`；`BuiltinBrowser.tsx:BuiltinModelBrowser` 是只读网格；`BuiltinViewer.tsx:BuiltinModelViewer` 经 `MediaViewer` 的 `builtinModel` 按模型键画 3D 预览，列出品类、骨骼、三角形数和来源。
+    - 测试：单测 `scripts/creative-scene-builtin-models.test.ts`（清单、放置、换素体带材质、筛选与缩略图）。e2e `creative-scene.e2e.mjs` 的「skinned AC-1」「skinned AC-12」，`creative-assets.e2e.mjs` 的「skinned-builtin-models」。素体文件来自手工下载的来源包，不进仓库：e2e 读 `SCENE_E2E_BUILTIN_DIR` 或 `<tmp>/creative-scene-e2e/bodies`（convert.mjs 的输出），没有时 AC-1 跳过、资产库用例不画 3D 预览；AC-12 不需要文件。
+    - AC-1 的 e2e 只截了材质预览：实时 GI 镜中与 `lit` 导出的截图要 GPU 浏览器，放进 6.3 给 owner 的材料。
 - [ ] 6.3 实测与 owner 材料：
   - AC-8：在实时 GI 下给素体换一个姿态，记录 CPU 蒙皮、静态化、段重建、GI 收敛到可导出的耗时。
   - 一个接近上限的导入角色的加载与静态化耗时。

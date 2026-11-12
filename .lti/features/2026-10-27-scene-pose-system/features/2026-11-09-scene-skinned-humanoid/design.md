@@ -336,7 +336,9 @@ worker（上传 model）：
 | `frontend/src/creative-scene/SceneEditor.tsx`、`editing.ts:newModelInstance` | 修改 | 「添加 > 素体」；放置改为接收模型引用；查表改用模型键 |
 | `frontend/src/creative-scene/panels/AssetPanel.tsx` | 修改 | 模型类的「我的 / 内置」切换，内置模型可拖入、双击放置 |
 | `frontend/src/creative-canvas/assets/LibraryTree.tsx`、`AssetsPage.tsx`、`BuiltinBrowser.tsx`、`builtin.ts`、`viewer/BuiltinViewer.tsx` | 修改 | 资产库的「内置模型」与查看浮窗的 3D 预览 |
-| `frontend/src/creative-scene/panels/ModelParams.tsx`、`panels/MaterialSlots.tsx` | 修改 | 内置模型的信息块与换男女；按模型键取槽位 |
+| `frontend/src/creative-scene/panels/BuiltinModelInfo.tsx`（新增）、`panels/MaterialSlots.tsx`、`panels/Properties.tsx`、`panels/AssetPanel.tsx`、`scene.css` | 修改 | 内置模型的信息块与换男女；按模型键取槽位；模型说明按来源；资产面板模型类的「内置」 |
+| `frontend/src/creative-scene/state/apply.ts`、`state/sync.ts`、`host/render.ts` | 修改 | `set_instance_model` 的 `material_slots` 在前端投影里生效；内置模型读不到时出图失败（AC-12） |
+| `frontend/src/creative-canvas/viewer/MediaViewer.tsx` | 修改 | 查看浮窗按模型键预览内置模型 |
 | `frontend/src/creative-scene/modelEdits.ts`、`saveModel.ts`、`faceEdit/state.ts`、`faceEdit/assign.ts`、`faceEdit/useFaceMeshes.ts`、`state/sync.ts`、`state/intents.ts` | 修改 | 按模型键查表；对内置模型关闭面分配、存入资产库、改参数 |
 | `frontend/src/creative-scene/materials/catalog.ts:texturedEntries`、`panels/LibraryPicker.tsx`、`creative-canvas/assets/builtin.ts` | 修改 | 过滤 `listed: false` |
 | `frontend/src/creative-scene/materials/images.ts` | 修改 | `tex:` 文件可为 `.png` |

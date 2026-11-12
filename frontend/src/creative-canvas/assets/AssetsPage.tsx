@@ -3,9 +3,10 @@ import CharacterDialog from './CharacterDialog.tsx'
 import { useAssetImport } from './AssetImport.tsx'
 import TrashControls from './TrashControls.tsx'
 import AssetViewer from '../viewer/AssetViewer.tsx'
-import BuiltinViewer from '../viewer/BuiltinViewer.tsx'
-import BuiltinBrowser from './BuiltinBrowser.tsx'
+import BuiltinViewer, { BuiltinModelViewer } from '../viewer/BuiltinViewer.tsx'
+import BuiltinBrowser, { BuiltinModelBrowser } from './BuiltinBrowser.tsx'
 import type { BuiltinMaterial } from './builtin.ts'
+import type { BuiltinModel } from '../../creative-scene/models/catalog.ts'
 import { useOrganization } from './useOrganization.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -51,13 +52,19 @@ export default function AssetsPage() {
 function Assets({ account }: { account: string }) {
   const [params, setParams] = useSearchParams()
   const query = readQuery(params)
-  // 「内置材质」不是账号素材的视图，单独记在网址的 source 上；换视图或分组时自然清掉。
-  const builtin = params.get('source') === 'builtin'
+  // 「内置材质」「内置模型」不是账号素材的视图，单独记在网址的 source 上；换视图或分组时自然清掉。
+  const builtinMaterialsView = params.get('source') === 'builtin'
+  const builtinModelsView = params.get('source') === 'builtin-models'
+  const builtin = builtinMaterialsView || builtinModelsView
   const [builtinViewer, setBuiltinViewer] = useState<{
     items: BuiltinMaterial[]
     initialID: string
   } | null>(null)
   const [characterDialog, setCharacterDialog] = useState<{ views?: string[]; asset?: api.Asset } | null>(null)
+  const [builtinModelViewer, setBuiltinModelViewer] = useState<{
+    items: BuiltinModel[]
+    initialID: string
+  } | null>(null)
   const [refresh, setRefresh] = useState(0)
   const reload = () => setRefresh((n) => n + 1)
   const [prefs, setPrefs] = useState(readPrefs)
@@ -135,6 +142,7 @@ function Assets({ account }: { account: string }) {
       !!viewer ||
       !!characterDialog ||
       !!builtinViewer ||
+      !!builtinModelViewer ||
       !!popup ||
       !!confirm ||
       !!menu,
@@ -303,14 +311,27 @@ function Assets({ account }: { account: string }) {
           }
           {...tree}
           blocked={actions.blocked}
-          builtin={builtin}
+          builtin={builtinMaterialsView}
           onBuiltin={() => {
             clear()
             setPopup(null)
             setParams({ source: 'builtin' })
           }}
+          builtinModels={builtinModelsView}
+          onBuiltinModels={() => {
+            clear()
+            setPopup(null)
+            setParams({ source: 'builtin-models' })
+          }}
         />
-        {builtin ? (
+        {builtinModelsView ? (
+          <BuiltinModelBrowser
+            size={prefs.size}
+            onOpen={(items, initialID) =>
+              setBuiltinModelViewer({ items, initialID })
+            }
+          />
+        ) : builtin ? (
           <BuiltinBrowser
             size={prefs.size}
             onOpen={(items, initialID) =>
@@ -410,6 +431,22 @@ function Assets({ account }: { account: string }) {
         />
       )}
 
+      {builtinModelViewer && (
+        <BuiltinModelViewer
+          {...builtinModelViewer}
+          onClose={() => {
+            const id = builtinModelViewer.initialID
+            setBuiltinModelViewer(null)
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(
+                  `[data-builtin="${CSS.escape(id)}"]`,
+                )
+                ?.focus({ preventScroll: true }),
+            )
+          }}
+        />
+      )}
       {builtinViewer && (
         <BuiltinViewer
           {...builtinViewer}

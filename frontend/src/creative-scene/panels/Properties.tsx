@@ -5,6 +5,7 @@ import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
 import { aspectOf, equivalentFocal, fStopShortcuts, fStopThirds, presetOf, sensorPresets, sharpRange } from '../cameraOptics.ts'
 import { cameraDefaults } from '../state/apply.ts'
 import type { SceneModel } from '../models/cache.ts'
+import { isImported } from '../models/generator.ts'
 import type { KeyState } from '../timeline/keys.ts'
 import { transformToDoc, transformToView } from '../space.ts'
 import { ev100, isoThirds, shutterLabel, shutterThirds } from '../world/exposure.ts'
@@ -284,7 +285,10 @@ export function Properties({ object, count, readOnly, model, modelFailed = false
       )}
       {object.kind === 'model_instance' && (
         <div className="cc-scene-model-info">
-          <span>代码模型{model?.name_hint ? `：${model.name_hint}` : ''}</span>
+          <span>
+            {object.model?.builtin ? '内置模型' : isImported(model?.generator) ? '导入的模型' : '代码模型'}
+            {model?.name_hint ? `：${model.name_hint}` : ''}
+          </span>
           {(model?.usable === false || modelFailed) && <strong role="status">模型不可用</strong>}
         </div>
       )}

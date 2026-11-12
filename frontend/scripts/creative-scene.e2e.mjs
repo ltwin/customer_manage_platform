@@ -186,7 +186,11 @@ class SceneServer {
     // Built-in texture files read (C5c2), and whether the library is imported: if not, each read is a 503.
     this.textureReads = []
     this.texturesImported = true
-    // A directory of the real files (<sha256>.jpg, or a local store's <sha256>.jpg/content): served instead of the checker.
+    // Built-in model files read (scene-pose-system), and whether they are imported: if not, each read is a 503.
+    this.modelReads = []
+    this.modelsImported = true
+    // A directory of the real files (<sha256>.jpg, or a local store's <sha256>.jpg/content, or convert.mjs's
+    // textures/ and models/): served instead of the checker. Without it a built-in model is not there (503).
     this.builtinDir = null
     // Milliseconds an image takes to arrive: later than a picture would be drawn without waiting for it.
     this.imageDelayMs = 0
@@ -406,6 +410,7 @@ class SceneServer {
     }
     const real = (m) => {
       if (m?.ref !== undefined) return { content_revision_id: models[m.ref].content_revision_id }
+      if (m?.builtin !== undefined) return m
       if (m) assert.ok(this.models.has(m.content_revision_id) || m.content_revision_id.startsWith('ccrv_gone'), `a model sent is real: ${m.content_revision_id}`)
       return m
     }
@@ -720,11 +725,20 @@ async function route(page, server) {
       if (!server.texturesImported) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
       if (server.builtinDir) {
         // Downloaded files, or a local store's root: as render-texture-thumbnails.mjs reads them.
-        const at = [join(server.builtinDir, builtinFile[1]), join(server.builtinDir, 'scene-textures', builtinFile[1], 'content')].find((p) => existsSync(p))
+        const at = [join(server.builtinDir, builtinFile[1]), join(server.builtinDir, 'scene-textures', builtinFile[1], 'content'), join(server.builtinDir, 'textures', builtinFile[1])].find((p) => existsSync(p))
         if (!at) return json(503, { error: { code: 'creative_texture_unavailable', message: '内置贴图还没有导入', details: { file: builtinFile[1] } } })
-        return r.fulfill({ status: 200, contentType: 'image/jpeg', body: readFileSync(at) })
+        return r.fulfill({ status: 200, contentType: builtinFile[1].endsWith('.png') ? 'image/png' : 'image/jpeg', body: readFileSync(at) })
       }
       return r.fulfill({ status: 200, contentType: 'image/png', body: textures.ccr_checker })
+    }
+    // A built-in model's GLB (api: 读取内置模型文件), from builtinDir as the textures are.
+    const builtinModelFile = path.match(/^\/scene-models\/([^/]+)$/)
+    if (builtinModelFile) {
+      const name = builtinModelFile[1]
+      server.modelReads.push(name)
+      const at = server.modelsImported && server.builtinDir ? [join(server.builtinDir, name), join(server.builtinDir, 'scene-models', name, 'content'), join(server.builtinDir, 'models', name)].find((p) => existsSync(p)) : undefined
+      if (!at) return json(503, { error: { code: 'creative_model_file_unavailable', message: '内置模型的文件还没有导入', details: { file: name } } })
+      return r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: readFileSync(at) })
     }
     if (path === '/media-capabilities')
       return json(200, { schema_version: 1, formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 50 * 2 ** 20, av_max_bytes: 2 ** 30, part_size: 8 * 2 ** 20, batch_limit: 20 })
@@ -9792,6 +9806,142 @@ await check('skinned AC-2: the VRM 1.0 sample imports with its mapping and const
     if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/vrm1-${look}.png`, shown)
   }
   assert.deepEqual(errors, [])
+  await context.close()
+})
+
+// The built-in bodies' files (scene-skinned-humanoid 6.2): SCENE_E2E_BUILTIN_DIR, or convert.mjs's output
+// (models/ and textures/) copied to <tmp>/creative-scene-e2e/bodies. They are made from a pack downloaded by
+// hand (docs/dev/builtin-models.md), so without them the checks that draw a body are skipped.
+const bodyCatalog = () => JSON.parse(readFileSync(new URL('../src/creative-scene/builtinModels.gen.json', import.meta.url), 'utf8')).models
+function bodyFiles() {
+  const dir = process.env.SCENE_E2E_BUILTIN_DIR ?? join(tmpdir(), 'creative-scene-e2e', 'bodies')
+  return bodyCatalog().every((m) => existsSync(join(dir, 'models', m.glb.name)) || existsSync(join(dir, m.glb.name))) ? dir : null
+}
+const bodyObject = (name, order, builtin, materials, position = [0, 0, 0]) => ({ id: gid(name), kind: 'model_instance', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false, model: { builtin }, material_slots: materials })
+
+await check('skinned AC-1: a body from 内置 in the asset panel and from 添加 > 素体, drawn with its textures; no face edit or save; 换成男素体 brings its materials, Cmd+Z back', async () => {
+  const dir = bodyFiles()
+  if (!dir) {
+    console.log('  skipped: no built-in body files (SCENE_E2E_BUILTIN_DIR, or convert.mjs output in <tmp>/creative-scene-e2e/bodies)')
+    return
+  }
+  const [female, male] = ['body_female@1', 'body_male@1'].map((id) => bodyCatalog().find((m) => m.id === id))
+  const server = new SceneServer()
+  server.builtinDir = dir
+  const { context, page, errors } = await open(server)
+  await shading(page, '材质预览')
+  const { box: clip } = await viewportCenter(page)
+
+  // 内置 in the asset panel's models: the two bodies, dragged in where let go.
+  await page.getByRole('tab', { name: '资产' }).click()
+  const panel = page.locator('.cc-scene-assets')
+  // 我的 has the import button and the filters beside the switch: the row wraps in a narrow sidebar.
+  if (process.env.SCENE_E2E_EVIDENCE) await panel.screenshot({ path: `${process.env.SCENE_E2E_EVIDENCE}/body-asset-panel-mine.png` })
+  await panel.getByRole('tablist', { name: '模型来源' }).getByRole('tab', { name: '内置' }).click()
+  const cards = panel.getByRole('listbox', { name: '内置模型' }).getByRole('option')
+  assert.deepEqual(await cards.allInnerTexts(), ['女素体', '男素体'])
+  const card = panel.getByRole('option', { name: '女素体' })
+  await card.click()
+  await panel.getByText('内置模型 · 人形 · Quaternius，CC0').waitFor()
+  await card.locator('img').evaluate((img) => img.complete || new Promise((r) => (img.onload = r)))
+  if (process.env.SCENE_E2E_EVIDENCE) await panel.screenshot({ path: `${process.env.SCENE_E2E_EVIDENCE}/body-asset-panel.png` })
+  await card.dragTo(page.locator('.cc-scene-editor canvas'), { targetPosition: { x: clip.width / 2, y: clip.height / 2 } })
+  await waitFor(() => server.commands.length === 1, 'dropped')
+  await saved(page)
+  const placed = server.scene.objects.find((o) => o.model?.builtin)
+  assert.deepEqual(placed.model, { builtin: 'body_female@1' })
+  assert.equal(placed.name, '女素体')
+  assert.deepEqual(placed.material_slots, female.materials, 'the entry’s materials')
+  assert.ok(Math.abs(placed.transform.position[1]) < 1e-6, `on the ground: ${placed.transform.position}`)
+  await waitFor(() => server.modelReads.includes(female.glb.name), 'its GLB is read', 30_000)
+
+  // Drawn with its own textures: skin, not clay.
+  const textures = new Set(JSON.parse(readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')).materials.filter((m) => Object.values(female.materials).some((s) => s.preset === m.id)).flatMap((m) => m.files.map((f) => f.name)))
+  await waitFor(() => [...textures].every((f) => server.textureReads.includes(f)), 'its textures are read', 30_000)
+  await page.getByRole('tab', { name: '大纲' }).click()
+  await page.getByRole('treeitem', { name: /女素体/ }).click()
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press('Period')
+  const body = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-female-material-preview.png`, body)
+  const skin = await colourful(page, body, [0.3, 0.1, 0.7, 0.9])
+  console.log(`  material preview: ${(skin * 100).toFixed(1)}% of the body’s area has colour`)
+  assert.ok(skin > 0.05, 'drawn with its textures')
+
+  // The properties: what it is and where from; no parameters, no face edit, no 存入资产库.
+  const info = page.getByRole('group', { name: '内置模型' })
+  await info.getByText('Quaternius · Universal Base Characters').waitFor()
+  await page.locator('.cc-scene-model-info').filter({ hasText: '内置模型：女素体' }).waitFor()
+  const save = page.getByRole('button', { name: '存入资产库…' })
+  if (await save.count()) assert.ok(await save.isDisabled(), 'not saved to the library')
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press('Tab')
+  await page.getByText('带骨骼的模型和内置模型不能面编辑', { exact: false }).waitFor()
+
+  // Its body slot changed, then 换成男素体: the male body with his materials, renamed; one Cmd+Z back to hers as changed.
+  const slot = page.getByLabel('槽位 body')
+  await slot.getByRole('combobox', { name: 'body 的材质' }).selectOption({ label: '原理化 BSDF' })
+  await waitFor(() => server.commands.length === 2, 'material changed')
+  await saved(page)
+  const changed = structuredClone(server.object(placed.id).material_slots)
+  assert.notEqual(changed.body.preset, female.materials.body.preset)
+  await info.getByRole('button', { name: '换成男素体' }).click()
+  await waitFor(() => server.commands.length === 3, 'swapped')
+  await saved(page)
+  const swapped = server.object(placed.id)
+  assert.deepEqual([swapped.model, swapped.name], [{ builtin: 'body_male@1' }, '男素体'])
+  assert.deepEqual(swapped.material_slots, male.materials, 'his materials replace the changed slots')
+  await waitFor(() => server.modelReads.includes(male.glb.name), 'his GLB is read', 30_000)
+  const him = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-male-material-preview.png`, him)
+  await page.locator('.cc-scene-editor').focus()
+  await page.keyboard.press(`${modKey}+KeyZ`)
+  await waitFor(() => server.commands.length === 4, 'undo')
+  await saved(page)
+  const back = server.object(placed.id)
+  assert.deepEqual([back.model, back.name, back.material_slots], [{ builtin: 'body_female@1' }, '女素体', changed])
+
+  // 添加 > 素体 > 男素体, where the menu opened.
+  await page.mouse.move(clip.x + clip.width * 0.75, clip.y + clip.height * 0.7)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '男素体' }).click()
+  await waitFor(() => server.commands.length === 5, 'added')
+  await saved(page)
+  const added = server.scene.objects.filter((o) => o.model?.builtin === 'body_male@1')
+  assert.equal(added.length, 1)
+  assert.deepEqual(added[0].material_slots, male.materials)
+  assert.ok(added[0].transform.position[0] > 0.1, `right of the centre: ${added[0].transform.position}`)
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('skinned AC-12: a body whose GLB is not imported is a grey block with a notice, the box beside it unaffected; the export fails naming it', async () => {
+  const female = bodyCatalog().find((m) => m.id === 'body_female@1')
+  const server = new SceneServer()
+  server.modelsImported = false
+  const cam = gid('cam')
+  seed(server, [
+    bodyObject('女素体', 5, 'body_female@1', female.materials),
+    boxOf('方块', 6, { position: [1.5, 0.5, 0] }, { width: 1, height: 1, depth: 1 }, principledSlot({})),
+    cameraObject(cam, '机位', 7, { focal_mm: 50 }, [0, 1, 5]),
+  ])
+  const { context, page, errors } = await open(server, { query: '?host=1' })
+  await waitFor(() => server.modelReads.length > 0, 'a read', 10_000)
+  await page.getByRole('treeitem', { name: /女素体/ }).click()
+  await page.getByRole('group', { name: '内置模型' }).getByRole('alert').filter({ hasText: '文件暂时读不到' }).waitFor({ timeout: 10_000 })
+  // The grey block stands in at the body's size; the box draws as ever.
+  const { box: clip } = await viewportCenter(page)
+  const shown = await settledShot(page, clip)
+  if (process.env.SCENE_E2E_EVIDENCE) await writeFile(`${process.env.SCENE_E2E_EVIDENCE}/body-not-imported.png`, shown)
+  await waitFor(() => server.claims.length > 0, 'the page claims', 10_000)
+  server.claimable = [{ id: 'csj_body', document_id: DOC, kind: 'render_view', request: { camera_object_id: cam, mode: 'clay' }, attempt: 0, claim_token: 'tok_body', lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z' }]
+  await page.evaluate(() => window.__invalidate())
+  await waitFor(() => server.completes.some((c) => c.id === 'csj_body'), 'render_view done', 120_000)
+  const done = server.completes.find((c) => c.id === 'csj_body').payload
+  assert.equal(done.outcome, 'failed')
+  assert.match(done.error.message, /内置模型「女素体」的文件暂时读不到/)
+  assert.doesNotMatch(done.error.message, /503/, 'no status code')
+  assert.deepEqual(errors.filter((e) => !/503/.test(e)), [])
   await context.close()
 })
 

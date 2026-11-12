@@ -382,7 +382,8 @@ export function applyOp(state: SceneState, op: WireOp): SceneState {
         scene: {
           ...scene,
           objects: scene.objects.map((o) =>
-            targets.has(o.id) ? { ...o, model: op.model } : o,
+            // material_slots, when given, replaces the slots whole in the same content unit.
+            targets.has(o.id) ? { ...o, model: op.model, ...(op.material_slots ? { material_slots: op.material_slots } : {}) } : o,
           ),
         },
       }

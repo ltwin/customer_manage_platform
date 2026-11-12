@@ -1,5 +1,6 @@
 import type { components } from '../../api/schema'
 import { materialCatalog, materialEntry, texturedEntries } from '../../creative-scene/materials/catalog.ts'
+import { builtinModels, type BuiltinModel } from '../../creative-scene/models/catalog.ts'
 
 // 资产库的「内置」来源（C5c2 data: 内置贴图库「展现」）：材质目录里的内置贴图材质，
 // 只读、不分页，前端按名称和品类本地过滤。它们不是账号素材：没有资产 ID、修订和入库时间，
@@ -63,5 +64,23 @@ export function groupBuiltin(items: readonly BuiltinMaterial[]): { category: str
   return materialCatalog.categories.flatMap((c) => {
     const inCategory = items.filter((m) => m.category === c.id)
     return inCategory.length ? [{ category: c.id, label: c.label, items: inCategory }] : []
+  })
+}
+
+// 内置模型（scene-pose-system data: 内置模型库）：平台自带的素体，放进场景写 model: {builtin}
+// 和条目的 materials。条目来自 creative-scene/models/catalog.ts，这里只补资产库与资产面板要的展示。
+
+/** 模型品类的中文名；清单目前只有 humanoid。 */
+export const builtinModelCategories: Readonly<Record<string, string>> = { humanoid: '人形' }
+
+/** 离线渲染的静止姿势，make generate 从后端复制到 ./builtin/models/。 */
+export const builtinModelThumbnail = (id: string) => new URL(`./builtin/models/${id.replace('@', '_')}.webp`, import.meta.url).href
+
+/** 按文字筛选内置模型，规则同 filterBuiltin：名称、品类或来源资产名。 */
+export function filterBuiltinModels(q: string, items: readonly BuiltinModel[] = builtinModels): BuiltinModel[] {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+  return items.filter((m) => {
+    const text = [m.label, m.category, builtinModelCategories[m.category] ?? '', m.source.asset].join('\n').toLowerCase()
+    return words.every((w) => text.includes(w))
   })
 }

@@ -3,8 +3,8 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import { modelCache, type SceneModel } from '../models/cache.ts'
-import { summaryOf } from '../models/catalog.ts'
-import { modelKey } from '../models/key.ts'
+import { builtinModel, summaryOf } from '../models/catalog.ts'
+import { builtinOf, modelKey } from '../models/key.ts'
 import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, softShadowsIn, traceWaitMs, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
@@ -91,14 +91,24 @@ export type Shooter = {
   close(): void
 }
 
-/** Loads every model the scene shows; one that fails draws as its grey block. */
+/**
+ * Loads every model the scene shows; an account's that fails draws as its
+ * grey block. A built-in model whose file cannot be read (not imported yet)
+ * fails the shot, naming it (AC-12): a grey block in place of the body is not
+ * the picture asked for, and a retry later draws it.
+ */
 export async function loadModels(scene: Scene, models: Readonly<Record<string, SceneModel>>): Promise<void> {
   const keys = new Map(scene.objects.flatMap((o) => {
     const key = modelKey(o.model)
     const summary = summaryOf(models, o.model)
     return key && summary?.usable !== false ? [[key, summary] as const] : []
   }))
-  await Promise.allSettled([...keys].map(([k, summary]) => modelCache.load(k, summary?.faces)))
+  const loaded = await Promise.allSettled([...keys].map(([k, summary]) => modelCache.load(k, summary?.faces)))
+  const missing = [...keys.keys()].flatMap((k, i) => {
+    const id = builtinOf(k)
+    return id !== null && loaded[i]?.status === 'rejected' ? [builtinModel(id)?.label ?? id] : []
+  })
+  if (missing.length) throw new Error(`内置模型「${missing.join('、')}」的文件暂时读不到，请稍后再试`)
 }
 
 export async function renderView(documentID: string, request: RenderRequest, read: (id: string) => Promise<SceneDocument> = readScene): Promise<Shot> {
