@@ -95,6 +95,26 @@ func TestBuiltinModelCatalog(t *testing.T) {
 	if _, err := loadBuiltinModels(modelsJSON, builtinThumbnailFS); err != nil {
 		t.Fatal(err)
 	}
+	// The bodies (scene-skinned-humanoid 6.1), made by frontend/scripts/builtin-models/convert.mjs: published, they
+	// never change; each maps the 52 standard bones UBC has, drawn with its own unlisted textured materials.
+	shipped := map[string]string{
+		"body_female@1": "05b627e303819ceb635ead835a31dfd8d5d030aa8394cee79bfd0e93a034732d.glb",
+		"body_male@1":   "406b455290b5efa5d8b0410f17376555691adf39c9fc2fae27e9d3002ba4260e.glb",
+	}
+	if len(builtinModels.list) != len(shipped) {
+		t.Fatalf("%d built-in models", len(builtinModels.list))
+	}
+	for id, glb := range shipped {
+		m, ok := builtinModels.byID[id]
+		if !ok || m.GLB.Name != glb || m.Rig == nil || len(m.Rig.Humanoid) != 52 || len(m.Manifest.Skeleton.Joints) != 65 || len(m.Materials) != 3 {
+			t.Fatalf("%s: %+v", id, m)
+		}
+		for slot, v := range m.Materials {
+			if tm, ok := texturedMaterial(v.Preset); !ok || tm.listed() {
+				t.Errorf("%s %s: %s is not an unlisted textured material", id, slot, v.Preset)
+			}
+		}
+	}
 }
 
 func TestMalformedBuiltinModel(t *testing.T) {

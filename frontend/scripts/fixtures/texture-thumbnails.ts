@@ -1,9 +1,13 @@
 // The page scripts/render-texture-thumbnails.mjs drives: renders a built-in
 // textured material on the material ball, as a material asset's card is
-// rendered (library/thumbnail.ts), and gives it back as WebP.
+// rendered (library/thumbnail.ts), or a built-in model at rest with its
+// materials, as an imported model's card is; and gives it back as WebP.
 import { setAuthenticated } from '../../src/auth/session.ts'
-import { renderMaterialBall } from '../../src/creative-scene/library/thumbnail.ts'
+import { renderMaterialBall, renderMaterialThumbnail } from '../../src/creative-scene/library/thumbnail.ts'
 import { texturedEntries } from '../../src/creative-scene/materials/catalog.ts'
+import { modelCache } from '../../src/creative-scene/models/cache.ts'
+import { builtinModel, builtinModels } from '../../src/creative-scene/models/catalog.ts'
+import { builtinKey } from '../../src/creative-scene/models/key.ts'
 
 setAuthenticated({ access_token: 'fixture', token_type: 'Bearer', expires_in: 600 }, {
   id: 'thumbnail-account', email: 'thumbnails@example.invalid', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai',
@@ -22,7 +26,12 @@ async function webp(png: Blob): Promise<string> {
   return btoa(binary)
 }
 
-const page = window as unknown as { builtinIDs: string[]; renderBuiltin: (id: string) => Promise<string> }
+const page = window as unknown as { builtinIDs: string[]; renderBuiltin: (id: string) => Promise<string>; modelIDs: string[]; renderModel: (id: string) => Promise<string> }
 page.builtinIDs = texturedEntries.map((m) => m.id)
 page.renderBuiltin = async (id) => webp(await renderMaterialBall({ preset: id, params: {} }))
+page.modelIDs = builtinModels.map((m) => m.id)
+page.renderModel = async (id) => {
+  const entry = builtinModel(id)!
+  return webp(await renderMaterialThumbnail(await modelCache.load(builtinKey(id), null), entry.manifest, entry.materials))
+}
 document.body.dataset.ready = '1'

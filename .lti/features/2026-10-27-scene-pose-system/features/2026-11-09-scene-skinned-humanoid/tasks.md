@@ -172,7 +172,7 @@
 
 ## 6. 内置素体与收尾
 
-- [ ] 6.1 素体内容：
+- [x] 6.1 素体内容：
   - 新增 `frontend/scripts/builtin-models/convert.mjs`：读来源包，修正贴图引用，材质改名为 `body` / `eyes` / `brows`，走导入的换算与写出，输出 GLB、PNG 贴图和清单片段。
   - `render-texture-thumbnails.mjs` 加模型模式。
   - 把两个素体写进 `models.json`，贴图材质写进 `materials.json`（`listed: false`、`character`），提交缩略图。
@@ -181,6 +181,15 @@
   - `materials.json` 的 `categories` 加 `character`，前端选材面板与资产浏览器同时过滤 `listed: false`。
   - 文档：`docs/dev/builtin-models.md` 补素体的生成步骤。
   - 完成判据：服务启动时清单校验通过；两个素体的 `rig` 都是 52 根骨骼。
+  - 实施记录：
+    - 产物：`body_female@1`（GLB 802588 字节，15060 个三角形）、`body_male@1`（770448 字节，14318 个三角形）；都按 UE 命名识别出 52 根标准骨骼，65 个关节，没有约束，包围盒底面为 0。贴图 12 张 PNG，材质 5 个：`ubc_female_body@1`、`ubc_male_body@1`、两个素体共用的 `ubc_eyes@1`、`ubc_female_brows@1`、`ubc_male_brows@1`。
+    - `convert.mjs` 把 `.gltf`、`.bin` 和贴图打成一个 GLB 交给 `page.ts`，页面里依次调用 `parseImport`、`convert`（原点到底面中心）、`checkMapping`、`fileConstraints`、`writeGLB`、`writtenRig`、`prepareImages`，与导入对话框同一条链路。
+    - 与契约示例的出入：眉毛保持不透明，来源包眉毛的底色贴图没有 alpha 通道；金属度为 0 的槽位不带金属度贴图（glTF 里贴图乘系数，为 0 时贴图不起作用）；缺省值按参数步长取到 0.01（Blender 导出的系数是 0.8227272629737854 这类数）；`size_m` 填 1，按 UV 贴的贴图不用它。
+    - 过滤 `listed: false` 在本项一并完成：后端材质目录与助手 `builtinSearch` 在 2.1/2.2 已过滤；前端 `builtin.ts` 区分 `builtinMaterials`（上架）与 `builtinMaterial(id)`（含不上架的，槽位上照样显示来源），资产库的品类按钮只列有上架条目的品类，不出现空的「角色」。场景选材下拉不列贴图材质（贴图材质只从资产库选），无需改动。
+    - 缩略图：`render-texture-thumbnails.mjs --models` 用资产卡同一种静止姿势渲染，写到 `builtin_thumbnails/models/`；5 个贴图材质照常渲染材质球。`make generate` 在 worktree 里没有跑（会动 `node_modules`），按它的规则手工复制到前端。
+    - 2026-11-11 owner 同意后导入共享对象存储：`textures import --dir` 导入 12 个、`models import --dir` 导入 2 个，`textures check` 与 `models check` 都是 ready。
+    - compose：`scene_model_data:/var/lib/crm/scene-models`；预检的卷集合与挂载检查加上它，`models check` 一步失败时给 `run-creativectl-models-import` 或 `fix-scene-model-storage`；`test-production-preflight.sh` 补了缺文件、存储不可读、未挂卷三例，`make check-ops` 通过。
+    - 锁定的数量随之更新：Go 侧贴图材质 29 个、文件 84 个，`publishedTextured` 加 5 条，`TestBuiltinModelCatalog` 锁定两个素体；助手测试的 `search_assets(kind: model)` 改为返回两个素体，内置来源总数不含 `ubc_*`；前端材质目录 44 条（贴图材质 29，其中不上架 5）。
 - [ ] 6.2 素体的界面与验收：
   - `SceneEditor.tsx` 加「添加 > 素体」快捷入口；`AssetPanel.tsx` 的模型类加「我的 / 内置」切换（Epic 修订 v8，取代单独的「素体」分区）。
   - 资产库页面：`LibraryTree` 加「内置模型」，`BuiltinBrowser` 支持模型，`BuiltinViewer` 显示 3D 预览、来源与授权。

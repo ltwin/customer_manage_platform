@@ -685,6 +685,100 @@
         { "name": "3c043ed2e4595e735c1cd013dacbcdfbaf8b2e5975b868d1dc188ecfe463f66d.jpg", "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_leather/brown_leather_arm_2k.jpg", "bytes": 1870765 }
       ],
       "source": { "site": "polyhaven", "asset": "brown_leather", "author": "Rob Tuytel", "license": "CC0" }
+    },
+    {
+      "id": "ubc_female_body@1",
+      "kind": "textured",
+      "label": "女素体皮肤",
+      "category": "character",
+      "size_m": 1,
+      "listed": false,
+      "maps": {
+        "base_color": { "file": "d366843ee7d9e9f37ec87a0e1c98c7f2e45573c08eeb80a51a6d9344e68cf288.png" },
+        "roughness": { "file": "d2beabf2bd0313e32c68dcdbb80dca371a6e994fabf96efa97128bf9f14fa57b.png", "channel": "g" },
+        "normal": { "file": "cf922460b43ccd31e983e34db05514c9d451dd2f9cdd01a843978e797719f859.png" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 0 },
+      "files": [
+        { "name": "d366843ee7d9e9f37ec87a0e1c98c7f2e45573c08eeb80a51a6d9344e68cf288.png", "bytes": 1319410 },
+        { "name": "d2beabf2bd0313e32c68dcdbb80dca371a6e994fabf96efa97128bf9f14fa57b.png", "bytes": 3277022 },
+        { "name": "cf922460b43ccd31e983e34db05514c9d451dd2f9cdd01a843978e797719f859.png", "bytes": 3940537 }
+      ],
+      "source": { "site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0" }
+    },
+    {
+      "id": "ubc_eyes@1",
+      "kind": "textured",
+      "label": "素体眼睛",
+      "category": "character",
+      "size_m": 1,
+      "listed": false,
+      "maps": {
+        "base_color": { "file": "d08e3356a83211bc6ca21fe3a8e39f4b5c1a3b8f85457fc2c0fb57be09935025.png" },
+        "normal": { "file": "9ed61f7726a54fe346a78b9e5a18905d8e2b88f86235d97f53cd207a26f3f8c7.png" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 0.35, "metalness": 0 },
+      "files": [
+        { "name": "d08e3356a83211bc6ca21fe3a8e39f4b5c1a3b8f85457fc2c0fb57be09935025.png", "bytes": 35958 },
+        { "name": "9ed61f7726a54fe346a78b9e5a18905d8e2b88f86235d97f53cd207a26f3f8c7.png", "bytes": 15099 }
+      ],
+      "source": { "site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0" }
+    },
+    {
+      "id": "ubc_female_brows@1",
+      "kind": "textured",
+      "label": "女素体眉毛",
+      "category": "character",
+      "size_m": 1,
+      "listed": false,
+      "maps": {
+        "base_color": { "file": "f9f4f2fb3eeeefb0b6f0fdef38b0770fd6607640c1c680b8139dd76697e9f9b3.png" },
+        "normal": { "file": "172f230aae0d4366c3cfc0402b2e6d1811b11f8487344bff28605eeacac1558d.png" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 0.82, "metalness": 0 },
+      "files": [
+        { "name": "f9f4f2fb3eeeefb0b6f0fdef38b0770fd6607640c1c680b8139dd76697e9f9b3.png", "bytes": 1729467 },
+        { "name": "172f230aae0d4366c3cfc0402b2e6d1811b11f8487344bff28605eeacac1558d.png", "bytes": 4710013 }
+      ],
+      "source": { "site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0" }
+    },
+    {
+      "id": "ubc_male_body@1",
+      "kind": "textured",
+      "label": "男素体皮肤",
+      "category": "character",
+      "size_m": 1,
+      "listed": false,
+      "maps": {
+        "base_color": { "file": "df680cbc1967a61e85998bfafb8f7bc0a36dd604bb3266486c4b06b1a184bb45.png" },
+        "roughness": { "file": "c70dabf48574cda55644d556beae1ee7cf1bdcf68a50d259d20f2f2358f27991.png", "channel": "g" },
+        "normal": { "file": "9b25cf9200216eb754b79cf4c63b5380c419780788322f3c57cdd2b3e02679a6.png" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 1, "metalness": 0 },
+      "files": [
+        { "name": "df680cbc1967a61e85998bfafb8f7bc0a36dd604bb3266486c4b06b1a184bb45.png", "bytes": 1384380 },
+        { "name": "c70dabf48574cda55644d556beae1ee7cf1bdcf68a50d259d20f2f2358f27991.png", "bytes": 3152049 },
+        { "name": "9b25cf9200216eb754b79cf4c63b5380c419780788322f3c57cdd2b3e02679a6.png", "bytes": 4252937 }
+      ],
+      "source": { "site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0" }
+    },
+    {
+      "id": "ubc_male_brows@1",
+      "kind": "textured",
+      "label": "男素体眉毛",
+      "category": "character",
+      "size_m": 1,
+      "listed": false,
+      "maps": {
+        "base_color": { "file": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e.png" },
+        "normal": { "file": "57fd0ad8c96a4d01b38769637e066cecaa285b456f6e48ce00863754a457affb.png" }
+      },
+      "defaults": { "color": "#ffffff", "roughness": 0.82, "metalness": 0 },
+      "files": [
+        { "name": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e.png", "bytes": 1570376 },
+        { "name": "57fd0ad8c96a4d01b38769637e066cecaa285b456f6e48ce00863754a457affb.png", "bytes": 4326126 }
+      ],
+      "source": { "site": "quaternius", "asset": "Universal Base Characters", "author": "Quaternius", "license": "CC0" }
     }
   ],
   "categories": [
@@ -697,7 +791,8 @@
     { "id": "ground", "label": "地面" },
     { "id": "tiles", "label": "瓷砖" },
     { "id": "roofing", "label": "屋面与沥青" },
-    { "id": "leather", "label": "皮革" }
+    { "id": "leather", "label": "皮革" },
+    { "id": "character", "label": "角色" }
   ],
   "hints": {
     "paint": "paint@1",

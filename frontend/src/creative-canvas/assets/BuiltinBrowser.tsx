@@ -1,7 +1,7 @@
 import { Maximize2, Search } from 'lucide-react'
 import { useState } from 'react'
-import { materialCatalog } from '../../creative-scene/materials/catalog.ts'
 import {
+  builtinCategories,
   builtinMaterials,
   filterBuiltin,
   groupBuiltin,
@@ -59,7 +59,7 @@ export default function BuiltinBrowser({
           >
             全部<small>{builtinMaterials.length}</small>
           </button>
-          {materialCatalog.categories.map((c) => (
+          {builtinCategories.map((c) => (
             <button
               key={c.id}
               type="button"

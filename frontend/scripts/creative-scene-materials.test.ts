@@ -7,7 +7,7 @@ test('the frontend catalog is the backend one, copied by make generate', () => {
   const backend = readFileSync(new URL('../../backend/internal/creativescene/materials.json', import.meta.url), 'utf8')
   const frontend = readFileSync(new URL('../src/creative-scene/materials.gen.json', import.meta.url), 'utf8')
   assert.equal(frontend, backend)
-  assert.equal(materialCatalog.materials.length, 39, 'principled, 14 presets and 24 built-in textured materials')
+  assert.equal(materialCatalog.materials.length, 44, 'principled, 14 presets and 29 built-in textured materials, 5 of them the bodies\' own')
   assert.equal(Object.keys(materialEntry(principledID)!.params).length, 21, 'the 20 three.js fields and vertex_color')
 })
 
@@ -19,7 +19,8 @@ test('a built-in textured material has principled’s parameters with its own de
   assert.equal(wood.params.roughness.default, 1)
   assert.equal(wood.params.ior.default, 1.5)
   assert.equal(materialEntry(principledID)!.params.color.default, '#cccccc', 'principled keeps its own')
-  assert.equal(texturedEntries.length, 24)
+  assert.equal(texturedEntries.length, 29)
+  assert.equal(texturedEntries.filter((m) => m.listed === false).length, 5, 'the bodies\' own, not offered')
   for (const m of texturedEntries) assert.ok(materialCatalog.categories.some((c) => c.id === m.category), m.id)
 })
 

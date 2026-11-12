@@ -87,10 +87,11 @@ func TestBuiltinSourceRefusals(t *testing.T) {
 	if _, err := h.searchAssets(t.Context(), `{"source":"shared","limit":5}`); !errors.As(err, &refusal) {
 		t.Fatalf("unknown source: %v", err)
 	}
-	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","kind":"model","limit":5}`); err != nil || out != `{"has_more":false,"items":[],"total_count":0}` {
+	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","kind":"model","limit":5}`); err != nil || strings.Count(out, `"humanoid":true`) != 2 || !strings.Contains(out, `"builtin_id":"body_female@1"`) || !strings.Contains(out, `"builtin_id":"body_male@1"`) {
 		t.Fatalf("built-in models: %s %v", out, err)
 	}
-	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","limit":1}`); err != nil || strings.Count(out, `"builtin_id"`) != len(creativescene.BuiltinMaterialIDs())+len(creativescene.BuiltinModelIDs()) {
+	// The bodies' own textured materials (listed: false) are not offered.
+	if out, err := h.searchAssets(t.Context(), `{"source":"builtin","limit":1}`); err != nil || strings.Contains(out, "ubc_") || strings.Count(out, `"builtin_id"`) != len(creativescene.BuiltinMaterials(""))+len(creativescene.BuiltinModelIDs()) {
 		t.Fatalf("all built-ins come at once, whatever the limit: %s %v", out, err)
 	}
 	if _, err := h.readAsset(t.Context(), `{"builtin_id":"glass@1","offset":0,"limit":1}`); !errors.As(err, &refusal) || !strings.Contains(refusal.message, "wood_floor@1") {

@@ -1,5 +1,5 @@
 import type { components } from '../../api/schema'
-import { materialCatalog, texturedEntries } from '../../creative-scene/materials/catalog.ts'
+import { materialCatalog, materialEntry, texturedEntries } from '../../creative-scene/materials/catalog.ts'
 
 // 资产库的「内置」来源（C5c2 data: 内置贴图库「展现」）：材质目录里的内置贴图材质，
 // 只读、不分页，前端按名称和品类本地过滤。它们不是账号素材：没有资产 ID、修订和入库时间，
@@ -24,7 +24,7 @@ const categoryLabels = new Map(materialCatalog.categories.map((c) => [c.id, c.la
 /** 缩略图文件名是条目 ID 把 @ 换成 _。 */
 export const builtinThumbnail = (id: string) => new URL(`./builtin/${id.replace('@', '_')}.webp`, import.meta.url).href
 
-export const builtinMaterials: BuiltinMaterial[] = texturedEntries.map((m) => ({
+const everyBuiltin: BuiltinMaterial[] = texturedEntries.map((m) => ({
   id: m.id,
   label: m.label,
   category: m.category ?? '',
@@ -34,7 +34,14 @@ export const builtinMaterials: BuiltinMaterial[] = texturedEntries.map((m) => ({
   source: m.source!,
 }))
 
-export const builtinMaterial = (id: string) => builtinMaterials.find((m) => m.id === id)
+/** 列出来供挑选的：不含 listed: false 的条目（内置模型自己的贴图，data: 内置贴图库）。 */
+export const builtinMaterials: BuiltinMaterial[] = everyBuiltin.filter((m) => materialEntry(m.id)?.listed !== false)
+
+/** 有上架条目的品类，按目录顺序：只装素体贴图的「角色」不列。 */
+export const builtinCategories = materialCatalog.categories.filter((c) => builtinMaterials.some((m) => m.category === c.id))
+
+/** 按 ID 查，不上架的也查得到：槽位上用着它时照样显示来源。 */
+export const builtinMaterial = (id: string) => everyBuiltin.find((m) => m.id === id)
 
 /** 落到槽位上的写法：只引用预设，参数用它的缺省值。 */
 export const builtinSlot = (id: string): Slot => ({ preset: id, params: {} })

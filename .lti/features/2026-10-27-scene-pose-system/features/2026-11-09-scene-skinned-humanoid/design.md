@@ -340,9 +340,10 @@ worker（上传 model）：
 | `frontend/src/creative-scene/modelEdits.ts`、`saveModel.ts`、`faceEdit/state.ts`、`faceEdit/assign.ts`、`faceEdit/useFaceMeshes.ts`、`state/sync.ts`、`state/intents.ts` | 修改 | 按模型键查表；对内置模型关闭面分配、存入资产库、改参数 |
 | `frontend/src/creative-scene/materials/catalog.ts:texturedEntries`、`panels/LibraryPicker.tsx`、`creative-canvas/assets/builtin.ts` | 修改 | 过滤 `listed: false` |
 | `frontend/src/creative-scene/materials/images.ts` | 修改 | `tex:` 文件可为 `.png` |
-| `frontend/scripts/builtin-models/convert.mjs` | 新增 | 素体生成 |
-| `frontend/scripts/render-texture-thumbnails.mjs` | 修改 | 模型缩略图模式 |
-| `docs/dev/scene-texture-library.md`、`docs/dev/builtin-models.md`（新增） | 修改 | 导入与新增条目的做法 |
+| `frontend/scripts/builtin-models/convert.mjs`、`builtin-models/page.ts` | 新增 | 素体生成；`page.ts` 是脚本驱动的页面，调用导入的换算与写出 |
+| `frontend/scripts/render-texture-thumbnails.mjs`、`fixtures/texture-thumbnails.ts` | 修改 | 模型缩略图模式 |
+| `docker-compose.yml`、`scripts/production-preflight.sh`、`scripts/test-production-preflight.sh`、`scripts/test-v1-ops-common.sh` | 修改 | `scene_model_data` 卷与预检的 `models check` |
+| `docs/dev/scene-texture-library.md`、`docs/dev/builtin-models.md`（新增）、`docs/dev/object-storage.md` | 修改 | 导入与新增条目的做法；对象布局加 `scene-models/` |
 
 ## 验证与交付
 

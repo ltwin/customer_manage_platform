@@ -87,6 +87,12 @@ var publishedTextured = map[string]string{
 	"asphalt_02@1":              "3m base_color=28f5ba869055 normal=ffe49db71a0f roughness=ed70e88640e4g metalness=ed70e88640e4b ao=ed70e88640e4r color=#ffffff metalness=1 roughness=1",
 	"roof_slates_03@1":          "3m base_color=955eb467fc60 normal=f797ad9756e6 roughness=d3bae518a1ebg metalness=d3bae518a1ebb ao=d3bae518a1ebr color=#ffffff metalness=1 roughness=1",
 	"brown_leather@1":           "0.4m base_color=b0de2403a31e normal=3386277290af roughness=3c043ed2e459g metalness=3c043ed2e459b ao=3c043ed2e459r color=#ffffff metalness=1 roughness=1",
+	// The built-in bodies' own (listed: false; scene-skinned-humanoid).
+	"ubc_female_body@1":  "1m base_color=d366843ee7d9 normal=cf922460b43c roughness=d2beabf2bd03g color=#ffffff metalness=0 roughness=1",
+	"ubc_male_body@1":    "1m base_color=df680cbc1967 normal=9b25cf920021 roughness=c70dabf48574g color=#ffffff metalness=0 roughness=1",
+	"ubc_eyes@1":         "1m base_color=d08e3356a832 normal=9ed61f7726a5 color=#ffffff metalness=0 roughness=0.35",
+	"ubc_female_brows@1": "1m base_color=f9f4f2fb3eee normal=172f230aae0d color=#ffffff metalness=0 roughness=0.82",
+	"ubc_male_brows@1":   "1m base_color=bc7aa863bd22 normal=57fd0ad8c96a color=#ffffff metalness=0 roughness=0.82",
 }
 
 func TestMaterialCatalog(t *testing.T) {

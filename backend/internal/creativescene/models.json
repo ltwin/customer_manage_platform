@@ -1,3 +1,914 @@
 {
-  "models": []
+  "models": [
+    {
+      "id": "body_female@1",
+      "label": "女素体",
+      "category": "humanoid",
+      "mount": "floor",
+      "glb": {
+        "name": "05b627e303819ceb635ead835a31dfd8d5d030aa8394cee79bfd0e93a034732d.glb",
+        "bytes": 802588
+      },
+      "manifest": {
+        "bounds": {
+          "min": [
+            -0.8344330490081011,
+            2.1037503565273774e-10,
+            -0.1513485580841037
+          ],
+          "max": [
+            0.8344330490081036,
+            1.7750509607478895,
+            0.15134855868482008
+          ]
+        },
+        "triangles": 15060,
+        "slots": [
+          {
+            "id": "body"
+          },
+          {
+            "id": "brows"
+          },
+          {
+            "id": "eyes"
+          }
+        ],
+        "parts": [],
+        "anchors": [],
+        "uv": true,
+        "skeleton": {
+          "joints": [
+            {
+              "node": 5,
+              "parent": null,
+              "name": "root"
+            },
+            {
+              "node": 6,
+              "parent": 5,
+              "name": "pelvis"
+            },
+            {
+              "node": 7,
+              "parent": 6,
+              "name": "spine_01"
+            },
+            {
+              "node": 8,
+              "parent": 7,
+              "name": "spine_02"
+            },
+            {
+              "node": 9,
+              "parent": 8,
+              "name": "spine_03"
+            },
+            {
+              "node": 10,
+              "parent": 9,
+              "name": "neck_01"
+            },
+            {
+              "node": 11,
+              "parent": 10,
+              "name": "Head"
+            },
+            {
+              "node": 12,
+              "parent": 9,
+              "name": "clavicle_l"
+            },
+            {
+              "node": 13,
+              "parent": 12,
+              "name": "upperarm_l"
+            },
+            {
+              "node": 14,
+              "parent": 13,
+              "name": "lowerarm_l"
+            },
+            {
+              "node": 15,
+              "parent": 14,
+              "name": "hand_l"
+            },
+            {
+              "node": 16,
+              "parent": 15,
+              "name": "index_01_l"
+            },
+            {
+              "node": 17,
+              "parent": 16,
+              "name": "index_02_l"
+            },
+            {
+              "node": 18,
+              "parent": 17,
+              "name": "index_03_l"
+            },
+            {
+              "node": 19,
+              "parent": 18,
+              "name": "index_04_leaf_l"
+            },
+            {
+              "node": 20,
+              "parent": 15,
+              "name": "middle_01_l"
+            },
+            {
+              "node": 21,
+              "parent": 20,
+              "name": "middle_02_l"
+            },
+            {
+              "node": 22,
+              "parent": 21,
+              "name": "middle_03_l"
+            },
+            {
+              "node": 23,
+              "parent": 22,
+              "name": "middle_04_leaf_l"
+            },
+            {
+              "node": 24,
+              "parent": 15,
+              "name": "pinky_01_l"
+            },
+            {
+              "node": 25,
+              "parent": 24,
+              "name": "pinky_02_l"
+            },
+            {
+              "node": 26,
+              "parent": 25,
+              "name": "pinky_03_l"
+            },
+            {
+              "node": 27,
+              "parent": 26,
+              "name": "pinky_04_leaf_l"
+            },
+            {
+              "node": 28,
+              "parent": 15,
+              "name": "ring_01_l"
+            },
+            {
+              "node": 29,
+              "parent": 28,
+              "name": "ring_02_l"
+            },
+            {
+              "node": 30,
+              "parent": 29,
+              "name": "ring_03_l"
+            },
+            {
+              "node": 31,
+              "parent": 30,
+              "name": "ring_04_leaf_l"
+            },
+            {
+              "node": 32,
+              "parent": 15,
+              "name": "thumb_01_l"
+            },
+            {
+              "node": 33,
+              "parent": 32,
+              "name": "thumb_02_l"
+            },
+            {
+              "node": 34,
+              "parent": 33,
+              "name": "thumb_03_l"
+            },
+            {
+              "node": 35,
+              "parent": 34,
+              "name": "thumb_04_leaf_l"
+            },
+            {
+              "node": 36,
+              "parent": 9,
+              "name": "clavicle_r"
+            },
+            {
+              "node": 37,
+              "parent": 36,
+              "name": "upperarm_r"
+            },
+            {
+              "node": 38,
+              "parent": 37,
+              "name": "lowerarm_r"
+            },
+            {
+              "node": 39,
+              "parent": 38,
+              "name": "hand_r"
+            },
+            {
+              "node": 40,
+              "parent": 39,
+              "name": "index_01_r"
+            },
+            {
+              "node": 41,
+              "parent": 40,
+              "name": "index_02_r"
+            },
+            {
+              "node": 42,
+              "parent": 41,
+              "name": "index_03_r"
+            },
+            {
+              "node": 43,
+              "parent": 42,
+              "name": "index_04_leaf_r"
+            },
+            {
+              "node": 44,
+              "parent": 39,
+              "name": "middle_01_r"
+            },
+            {
+              "node": 45,
+              "parent": 44,
+              "name": "middle_02_r"
+            },
+            {
+              "node": 46,
+              "parent": 45,
+              "name": "middle_03_r"
+            },
+            {
+              "node": 47,
+              "parent": 46,
+              "name": "middle_04_leaf_r"
+            },
+            {
+              "node": 48,
+              "parent": 39,
+              "name": "pinky_01_r"
+            },
+            {
+              "node": 49,
+              "parent": 48,
+              "name": "pinky_02_r"
+            },
+            {
+              "node": 50,
+              "parent": 49,
+              "name": "pinky_03_r"
+            },
+            {
+              "node": 51,
+              "parent": 50,
+              "name": "pinky_04_leaf_r"
+            },
+            {
+              "node": 52,
+              "parent": 39,
+              "name": "ring_01_r"
+            },
+            {
+              "node": 53,
+              "parent": 52,
+              "name": "ring_02_r"
+            },
+            {
+              "node": 54,
+              "parent": 53,
+              "name": "ring_03_r"
+            },
+            {
+              "node": 55,
+              "parent": 54,
+              "name": "ring_04_leaf_r"
+            },
+            {
+              "node": 56,
+              "parent": 39,
+              "name": "thumb_01_r"
+            },
+            {
+              "node": 57,
+              "parent": 56,
+              "name": "thumb_02_r"
+            },
+            {
+              "node": 58,
+              "parent": 57,
+              "name": "thumb_03_r"
+            },
+            {
+              "node": 59,
+              "parent": 58,
+              "name": "thumb_04_leaf_r"
+            },
+            {
+              "node": 60,
+              "parent": 6,
+              "name": "thigh_l"
+            },
+            {
+              "node": 61,
+              "parent": 60,
+              "name": "calf_l"
+            },
+            {
+              "node": 62,
+              "parent": 61,
+              "name": "foot_l"
+            },
+            {
+              "node": 63,
+              "parent": 62,
+              "name": "ball_l"
+            },
+            {
+              "node": 64,
+              "parent": 63,
+              "name": "ball_leaf_l"
+            },
+            {
+              "node": 65,
+              "parent": 6,
+              "name": "thigh_r"
+            },
+            {
+              "node": 66,
+              "parent": 65,
+              "name": "calf_r"
+            },
+            {
+              "node": 67,
+              "parent": 66,
+              "name": "foot_r"
+            },
+            {
+              "node": 68,
+              "parent": 67,
+              "name": "ball_r"
+            },
+            {
+              "node": 69,
+              "parent": 68,
+              "name": "ball_leaf_r"
+            }
+          ],
+          "fingerprint": "s1-1579d52bd260efb8"
+        }
+      },
+      "rig": {
+        "humanoid": {
+          "head": 11,
+          "neck": 10,
+          "leftIndexDistal": 18,
+          "leftIndexIntermediate": 17,
+          "leftIndexProximal": 16,
+          "leftMiddleDistal": 22,
+          "leftMiddleIntermediate": 21,
+          "leftMiddleProximal": 20,
+          "leftLittleDistal": 26,
+          "leftLittleIntermediate": 25,
+          "leftLittleProximal": 24,
+          "leftRingDistal": 30,
+          "leftRingIntermediate": 29,
+          "leftRingProximal": 28,
+          "leftThumbDistal": 34,
+          "leftThumbProximal": 33,
+          "leftThumbMetacarpal": 32,
+          "leftHand": 15,
+          "leftLowerArm": 14,
+          "leftUpperArm": 13,
+          "leftShoulder": 12,
+          "rightIndexDistal": 42,
+          "rightIndexIntermediate": 41,
+          "rightIndexProximal": 40,
+          "rightMiddleDistal": 46,
+          "rightMiddleIntermediate": 45,
+          "rightMiddleProximal": 44,
+          "rightLittleDistal": 50,
+          "rightLittleIntermediate": 49,
+          "rightLittleProximal": 48,
+          "rightRingDistal": 54,
+          "rightRingIntermediate": 53,
+          "rightRingProximal": 52,
+          "rightThumbDistal": 58,
+          "rightThumbProximal": 57,
+          "rightThumbMetacarpal": 56,
+          "rightHand": 39,
+          "rightLowerArm": 38,
+          "rightUpperArm": 37,
+          "rightShoulder": 36,
+          "upperChest": 9,
+          "chest": 8,
+          "spine": 7,
+          "leftToes": 63,
+          "leftFoot": 62,
+          "leftLowerLeg": 61,
+          "leftUpperLeg": 60,
+          "rightToes": 68,
+          "rightFoot": 67,
+          "rightLowerLeg": 66,
+          "rightUpperLeg": 65,
+          "hips": 6
+        }
+      },
+      "materials": {
+        "body": {
+          "preset": "ubc_female_body@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        },
+        "eyes": {
+          "preset": "ubc_eyes@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        },
+        "brows": {
+          "preset": "ubc_female_brows@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        }
+      },
+      "source": {
+        "site": "quaternius",
+        "asset": "Universal Base Characters",
+        "author": "Quaternius",
+        "license": "CC0",
+        "url": "https://quaternius.com/packs/universalbasecharacters.html"
+      }
+    },
+    {
+      "id": "body_male@1",
+      "label": "男素体",
+      "category": "humanoid",
+      "mount": "floor",
+      "glb": {
+        "name": "406b455290b5efa5d8b0410f17376555691adf39c9fc2fae27e9d3002ba4260e.glb",
+        "bytes": 770448
+      },
+      "manifest": {
+        "bounds": {
+          "min": [
+            -0.9294324208076417,
+            -2.8341570600979095e-10,
+            -0.145744096891963
+          ],
+          "max": [
+            0.9294324208076423,
+            1.8195865149745218,
+            0.1457440971558135
+          ]
+        },
+        "triangles": 14318,
+        "slots": [
+          {
+            "id": "body"
+          },
+          {
+            "id": "brows"
+          },
+          {
+            "id": "eyes"
+          }
+        ],
+        "parts": [],
+        "anchors": [],
+        "uv": true,
+        "skeleton": {
+          "joints": [
+            {
+              "node": 5,
+              "parent": null,
+              "name": "root"
+            },
+            {
+              "node": 6,
+              "parent": 5,
+              "name": "pelvis"
+            },
+            {
+              "node": 7,
+              "parent": 6,
+              "name": "spine_01"
+            },
+            {
+              "node": 8,
+              "parent": 7,
+              "name": "spine_02"
+            },
+            {
+              "node": 9,
+              "parent": 8,
+              "name": "spine_03"
+            },
+            {
+              "node": 10,
+              "parent": 9,
+              "name": "neck_01"
+            },
+            {
+              "node": 11,
+              "parent": 10,
+              "name": "Head"
+            },
+            {
+              "node": 12,
+              "parent": 9,
+              "name": "clavicle_l"
+            },
+            {
+              "node": 13,
+              "parent": 12,
+              "name": "upperarm_l"
+            },
+            {
+              "node": 14,
+              "parent": 13,
+              "name": "lowerarm_l"
+            },
+            {
+              "node": 15,
+              "parent": 14,
+              "name": "hand_l"
+            },
+            {
+              "node": 16,
+              "parent": 15,
+              "name": "index_01_l"
+            },
+            {
+              "node": 17,
+              "parent": 16,
+              "name": "index_02_l"
+            },
+            {
+              "node": 18,
+              "parent": 17,
+              "name": "index_03_l"
+            },
+            {
+              "node": 19,
+              "parent": 18,
+              "name": "index_04_leaf_l"
+            },
+            {
+              "node": 20,
+              "parent": 15,
+              "name": "middle_01_l"
+            },
+            {
+              "node": 21,
+              "parent": 20,
+              "name": "middle_02_l"
+            },
+            {
+              "node": 22,
+              "parent": 21,
+              "name": "middle_03_l"
+            },
+            {
+              "node": 23,
+              "parent": 22,
+              "name": "middle_04_leaf_l"
+            },
+            {
+              "node": 24,
+              "parent": 15,
+              "name": "pinky_01_l"
+            },
+            {
+              "node": 25,
+              "parent": 24,
+              "name": "pinky_02_l"
+            },
+            {
+              "node": 26,
+              "parent": 25,
+              "name": "pinky_03_l"
+            },
+            {
+              "node": 27,
+              "parent": 26,
+              "name": "pinky_04_leaf_l"
+            },
+            {
+              "node": 28,
+              "parent": 15,
+              "name": "ring_01_l"
+            },
+            {
+              "node": 29,
+              "parent": 28,
+              "name": "ring_02_l"
+            },
+            {
+              "node": 30,
+              "parent": 29,
+              "name": "ring_03_l"
+            },
+            {
+              "node": 31,
+              "parent": 30,
+              "name": "ring_04_leaf_l"
+            },
+            {
+              "node": 32,
+              "parent": 15,
+              "name": "thumb_01_l"
+            },
+            {
+              "node": 33,
+              "parent": 32,
+              "name": "thumb_02_l"
+            },
+            {
+              "node": 34,
+              "parent": 33,
+              "name": "thumb_03_l"
+            },
+            {
+              "node": 35,
+              "parent": 34,
+              "name": "thumb_04_leaf_l"
+            },
+            {
+              "node": 36,
+              "parent": 9,
+              "name": "clavicle_r"
+            },
+            {
+              "node": 37,
+              "parent": 36,
+              "name": "upperarm_r"
+            },
+            {
+              "node": 38,
+              "parent": 37,
+              "name": "lowerarm_r"
+            },
+            {
+              "node": 39,
+              "parent": 38,
+              "name": "hand_r"
+            },
+            {
+              "node": 40,
+              "parent": 39,
+              "name": "index_01_r"
+            },
+            {
+              "node": 41,
+              "parent": 40,
+              "name": "index_02_r"
+            },
+            {
+              "node": 42,
+              "parent": 41,
+              "name": "index_03_r"
+            },
+            {
+              "node": 43,
+              "parent": 42,
+              "name": "index_04_leaf_r"
+            },
+            {
+              "node": 44,
+              "parent": 39,
+              "name": "middle_01_r"
+            },
+            {
+              "node": 45,
+              "parent": 44,
+              "name": "middle_02_r"
+            },
+            {
+              "node": 46,
+              "parent": 45,
+              "name": "middle_03_r"
+            },
+            {
+              "node": 47,
+              "parent": 46,
+              "name": "middle_04_leaf_r"
+            },
+            {
+              "node": 48,
+              "parent": 39,
+              "name": "pinky_01_r"
+            },
+            {
+              "node": 49,
+              "parent": 48,
+              "name": "pinky_02_r"
+            },
+            {
+              "node": 50,
+              "parent": 49,
+              "name": "pinky_03_r"
+            },
+            {
+              "node": 51,
+              "parent": 50,
+              "name": "pinky_04_leaf_r"
+            },
+            {
+              "node": 52,
+              "parent": 39,
+              "name": "ring_01_r"
+            },
+            {
+              "node": 53,
+              "parent": 52,
+              "name": "ring_02_r"
+            },
+            {
+              "node": 54,
+              "parent": 53,
+              "name": "ring_03_r"
+            },
+            {
+              "node": 55,
+              "parent": 54,
+              "name": "ring_04_leaf_r"
+            },
+            {
+              "node": 56,
+              "parent": 39,
+              "name": "thumb_01_r"
+            },
+            {
+              "node": 57,
+              "parent": 56,
+              "name": "thumb_02_r"
+            },
+            {
+              "node": 58,
+              "parent": 57,
+              "name": "thumb_03_r"
+            },
+            {
+              "node": 59,
+              "parent": 58,
+              "name": "thumb_04_leaf_r"
+            },
+            {
+              "node": 60,
+              "parent": 6,
+              "name": "thigh_l"
+            },
+            {
+              "node": 61,
+              "parent": 60,
+              "name": "calf_l"
+            },
+            {
+              "node": 62,
+              "parent": 61,
+              "name": "foot_l"
+            },
+            {
+              "node": 63,
+              "parent": 62,
+              "name": "ball_l"
+            },
+            {
+              "node": 64,
+              "parent": 63,
+              "name": "ball_leaf_l"
+            },
+            {
+              "node": 65,
+              "parent": 6,
+              "name": "thigh_r"
+            },
+            {
+              "node": 66,
+              "parent": 65,
+              "name": "calf_r"
+            },
+            {
+              "node": 67,
+              "parent": 66,
+              "name": "foot_r"
+            },
+            {
+              "node": 68,
+              "parent": 67,
+              "name": "ball_r"
+            },
+            {
+              "node": 69,
+              "parent": 68,
+              "name": "ball_leaf_r"
+            }
+          ],
+          "fingerprint": "s1-1579d52bd260efb8"
+        }
+      },
+      "rig": {
+        "humanoid": {
+          "head": 11,
+          "neck": 10,
+          "leftIndexDistal": 18,
+          "leftIndexIntermediate": 17,
+          "leftIndexProximal": 16,
+          "leftMiddleDistal": 22,
+          "leftMiddleIntermediate": 21,
+          "leftMiddleProximal": 20,
+          "leftLittleDistal": 26,
+          "leftLittleIntermediate": 25,
+          "leftLittleProximal": 24,
+          "leftRingDistal": 30,
+          "leftRingIntermediate": 29,
+          "leftRingProximal": 28,
+          "leftThumbDistal": 34,
+          "leftThumbProximal": 33,
+          "leftThumbMetacarpal": 32,
+          "leftHand": 15,
+          "leftLowerArm": 14,
+          "leftUpperArm": 13,
+          "leftShoulder": 12,
+          "rightIndexDistal": 42,
+          "rightIndexIntermediate": 41,
+          "rightIndexProximal": 40,
+          "rightMiddleDistal": 46,
+          "rightMiddleIntermediate": 45,
+          "rightMiddleProximal": 44,
+          "rightLittleDistal": 50,
+          "rightLittleIntermediate": 49,
+          "rightLittleProximal": 48,
+          "rightRingDistal": 54,
+          "rightRingIntermediate": 53,
+          "rightRingProximal": 52,
+          "rightThumbDistal": 58,
+          "rightThumbProximal": 57,
+          "rightThumbMetacarpal": 56,
+          "rightHand": 39,
+          "rightLowerArm": 38,
+          "rightUpperArm": 37,
+          "rightShoulder": 36,
+          "upperChest": 9,
+          "chest": 8,
+          "spine": 7,
+          "leftToes": 63,
+          "leftFoot": 62,
+          "leftLowerLeg": 61,
+          "leftUpperLeg": 60,
+          "rightToes": 68,
+          "rightFoot": 67,
+          "rightLowerLeg": 66,
+          "rightUpperLeg": 65,
+          "hips": 6
+        }
+      },
+      "materials": {
+        "body": {
+          "preset": "ubc_male_body@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        },
+        "eyes": {
+          "preset": "ubc_eyes@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        },
+        "brows": {
+          "preset": "ubc_male_brows@1",
+          "params": {},
+          "mapping": {
+            "kind": "uv"
+          }
+        }
+      },
+      "source": {
+        "site": "quaternius",
+        "asset": "Universal Base Characters",
+        "author": "Quaternius",
+        "license": "CC0",
+        "url": "https://quaternius.com/packs/universalbasecharacters.html"
+      }
+    }
+  ]
 }

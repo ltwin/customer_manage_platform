@@ -124,11 +124,12 @@ func TestBuiltinCatalog(t *testing.T) {
 			textured++
 		}
 	}
-	if textured != 24 {
+	// 24 listed, and the 5 the built-in bodies draw with (listed: false).
+	if textured != 29 {
 		t.Fatalf("%d textured materials", textured)
 	}
-	// Each file once, every one of the 72 a different image.
-	if files := BuiltinTextureFiles(); len(files) != 72 {
+	// Each file once, every one of the 84 a different image (the bodies' eyes share theirs).
+	if files := BuiltinTextureFiles(); len(files) != 84 {
 		t.Fatalf("%d files", len(files))
 	}
 	if err := checkMaterial(MaterialSlot{Preset: "wood_floor@1", Params: map[string]any{"color": "#eeeeee", "ior": 1.4}}); err != nil {
@@ -268,7 +269,7 @@ func TestBuiltinMaterialFacts(t *testing.T) {
 			t.Errorf("%q is not a built-in material", id)
 		}
 	}
-	if ids := BuiltinMaterialIDs(); len(ids) != 24 || ids[0] != "wood_floor@1" {
+	if ids := BuiltinMaterialIDs(); len(ids) != 29 || ids[0] != "wood_floor@1" {
 		t.Fatalf("%v", ids)
 	}
 }

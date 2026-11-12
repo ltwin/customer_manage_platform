@@ -774,7 +774,7 @@ services = model.get("services") or {}
 volumes = model.get("volumes") or {}
 if set(services) != {"app", "postgres"}:
     raise SystemExit(10)
-if set(volumes) != {"avatar_data", "planning_media_data", "scene_texture_data", "pgdata"}:
+if set(volumes) != {"avatar_data", "planning_media_data", "scene_texture_data", "scene_model_data", "pgdata"}:
     raise SystemExit(20)
 if not services["app"].get("image") or not services["postgres"].get("image"):
     raise SystemExit(30)
@@ -864,6 +864,8 @@ case "$object_storage_driver" in
       fail "$EXIT_CONFIG" "config-matrix" "PLANNING_MEDIA_LOCAL_ROOT" "use-fixed-compose-planning-media-mount"
     render_has_mount "app" "scene_texture_data" "/var/lib/crm/scene-textures" || \
       fail "$EXIT_CONFIG" "config-matrix" "SCENE_TEXTURE_LOCAL_ROOT" "use-fixed-compose-scene-texture-mount"
+    render_has_mount "app" "scene_model_data" "/var/lib/crm/scene-models" || \
+      fail "$EXIT_CONFIG" "config-matrix" "SCENE_MODEL_LOCAL_ROOT" "use-fixed-compose-scene-model-mount"
     ;;
   oss)
     render_env_value "app" "OSS_REGION"
@@ -961,5 +963,23 @@ check_scene_textures() {
   esac
 }
 check_scene_textures
+
+# 内置模型库（scene-pose-system）：对象存储里要有清单列出的全部 GLB，缺了编辑器里素体加载失败。
+# 只读检查；二进制部署由运维自己跑 creativectl models check。
+check_scene_models() {
+  if [[ "$MODE" == "binary" ]]; then
+    status "scene-models" "check" "run-creativectl-models-check-attention"
+    return
+  fi
+  local models_exit=0
+  (umask 077; compose_pinned run --rm --no-deps \
+    --entrypoint /usr/local/bin/creativectl app models check >/dev/null) 2>/dev/null || models_exit=$?
+  case "$models_exit" in
+    0) status "scene-models" "check" "ready" ;;
+    3) fail "$EXIT_CONFIG" "scene-models" "SCENE_MODELS" "run-creativectl-models-import" ;;
+    *) fail "$EXIT_CONFIG" "scene-models" "SCENE_MODELS" "fix-scene-model-storage" ;;
+  esac
+}
+check_scene_models
 
 complete_auth_readiness
