@@ -9694,24 +9694,9 @@ await check('glb-import: with the origin moved, a double click on 导入 imports
   await context.close()
 })
 
-// scene-skinned-humanoid AC-2: pixiv's VRM 1.0 twist sample (three-vrm examples, VRM Public License 1.0), downloaded
-// rather than committed and kept in the system's temporary directory; without the network the check says so and
-// passes over it.
-async function vrmSample() {
-  const dir = join(tmpdir(), 'creative-scene-e2e')
-  const file = join(dir, 'VRM1_Constraint_Twist_Sample.vrm')
-  if (existsSync(file)) return readFileSync(file)
-  try {
-    const r = await fetch('https://raw.githubusercontent.com/pixiv/three-vrm/dev/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm', { signal: AbortSignal.timeout(60_000) })
-    if (!r.ok) return null
-    const bytes = Buffer.from(await r.arrayBuffer())
-    await mkdir(dir, { recursive: true })
-    await writeFile(file, bytes)
-    return bytes
-  } catch {
-    return null
-  }
-}
+// scene-skinned-humanoid AC-2: pixiv's VRM 1.0 twist sample (three-vrm examples, VRM Public License 1.0), committed
+// with the other characters in fixtures/rig/characters.
+const vrmSample = () => readFileSync(new URL('./fixtures/rig/characters/VRM1_Constraint_Twist_Sample.vrm', import.meta.url))
 
 /** The share of a PNG's pixels (in the box, as fractions) with colour, as clay never has: their channels spread by more than 30. */
 async function colourful(page, png, box = [0, 0, 1, 1]) {
@@ -9731,11 +9716,7 @@ async function colourful(page, png, box = [0, 0, 1, 1]) {
 }
 
 await check('skinned AC-2: the VRM 1.0 sample imports with its mapping and constraints, its thumbnail textured; in the scene it stands on the ground, textured', async () => {
-  const vrm = await vrmSample()
-  if (!vrm) {
-    console.log('  skipped: the VRM 1.0 sample could not be downloaded')
-    return
-  }
+  const vrm = vrmSample()
   const server = new SceneServer()
   const { context, page, errors } = await open(server)
   const { x, y } = await viewportCenter(page)

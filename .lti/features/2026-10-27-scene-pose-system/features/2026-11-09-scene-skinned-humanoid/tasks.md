@@ -110,6 +110,7 @@
     - 单测加在 `scripts/creative-scene-import-rig.test.ts`（RobotExpressive 两种手动映射分别卡在腿和脚、按非人形导入；Xbot 错映射后改回；原点复制后的回写；约束成环时整组去掉）。
     - e2e（AC-2）移到 5.2 之后：贴地和贴图对不对，要等蒙皮网格能在场景里渲染才看得出。
     - 夹具许可：仓库里只提交节点树（名字、变换、关节表、VRM 扩展），不含网格、材质和贴图。RobotExpressive、两个 UBC 素体是 CC0；VRM1 扭转样例按 VRM Public License 1.0；Xbot、Michelle（Mixamo）与 VRM 0.x 女孩（VRoid Hub 条款）的条款对「只取骨架数据」没有明说，交 owner 判断。若不接受，改为测试里下载、下载失败时跳过。
+      - 2026-11-12 owner 确认：角色素材可以提交。五个原文件提交在 `scripts/fixtures/rig/characters/`，附来源与授权说明，供 owner 手动试导入。AC-2 的 e2e 改为读这里的 VRM 1.0 样例，不再下载，也不再因为没有网络而跳过。
 
 ## 5. 前端：渲染
 

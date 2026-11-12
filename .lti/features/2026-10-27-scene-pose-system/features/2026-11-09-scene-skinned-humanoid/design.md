@@ -400,4 +400,4 @@ worker（上传 model）：
 | 问题 / 假设 | 影响 | 解决方式 | 最晚解决时点 |
 |---|---|---|---|
 | ~~导出的线稿从哪里取几何~~ 已解决（5.2）：`render/lineArt.ts` 用 `overrideMaterial` 画屏幕空间的法线与深度，节点材质对蒙皮网格照样蒙皮，自动随姿态，不加挂载点 | — | — | — |
-| 夹具素材里哪些能提交进仓库（Xbot、Michelle 来自 three 示例；RobotExpressive 是 CC0；VRM 样例按 VRM Public License） | 单测的夹具位置 | 逐个核对许可；不能再分发的在测试里下载，下载失败时跳过并标注 | 导入任务开始 |
+| ~~夹具素材里哪些能提交进仓库~~ 已解决（2026-11-12 owner 确认）：都可以提交。节点树在 `scripts/fixtures/rig/skeletons.json`，五个原文件在 `scripts/fixtures/rig/characters/`，附来源与授权说明 | — | — | — |
