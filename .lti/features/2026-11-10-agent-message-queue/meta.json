@@ -1,12 +1,26 @@
 {
   "uid": "81e65423-dd89-46de-b95d-43333b1e7b97",
-  "revision": 11,
+  "revision": 12,
   "id": "agent-message-queue",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-11T07:09:10.244Z",
-  "updatedAt": "2026-11-12T03:26:04.441Z",
+  "updatedAt": "2026-11-12T03:26:38.057Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-12T03:26:37.959Z",
+    "summary": "已合入 develop（385a249d），合入树与分支完全相同；分支上已合过 develop 并跑过定向测试，未重跑。",
+    "method": "manual",
+    "limitations": "项目未配置 checks；合入树与已验证分支相同，未重复执行测试。",
+    "sourceCommit": "e8405050c5bc48ef27f95e56d2075b28509d8390",
+    "targetCommit": "385a249d08b2d02f7e9c1c87947fdd36a54a9aa1",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "f04261b09cba27bc62b675f754d79eea8ea3c7535525653698788dd6f249a9a7"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "concurrency",
