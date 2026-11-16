@@ -89,10 +89,9 @@ func TestLiveAssistantBuildsAndGenerates(t *testing.T) {
 	f.service.SetGenerator(generator)
 	f.queue()
 	conversation := f.conversation(f.alice, f.canvasID)
-	consent := contextConsent(t, f, conversation.ID)
+	_ = contextConsent(t, f, conversation.ID)
 	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
-		"conversation_id": conversation.ID, "model_key": model, "egress_consent_id": consent.ID,
-		"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{
+		"conversation_id": conversation.ID, "model_key": model, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{
 			{Type: "text", Text: "直接动手，不用再问我：新建一个文字节点写上「金色逆光、胶片颗粒」作为参考，再新建一个图片节点连上它，用 GPT Image 2 生成海边日出的逆光人像，16:9，高画质，4K，出 2 张。"}}},
 	}))
 	if err != nil {

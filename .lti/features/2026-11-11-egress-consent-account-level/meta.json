@@ -1,17 +1,253 @@
 {
   "uid": "4a5df2fa-e027-48cf-b4c3-88d59ad89180",
-  "revision": 1,
+  "revision": 9,
   "id": "egress-consent-account-level",
   "kind": "feature",
   "assurance": "governed",
-  "state": "draft",
+  "state": "closed",
   "createdAt": "2026-11-11T08:25:26.484Z",
-  "updatedAt": "2026-11-11T08:25:26.556Z",
-  "approvals": {},
-  "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "updatedAt": "2026-11-14T09:35:42.573Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "contract-break",
+      "data-migration",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-13T15:58:50.543Z",
+      "contentHash": "960bfc3623015ed5"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-13T16:07:40.067Z",
+      "contentHash": "92b887e390a2c7a0",
+      "deltaHash": "a13b22888d929abf"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-13T12:58:34.135Z",
+      "contentHash": "d04b97e1814330d3",
+      "role": "proposal"
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-13T15:58:50.543Z",
+      "contentHash": "4ea4ee98d46a86dc",
+      "deltaHash": "a13b22888d929abf",
+      "role": "design"
+    }
+  ],
+  "revisions": [
+    {
+      "at": "2026-11-13T15:58:43.236Z",
+      "summary": "验收标准「模型不支持看图」改为维持现状：建运行被拒并提示换能看图的模型（原句起草时写错，owner 2026-11-13 同意）",
+      "contentHash": "960bfc3623015ed5",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "528a05616afa806826fbd14a516e2b3ecabe73b1",
+    "at": "2026-11-13T16:07:56.469Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "af1be627276fea0296b1a03c35d34149ddd9cc74929b70e534c2c50f1a0c7e5e"
+    },
+    "preExisting": [
+      ".lti/features/2026-11-11-agent-character-cards/contracts.md",
+      ".lti/features/2026-11-11-agent-character-cards/design.md",
+      ".lti/features/2026-11-11-agent-character-cards/meta.json",
+      ".lti/features/2026-11-11-agent-character-cards/proposal.md",
+      ".lti/features/2026-11-11-agent-character-cards/specs.md",
+      ".lti/features/2026-11-11-agent-tool-background/contracts.md",
+      ".lti/features/2026-11-11-agent-tool-background/design.md",
+      ".lti/features/2026-11-11-agent-tool-background/meta.json",
+      ".lti/features/2026-11-11-agent-tool-background/proposal.md",
+      ".lti/features/2026-11-11-agent-tool-background/specs.md",
+      ".lti/features/2026-11-11-agent-tool-background/tasks.md",
+      ".lti/features/2026-11-11-egress-consent-account-level/contracts.md",
+      ".lti/features/2026-11-11-egress-consent-account-level/design.md",
+      ".lti/features/2026-11-11-egress-consent-account-level/meta.json",
+      ".lti/features/2026-11-11-egress-consent-account-level/proposal.md",
+      ".lti/features/2026-11-11-egress-consent-account-level/specs.md",
+      ".lti/features/2026-11-11-egress-consent-account-level/tasks.md",
+      ".lti/features/2026-11-11-lens-style-presets/discovery/brainstorm.md",
+      ".lti/features/2026-11-11-lens-style-presets/meta.json",
+      ".lti/snapshots/af1be627276fea0296b1a03c35d34149ddd9cc74929b70e534c2c50f1a0c7e5e.json",
+      "docs/research/tripo3d-modeling.md",
+      "pelican.html"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-11-14T07:37:18.188Z",
+      "assessment": {
+        "method": "checks",
+        "coverage": [
+          {
+            "criterionId": "AC-ab45f5b0e1f3",
+            "status": "verified",
+            "evidence": "frontend/scripts/agent-send.e2e.mjs 首次发送弹窗与同意载荷；creative-agent.test.ts 说明版本与计费条款；backend/internal/creativeagent/account_consent_test.go TestAccountConsentLifecycle 记录版本/时间/素材库"
+          },
+          {
+            "criterionId": "AC-5b12707bf70e",
+            "status": "verified",
+            "evidence": "agent-send.e2e.mjs 取消场景：无同意请求、无 /runs、草稿保留"
+          },
+          {
+            "criterionId": "AC-f809ea408fe5",
+            "status": "verified",
+            "evidence": "agent-send.e2e.mjs 已同意状态从 GET /egress-consent 读取直接发出；不再依赖 localStorage（egressConsent.ts 按账号缓存服务端状态）"
+          },
+          {
+            "criterionId": "AC-a28892661965",
+            "status": "verified",
+            "evidence": "frontend/scripts/creative-home.e2e.mjs 已同意不弹窗、未同意弹同一份说明（22/22 场景通过）"
+          },
+          {
+            "criterionId": "AC-addbae54c3c0",
+            "status": "verified",
+            "evidence": "store/creative_egress_account_consent_migration_test.go 不迁移旧授权；backend/internal/creativeagent/account_consent_test.go TestTheGateFollowsTheDecisionTable 无状态行→creative_egress_required"
+          },
+          {
+            "criterionId": "AC-a51e67459eac",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestNoRunStartsWithoutAConsentInForce；httpapi/creative_egress_consent_test.go TestTheAccountConsentGatesARunOverHTTP（403、无运行、无预算预留）"
+          },
+          {
+            "criterionId": "AC-064a0f637fcc",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/account_consent_test.go TestAccountConsentStaysWithinItsAccount；httpapi 冒烟跨账号"
+          },
+          {
+            "criterionId": "AC-08d42f358e54",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestTheReadScopeWithoutTheApprovalList"
+          },
+          {
+            "criterionId": "AC-7a097dfbfcc3",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestTheReadScopeWithoutTheApprovalList 与既有 inputs/steer 引用校验测试（TestSteerReferencesAreCheckedForAccountAndRevocation）"
+          },
+          {
+            "criterionId": "AC-f423d52f6870",
+            "status": "verified",
+            "evidence": "既有能力校验测试保持通过（creativeagent 全包 go test 通过）；readReference 能力先于授权判断未改"
+          },
+          {
+            "criterionId": "AC-9d6e7c588d15",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestTheLibraryChoice、TestClosingTheLibraryWithholdsWhatItsToolsReturned"
+          },
+          {
+            "criterionId": "AC-c3b398b8a1bd",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestTheLibraryChoice；agent-send.e2e.mjs 面板开关"
+          },
+          {
+            "criterionId": "AC-d633e42c4231",
+            "status": "verified",
+            "evidence": "既有 RequireUsable 校验路径未变，相关测试通过（creativeagent 全包）"
+          },
+          {
+            "criterionId": "AC-a09d5414399f",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestANewNoticeStopsTheDispatch；account_consent_test.go TestAccountConsentLifecycle；agent-send.e2e.mjs 撤回后重新弹窗含「无法召回」"
+          },
+          {
+            "criterionId": "AC-63720b4f0258",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/egress_scope_test.go TestANewNoticeStopsTheDispatch；runs_test.go TestAWithdrawnAuthorisationStopsTheDispatch"
+          },
+          {
+            "criterionId": "AC-7d4dcdbd44bd",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/account_consent_test.go TestTheGateSharesTheStateRowAndBlocksWriters；runs_test.go 提交顺序测试"
+          },
+          {
+            "criterionId": "AC-f1f4195ead5d",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/account_consent_test.go TestTheSameConsentOperationReplaysItsReceipt；前端 egressConsent.ts 结果未知时复用原信封"
+          },
+          {
+            "criterionId": "AC-764198b64144",
+            "status": "verified",
+            "evidence": "既有 steer/supplement 测试（TestSteerReferencesAreCheckedForAccountAndRevocation、TestSupplementCarriesSegments）通过"
+          },
+          {
+            "criterionId": "AC-a24d58c11df8",
+            "status": "verified",
+            "evidence": "backend/internal/creativeagent/runs_test.go 终态重试测试；agent-stop/agent-history e2e 通过"
+          },
+          {
+            "criterionId": "AC-76c8ac9bcea4",
+            "status": "verified",
+            "evidence": "store 迁移测试保留旧记录；agent-history.e2e.mjs 通过"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contract-delta",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "审计 10 项修复与 creative_egress_library_closed 结束原因已完成；check-go(creativeagent、httpapi，含 golangci-lint)通过，0083 迁移测试通过，check-frontend 仅既有 AC-12 失败；相关 e2e 已跑。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f47ac3f889ba608c1aa242102d1a7c774d70b6ed792eb4e76474df068dcfaa35"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-14T09:35:30.803Z",
+      "assessment": {
+        "method": "checks",
+        "followUp": "egress-library-read-asset-withhold：素材库关闭后工具读入的仅素材库可读内容换成占位，待 owner 批准 proposal 后实施",
+        "followUpChange": {
+          "uid": "0c5e1e5d-a722-49ce-ab16-e07cd4e7ba9b",
+          "id": "egress-library-read-asset-withhold"
+        }
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contract-delta",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "Owner 接受：审计 10 项修复与 creative_egress_library_closed 结束原因通过；read_asset 读入的素材库内容在素材库关闭后仍按会话引用发出，作为已知边界接受，另开 egress-library-read-asset-withhold 处理。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f47ac3f889ba608c1aa242102d1a7c774d70b6ed792eb4e76474df068dcfaa35"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-14T09:35:42.355Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

@@ -120,24 +120,16 @@ func paintBox(t *testing.T, h *runtimeHandler, doc, tag, image string) (string, 
 
 // An image goes into a slot only when the run may read it. One the canvas
 // and the library no longer have is still usable through a readable
-// material asset holding it; a revocation of the image or of the material
-// wins over that holder. An image the scene already shows needs no asking.
+// material asset holding it. An image the scene already shows needs no
+// asking.
 func TestTexturesUseImagesTheRunMayRead(t *testing.T) {
 	f, c, _, doc := visualScene(t, true)
-	gone, held, revokedImage, viaRevoked, spare := f.unlistedImage(), f.unlistedImage(), f.unlistedImage(), f.unlistedImage(), f.unlistedImage()
-	stone, _ := f.materialAsset("石材", held, revokedImage, spare)
-	_, revokedMaterial := f.materialAsset("旧木纹", viaRevoked)
-	withdrawn := contextConsent(t, f, c.ID, revokedImage, revokedMaterial)
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": withdrawn.ID, "expected_revision": withdrawn.Revision})); err != nil {
-		t.Fatal(err)
-	}
+	gone, held, spare := f.unlistedImage(), f.unlistedImage(), f.unlistedImage()
+	stone, _ := f.materialAsset("石材", held, spare)
 	h := texturedHandler(t, f, c.ID)
 
-	for tag, image := range map[string]string{"gone": gone, "revokedimage": revokedImage, "revokedmaterial": viaRevoked} {
-		out, err := paintBox(t, h, doc, tag, image)
-		if err == nil || !strings.Contains(err.Error(), image) || !strings.Contains(err.Error(), "读不到") {
-			t.Fatalf("%s: an unreadable image was written or not explained: %s %v", tag, out, err)
-		}
+	if out, err := paintBox(t, h, doc, "gone", gone); err == nil || !strings.Contains(err.Error(), gone) || !strings.Contains(err.Error(), "读不到") {
+		t.Fatalf("an unreadable image was written or not explained: %s %v", out, err)
 	}
 	if out, err := paintBox(t, h, doc, "held", held); err != nil {
 		t.Fatalf("an image the material asset holds was refused: %s %v", out, err)

@@ -32,32 +32,26 @@ func referenceLabel(id string) string { return "<<<" + id + ">>>" }
 
 func consentHas(c Consent, class string) bool { return slices.Contains(c.Scope.DataClasses, class) }
 
-func approvedRevision(ctx context.Context, tx store.TxAccountScope, consentID, id string) (bool, error) {
-	return tx.Exists(ctx, "creative_egress_consent_contents", "consent_id=$2 AND content_revision_id=$3", consentID, id)
+// readableInTx is readableRevisionInTx with the library branch on.
+func readableInTx(ctx context.Context, tx store.TxAccountScope, runID string, consent Consent, id string) (bool, error) {
+	return readableRevisionInTx(ctx, tx, runID, consent, id, true)
 }
 
-// readableInTx combines explicit input, current canvas, conversation and library
-// access. Revoked references are denied before any branch can grant access.
-func readableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string) (bool, error) {
-	return readableRevisionInTx(ctx, tx, runID, consentID, id, true)
-}
-
-func readableRevisionInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (bool, error) {
-	readable, _, err := directlyReadableInTx(ctx, tx, runID, consentID, id, library)
-	return readable, err
+func readableRevisionInTx(ctx context.Context, tx store.TxAccountScope, runID string, consent Consent, id string, library bool) (bool, error) {
+	return directlyReadableInTx(ctx, tx, runID, consent, id, library)
 }
 
 // textureReadableInTx is whether the run may put an image in a scene slot
 // (C5c1 data: 材质资产「助手可读」). Beyond what it may read, an image only a
 // material asset or a model's library copy still holds counts when the
-// holder is readable itself, its own revocation included. One level: a
-// holder's holders do not count. Only edit_scene asks this: the holder lends
-// its textures to slots, never their pixels, so read_asset, canvas placement
-// and the conversation's references keep asking readableRevisionInTx.
-func textureReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string) (bool, error) {
+// holder is readable itself. One level: a holder's holders do not count.
+// Only edit_scene asks this: the holder lends its textures to slots, never
+// their pixels, so read_asset, canvas placement and the conversation's
+// references keep asking readableRevisionInTx.
+func textureReadableInTx(ctx context.Context, tx store.TxAccountScope, runID string, consent Consent, id string) (bool, error) {
 	const library = true
-	readable, revoked, err := directlyReadableInTx(ctx, tx, runID, consentID, id, library)
-	if err != nil || readable || revoked {
+	readable, err := directlyReadableInTx(ctx, tx, runID, consent, id, library)
+	if err != nil || readable {
 		return readable, err
 	}
 	var canvasID, conversationID string
@@ -66,46 +60,47 @@ func textureReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, co
 	}
 	// directlyReadableInTx's branches over every holder at once: an image
 	// can be held by many revisions, and edit_scene asks for up to 64 images.
-	return tx.Exists(ctx, "creative_content_revision_refs", heldReadable, id, conversationID, consentID, canvasID, runID)
+	return tx.Exists(ctx, "creative_content_revision_refs", heldReadable, id, conversationID, canvasID, runID, libraryOpen(consent, library))
 }
 
-// heldReadable is directlyReadableInTx for the holders of $2: not revoked in
-// conversation $3, then approved by consent $4, on canvas $5, referenced in
-// the conversation before run $6 or by it, or in the library under $4.
+// heldReadable is directlyReadableInTx for the holders of $2: on canvas $4,
+// referenced in conversation $3 before run $5 or by it, or in the library
+// when $6 says the library is open.
 const heldReadable = `content_revision_id=$2 AND role='texture'
-AND NOT EXISTS (SELECT 1 FROM creative_egress_consent_contents c WHERE c.account_id=$1 AND c.content_revision_id=creative_content_revision_refs.holder_revision_id
-	AND c.consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL))
-AND (EXISTS (SELECT 1 FROM creative_egress_consent_contents c WHERE c.account_id=$1 AND c.consent_id=$4 AND c.content_revision_id=creative_content_revision_refs.holder_revision_id)
-	OR EXISTS (SELECT 1 FROM creative_nodes n WHERE n.account_id=$1 AND n.canvas_id=$5 AND n.content_revision_id=creative_content_revision_refs.holder_revision_id)
+AND (EXISTS (SELECT 1 FROM creative_nodes n WHERE n.account_id=$1 AND n.canvas_id=$4 AND n.content_revision_id=creative_content_revision_refs.holder_revision_id)
 	OR EXISTS (SELECT 1 FROM creative_message_content_refs m WHERE m.account_id=$1 AND m.content_revision_id=creative_content_revision_refs.holder_revision_id
 		AND m.message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete'
-			AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$6)) OR run_id=$6)))
-	OR (EXISTS (SELECT 1 FROM creative_assets a WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revision_refs.holder_revision_id AND a.deleted_at IS NULL)
-		AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$4 AND scope->>'mode'='account_library' AND revoked_at IS NULL)))`
+			AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$5)) OR run_id=$5)))
+	OR ($6::boolean AND EXISTS (SELECT 1 FROM creative_assets a WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revision_refs.holder_revision_id AND a.deleted_at IS NULL)))`
 
-// directlyReadableInTx is the run's own access to a revision; revoked says a
-// revocation denied it, which no holder can grant back.
-func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (readable, revoked bool, err error) {
+// libraryOpen is whether a read may reach the personal library: the caller
+// asks for it and the account's consent in force allows library search.
+func libraryOpen(consent Consent, library bool) bool {
+	return library && consent.Scope.Mode == ScopeAccountLibrary
+}
+
+// directlyReadableInTx is the run's own access to a revision: on the current
+// canvas, referenced by a complete message of the conversation before this
+// run's trigger or by this run itself, or in the library when the consent in
+// force allows it. Ownership, display rights and data classes are checked
+// separately by whoever sends the content.
+//
+// There is no per-revision approval list any more. The list the client used
+// to send was exactly the trigger message's references, and those carry this
+// run's id, so the conversation branch already covers them.
+func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID string, consent Consent, id string, library bool) (bool, error) {
 	var canvasID, conversationID string
 	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,conversation_id", "id=$2", runID).Scan(&canvasID, &conversationID); err != nil {
-		return false, false, err
-	}
-	revoked, err = tx.Exists(ctx, "creative_egress_consent_contents", "content_revision_id=$2 AND consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL)", id, conversationID)
-	if err != nil || revoked {
-		return false, revoked, err
-	}
-	if approved, err := approvedRevision(ctx, tx, consentID, id); approved || err != nil {
-		return approved, false, err
+		return false, err
 	}
 	if present, err := tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND content_revision_id=$3", canvasID, id); present || err != nil {
-		return present, false, err
+		return present, err
 	}
 	present, err := tx.Exists(ctx, "creative_message_content_refs", "content_revision_id=$2 AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete' AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$4)) OR run_id=$4))", id, conversationID, runID)
-	if err != nil || present || !library {
-		return present, false, err
+	if err != nil || present || !libraryOpen(consent, library) {
+		return present, err
 	}
-	readable, err = tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$3 AND scope->>'mode'='account_library' AND revoked_at IS NULL)", id, consentID)
-	return readable, false, err
+	return tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL", id)
 }
 
 // resolveReference builds serializable framework input. Executable image
@@ -113,7 +108,7 @@ func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID, c
 // The flag reports whether the revision's content is attached, which is what
 // the dispatch check has to keep re-examining; a bare label carries nothing.
 func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope, runID, id string, consent Consent, imageCapable bool) (*schema.Message, bool, error) {
-	approved, err := readableInTx(ctx, tx, runID, consent.ID, id)
+	approved, err := readableInTx(ctx, tx, runID, consent, id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -298,20 +293,24 @@ func (s *Service) withThumbnail(ref reference, id string, consent Consent, image
 
 func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Message, messages []llmgateway.Message) ([]llmgateway.Message, error) {
 	toolNames := map[string]string{}
+	toolArgs := map[string]string{}
 	for _, message := range source {
 		for _, call := range message.ToolCalls {
 			toolNames[call.ID] = call.Function.Name
+			toolArgs[call.ID] = call.Function.Arguments
 		}
 	}
 	characters := map[int]characterAttachments{}
 	imageAuthorized := false
+	library := false
 	readable := map[string]bool{}
 	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		c, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+		c, err := effectiveConsentInTx(ctx, tx, h.held.ConsentID)
 		if err != nil {
 			return err
 		}
 		imageAuthorized = consentHas(c, "image_preview")
+		library = libraryOpen(c, true)
 		for i, message := range source {
 			if id := characterAttachmentID(message); id != "" &&
 				(message.Role != schema.Tool || toolNames[message.ToolCallID] == readAssetTool) {
@@ -329,7 +328,7 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 				readable[id] = true // the platform's own, no grant involved
 				continue
 			}
-			if readable[id], err = readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id); err != nil {
+			if readable[id], err = readableInTx(ctx, tx, h.held.RunID, c, id); err != nil {
 				return err
 			}
 		}
@@ -337,6 +336,26 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 	}); err != nil {
 		return nil, err
 	}
+	// What library tools returned leaves with every later request only while
+	// library search stays open, in this run and from the conversation's
+	// history alike. Its references are rechecked at dispatch as before.
+	carried := false
+	for i, message := range source {
+		name := message.ToolName
+		if n := toolNames[message.ToolCallID]; n != "" {
+			name = n
+		}
+		if message.Role != schema.Tool || !libraryResultTool(name, toolArgs[message.ToolCallID]) {
+			continue
+		}
+		if library {
+			carried = true
+			continue
+		}
+		message.Content = libraryWithheld
+		messages[i].Blocks = []llmgateway.Block{{Kind: llmgateway.BlockText, Text: libraryWithheld}}
+	}
+	h.setLibraryBound(carried)
 	seen := map[string]bool{}
 	var total int64
 	var delayed []llmgateway.Message
@@ -570,7 +589,7 @@ func (h *runtimeHandler) readCanvas(ctx context.Context, raw string) (string, er
 	}
 	var canvasID string
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		consent, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+		consent, err := effectiveConsentInTx(ctx, tx, h.held.ConsentID)
 		if err != nil {
 			return err
 		}
@@ -773,6 +792,14 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 	if args.Before == 0 || args.Before > trigger {
 		args.Before = trigger
 	}
+	var library bool
+	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		c, err := readScopeInTx(ctx, tx)
+		library = libraryOpen(c, true)
+		return err
+	}); err != nil {
+		return "", err
+	}
 	rows, err := h.scope.QueryPage(ctx, "creative_agent_messages", "ordinal,role,body", "conversation_id=$2 AND ordinal<$3 AND status='complete'", []store.OrderBy{{Column: "ordinal", Desc: true}}, args.Limit, 0, h.held.ConversationID, args.Before)
 	if err != nil {
 		return "", err
@@ -804,6 +831,9 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 		}
 		if contentReadTool(b.ToolName) {
 			text = "曾读取内容；正文请用 read_asset 重新读取"
+		}
+		if role == "tool" && !library && libraryResultTool(b.ToolName, "") {
+			text = libraryWithheld
 		}
 		items = append(items, map[string]any{"ordinal": fmt.Sprint(ordinal), "role": role, "text": text, "references": refs, "tool_call_id": b.ToolCallID})
 		next = ordinal
@@ -913,10 +943,18 @@ func contextToolInfo(name string) *schema.ToolInfo {
 }
 
 func (h *runtimeHandler) persistToolMessage(ctx context.Context, tx store.TxAccountScope, stepID, callID, name, result, original string) (Message, error) {
+	var scope *Consent
 	message := newMessage{Role: "tool", Status: "complete", RunID: h.held.RunID, SourceStepID: stepID, Body: Body{Blocks: []Block{{Type: "text", Text: result}}, ToolCallID: callID, ToolName: name}}
 	for _, id := range toolContentRevisions(name, original) {
 		if contentReadTool(name) {
-			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+			if scope == nil {
+				c, err := readScopeInTx(ctx, tx)
+				if err != nil {
+					return Message{}, err
+				}
+				scope = &c
+			}
+			readable, err := readableInTx(ctx, tx, h.held.RunID, *scope, id)
 			if err != nil {
 				return Message{}, err
 			}

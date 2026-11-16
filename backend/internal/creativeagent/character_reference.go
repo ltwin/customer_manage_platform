@@ -143,7 +143,7 @@ type characterAttachmentView struct {
 
 func (h *runtimeHandler) characterAttachmentsInTx(ctx context.Context, tx store.TxAccountScope, id string, consent Consent) (characterAttachments, error) {
 	out := characterAttachments{id: id}
-	readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+	readable, err := readableInTx(ctx, tx, h.held.RunID, consent, id)
 	if err != nil {
 		return out, err
 	}
@@ -163,14 +163,6 @@ func (h *runtimeHandler) characterAttachmentsInTx(ctx context.Context, tx store.
 	for i, view := range r.Payload.Character.Views {
 		if reason != "" {
 			out.omitted = append(out.omitted, characterImageOmission{view.ContentRevisionID, reason})
-			continue
-		}
-		_, revoked, err := directlyReadableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, view.ContentRevisionID, false)
-		if err != nil {
-			return out, err
-		}
-		if revoked {
-			out.omitted = append(out.omitted, characterImageOmission{view.ContentRevisionID, "image_preview_not_allowed"})
 			continue
 		}
 		out.views = append(out.views, characterAttachmentView{view.ContentRevisionID, i + 1})

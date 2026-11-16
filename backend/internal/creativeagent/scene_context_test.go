@@ -19,18 +19,9 @@ import (
 func sceneObjectID(tag string) string { return "sobj_" + (tag + strings.Repeat("0", 21))[:21] }
 
 // sceneConsent lets the canvas leave the account, as the panel's grant does.
-func (f *fixture) sceneConsent(conversationID string) Consent {
+func (f *fixture) sceneConsent(_ string) Consent {
 	f.t.Helper()
-	receipt, err := f.service.GrantConsent(f.t.Context(), f.alice, command(f.t, map[string]any{"conversation_id": conversationID,
-		"purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": []string{"text", "canvas_metadata"}}))
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	var c Consent
-	if err := json.Unmarshal(receipt.Outcome.Response, &c); err != nil {
-		f.t.Fatal(err)
-	}
-	return c
+	return f.accountConsent(f.alice, false)
 }
 
 // writeScene sends one scene command as actor, expecting the current
@@ -73,10 +64,9 @@ func (f *fixture) movePillar(actor creativedocument.Actor, doc, id string, x flo
 func (f *fixture) startSceneRun(conversationID, consentID string, scene any) (Run, error) {
 	f.t.Helper()
 	payload := map[string]any{
-		"conversation_id":   conversationID,
-		"instruction":       map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: "把这根柱子加高"}}},
-		"model_key":         testModelKey,
-		"egress_consent_id": consentID,
+		"conversation_id": conversationID,
+		"instruction":     map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: "把这根柱子加高"}}},
+		"model_key":       testModelKey,
 	}
 	if scene != nil {
 		payload["scene_context"] = scene
@@ -284,23 +274,6 @@ func TestARunFromTheCanvasIsToldNothingAboutScenes(t *testing.T) {
 	}
 	if sent := f.vendor.sentText(0); strings.Contains(sent, "创作者正在编辑场景") || strings.Contains(sent, "被改过") {
 		t.Fatalf("canvas run told about scenes:\n%s", sent)
-	}
-}
-
-// The scenes are canvas metadata, told only under a consent that lets the
-// canvas leave the account.
-func TestSceneInputsNeedCanvasMetadataConsent(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	consent := f.consent(f.alice, c.ID)
-	doc := f.sceneDocument()
-	run, err := f.startSceneRun(c.ID, consent.ID, map[string]any{"document_id": doc, "selected_object_ids": []string{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := f.sceneInputs(run.ID); len(got) != 0 {
-		t.Fatalf("scene inputs without canvas consent %v", got)
 	}
 }
 

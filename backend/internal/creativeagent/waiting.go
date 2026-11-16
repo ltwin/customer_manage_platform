@@ -201,11 +201,8 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if !now.Before(c.DeadlineAt) {
 			return creativeops.Outcome{}, creativeops.ErrExpired
 		}
-		consent, err := readConsentForUpdate(ctx, tx, c.EgressConsentID)
+		consent, err := effectiveConsentInTx(ctx, tx, c.EgressConsentID)
 		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err = coversRun(consent, c.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if err = acquireSlotInTx(ctx, tx, c.ConversationID, c.ID, c.token, now); err != nil {
@@ -450,7 +447,7 @@ func (h *runtimeHandler) unseenInputs(ctx context.Context, seen map[string]bool)
 			switch {
 			case in.id != nil:
 				if consent == nil {
-					c, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+					c, err := effectiveConsentInTx(ctx, tx, h.held.ConsentID)
 					if err != nil {
 						return err
 					}

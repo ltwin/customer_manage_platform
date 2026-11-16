@@ -27,6 +27,7 @@ import * as api from './api.ts'
 import { ApiError } from '../../api/transport.ts'
 import {
   agentPendingKey,
+  agentReloadDraftKey,
   agentStep,
   conversationSlot,
   conversationStep,
@@ -36,6 +37,7 @@ import {
   pendingAgentChain,
   performAgentChain,
   recalledModel,
+  reloadDraft,
   replacePendingChain,
   stepBody,
   untitledConversation as untitled,
@@ -74,7 +76,8 @@ import {
 } from './agentReferences.ts'
 import LibraryPicker from '../assets/LibraryPicker.tsx'
 import { useThumbnails } from './MediaView.tsx'
-import { useEgressNotice } from './EgressNotice.tsx'
+import { EgressSettings, useEgressConsent } from './EgressNotice.tsx'
+import { forgetConsent, isConsentRefusal } from './egressConsent.ts'
 import { agentModelOptions, defaultAgentModel } from './agentOptions.tsx'
 import { SkillPanel, SkillTag, SlashMenu } from './AgentSkills.tsx'
 import { useSlashMenu } from './useSlashMenu.ts'
@@ -136,9 +139,8 @@ type Catalog = components['schemas']['CreativeAgentCatalog']
 type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Conversation = components['schemas']['CreativeAgentConversation']
 type MessagePage = components['schemas']['CreativeAgentMessagePage']
-type Consent = components['schemas']['CreativeEgressConsent']
 type Message = MessagePage['items'][number]
-type Reply = AgentRun | Conversation | Consent
+type Reply = AgentRun | Conversation
 // One empty list, so an empty thread is the same value from render to render.
 const noMessages: Message[] = []
 // 一次发送的结局；skipped 是链没落盘、请求没有发出。
@@ -260,7 +262,9 @@ function AgentConversation({
   onClose: () => void
 }) {
   const storageKey = agentPendingKey(account, canvasID)
-  const notice = useEgressNotice(account)
+  const reloadKey = agentReloadDraftKey(account, canvasID)
+  const notice = useEgressConsent(account)
+  const [egressOpen, setEgressOpen] = useState(false)
   const editor = useRef<PromptEditorHandle>(null)
   const loaded = useRef(false)
   const recalled = useRef('')
@@ -387,7 +391,6 @@ function AgentConversation({
   const active = live.find(isActiveRun)
   const waiting = live.find((run) => run.state === 'waiting_input')
   const latest = active ?? waiting
-  const approvedIDs = referenced.map((item) => item.id)
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
   // 插队和补充用的是这次运行的模型，不是输入框里选的。
   const runImageInput = !!catalog?.models.find(
@@ -411,7 +414,6 @@ function AgentConversation({
     hasImage &&
     !(waiting ? runImageInput : chosenModel?.capability.image_input)
   const referenceLimit =
-    approvedIDs.length > 200 ||
     referenced.length > (catalog?.limits.attachments ?? 10) ||
     referenced.filter((item) => item.kind === 'image').length >
       (catalog?.limits.image_preview_count ?? 8)
@@ -436,11 +438,15 @@ function AgentConversation({
       pendingRef.current = saved
       setPending(saved)
       restoreDraft(saved?.draft)
+      // 为看新版说明刷新之前存下的草稿：只找回一次。
+      const kept = reloadDraft(sessionStorage.getItem(reloadKey))
+      sessionStorage.removeItem(reloadKey)
+      if (!saved && kept) restoreDraft(kept)
     } catch (e) {
       setStorageBroken(true)
       setError(e instanceof Error ? e.message : '待确认操作暂不可读')
     }
-  }, [storageKey])
+  }, [storageKey, reloadKey])
   const queueKey = conversation ? agentQueueKey(account, conversation) : ''
   const queue = queueState.key === queueKey ? queueState.queue : emptyQueue
   // 待确认链拿着的那条由链显示（气泡、重新发送）；它仍留在队列里，被拒时放回队首。
@@ -629,7 +635,42 @@ function AgentConversation({
   // sending what the creator is still writing.
   // 来自队列的一条（draft.queueItem）不碰输入框：送达才移出队列，结果未知时留在
   // 队列里显示发送中，被拒由调用方放回队首。
+  // 说明更新、要刷新页面时先存下草稿，刷新后找回（队列里的那条本来就存着）。
+  function keepForReload(value?: AgentDraft) {
+    if (!value || value.queueItem) return
+    try {
+      sessionStorage.setItem(reloadKey, JSON.stringify(value))
+    } catch {
+      // 存不下只是刷新后找不回，草稿此刻仍在输入框里。
+    }
+  }
+  // 新消息、插队、补充、重试、队列发出和重新发送都走这里。同意在别处撤回或说明
+  // 更新时，清掉本机记的状态，重新弹出说明；同意后用同一份草稿再发一次。被拒
+  // 的那次什么都没留下，再发换新的操作号。
   async function perform(
+    command: PendingAgentChain,
+    keepDraft = false,
+  ): Promise<SendOutcome> {
+    const outcome = await performOnce(command, keepDraft)
+    if (
+      outcome.kind !== 'rejected' ||
+      !isConsentRefusal(outcome.error) ||
+      !mounted.current
+    )
+      return outcome
+    const { chain } = outcome
+    if (!(await notice.confirm(() => keepForReload(chain.draft))))
+      return outcome
+    if (!mounted.current) return outcome
+    return performOnce(
+      {
+        ...chain,
+        steps: chain.steps.map((step) => agentStep(step.path, step.payload)),
+      },
+      keepDraft,
+    )
+  }
+  async function performOnce(
     command: PendingAgentChain,
     keepDraft = false,
   ): Promise<SendOutcome> {
@@ -678,6 +719,11 @@ function AgentConversation({
           followLatest()
           if (stopOnStart.current || command.stopped) stop(reply)
         }
+      } else if (outcome.kind === 'rejected' && isConsentRefusal(outcome.error)) {
+        // 同意在别处撤回或说明更新了：本机记的状态作废，草稿照常放回；perform
+        // 接着重新弹出说明，取消时留下这句提示。
+        forgetConsent(account)
+        setError('发送前说明需要重新确认，这条消息没有发出')
       } else if (
         !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped))
       ) {
@@ -781,15 +827,13 @@ function AgentConversation({
     const chain: PendingAgentChain = {
       steps: messageSteps(conversation, {
         model,
-        imageInput: chosenModel.capability.image_input,
-        revisionIDs: [],
         segments: [commandSegment(value)],
       }),
       ...(keepDraft
         ? {}
         : { draft: { conversation, model, skill, text: draft, materials: [] } }),
     }
-    void notice.confirm().then((ok) => {
+    void notice.confirm(() => keepForReload(chain.draft)).then((ok) => {
       if (!ok) return
       showOutgoing(outgoingParts([commandSegment(value)], titleOf), !keepDraft)
       void perform(chain, keepDraft)
@@ -866,14 +910,13 @@ function AgentConversation({
     )
     const send: QueuedMessage['send'] = {
       model,
-      imageInput: chosenModel.capability.image_input,
-      revisionIDs: approvedIDs,
       segments,
       scene: editing,
     }
     const running = !!active
-    // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框。
-    void notice.confirm().then((ok) => {
+    // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框，
+    // 要刷新看新版说明时先存下。
+    void notice.confirm(() => keepForReload(saved)).then((ok) => {
       if (!ok) return
       if (running) {
         // 运行中写下的一条先排队：输入框同帧清空，本轮成功结束后自动发出。
@@ -1071,7 +1114,6 @@ function AgentConversation({
                 void perform(
                   single(`/agent-runs/${runID}/retry`, {
                     step_ids: [stepID],
-                    egress_consent_id: run.egress_consent_id,
                   }),
                 )
             },
@@ -1270,6 +1312,7 @@ function AgentConversation({
             ]
           : []),
         { value: 'archived', label: '查看已归档' },
+        { value: 'egress', label: '外发说明' },
       ]
   function onManage(value: string) {
     if (value === 'rename' && current) setRenaming(current.title)
@@ -1281,7 +1324,7 @@ function AgentConversation({
     } else if (value === 'leave') {
       setArchivedView(false)
       show(conversations[0]?.id ?? '')
-    }
+    } else if (value === 'egress') setEgressOpen(true)
   }
   function applyStarter(starter: (typeof starters)[number]) {
     if (!starter.text) {
@@ -1818,6 +1861,9 @@ function AgentConversation({
             setInserting(picked.map((m) => m.id))
           }}
         />
+      )}
+      {egressOpen && (
+        <EgressSettings account={account} onClose={() => setEgressOpen(false)} />
       )}
       {notice.dialog}
     </aside>

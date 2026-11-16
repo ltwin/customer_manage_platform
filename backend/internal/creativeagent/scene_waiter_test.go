@@ -3,7 +3,6 @@ package creativeagent
 import (
 	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -51,15 +50,9 @@ func (f *fixture) hostFails() (creativescene.CompleteResponse, error) {
 	return out, err
 }
 
-func (f *fixture) revokeConsent(id string) {
+func (f *fixture) revokeConsent(_ string) {
 	f.t.Helper()
-	var revision int64
-	if err := f.db.QueryRow(`SELECT revision FROM creative_egress_consents WHERE id=$1`, id).Scan(&revision); err != nil {
-		f.t.Fatal(err)
-	}
-	if _, err := f.service.RevokeConsent(f.t.Context(), f.alice, command(f.t, map[string]any{"consent_id": id, "expected_revision": strconv.FormatInt(revision, 10)})); err != nil {
-		f.t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 }
 
 func lastToolResult(sent []llmgateway.ChatRequest) string {

@@ -150,14 +150,10 @@ test('four recoveries after a refresh', () => {
     kind: 'project',
     start: project,
   })
-  const chain = homeChain(
-    project,
-    { imageInput: true },
-    {
-      skill_id: 'skill',
-      skill_version_id: 'version',
-    },
-  )
+  const chain = homeChain(project, {
+    skill_id: 'skill',
+    skill_version_id: 'version',
+  })
   const sent = {
     ...project,
     chain: { operations: chain.steps.map((step) => step.operation) },
@@ -168,43 +164,27 @@ test('four recoveries after a refresh', () => {
     start: sent,
     chain,
   })
-  const moved = advanceChain(advanceChain(chain, { id: 'conv' })!, {
-    id: 'consent',
-  })!
+  const moved = advanceChain(chain, { id: 'conv' })!
   assert.equal(recoverHomeStart(sent, moved).kind, 'unknown')
   // 槽位空了，或者已经换成别的链：在别处处理掉了，清掉记录。
   assert.deepEqual(recoverHomeStart(sent, null), { kind: 'settled' })
-  const other = homeChain(project, { imageInput: true })
+  const other = homeChain(project)
   assert.deepEqual(recoverHomeStart(sent, other), { kind: 'settled' })
 })
 
 test('the home chain matches the canvas assistant and keeps a draft', () => {
-  const chain = homeChain(
-    project,
-    { imageInput: true },
-    {
-      skill_id: 'skill',
-      skill_version_id: 'version',
-    },
-  )
+  const chain = homeChain(project, {
+    skill_id: 'skill',
+    skill_version_id: 'version',
+  })
+  // 外发按账号的同意核对：链里只有建对话和建运行。
   assert.deepEqual(
     chain.steps.map((step) => step.path),
-    [
-      '/canvases/canvas/conversations',
-      '/conversations/{conversation}/egress-consents',
-      '/conversations/{conversation}/runs',
-    ],
+    ['/canvases/canvas/conversations', '/conversations/{conversation}/runs'],
   )
-  assert.deepEqual(chain.steps[1].payload, {
-    purpose: 'creative_assistance',
-    mode: 'account_library',
-    data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
-    selected_revision_ids: ['ccrv_a', 'ccrv_b'],
-  })
   // 指令：先 Skill，再文字，参考图按添加顺序排在后面。
-  assert.deepEqual(chain.steps[2].payload, {
+  assert.deepEqual(chain.steps[1].payload, {
     model_key: 'vision',
-    egress_consent_id: '',
     instruction: {
       schema_version: 1,
       instruction_segments: [
@@ -228,19 +208,11 @@ test('the home chain matches the canvas assistant and keeps a draft', () => {
   // 链能原样存进画布槽位、被面板读回。
   assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)
   // 被拒前已经建好对话：改了再发时直接接着用，不再建一个。
-  const again = homeChain(
-    { ...project, conversation: 'conv', attachments: [] },
-    { imageInput: false },
-  )
+  const again = homeChain({ ...project, conversation: 'conv', attachments: [] })
   assert.deepEqual(
     again.steps.map((step) => step.path),
-    ['/conversations/conv/egress-consents', '/conversations/conv/runs'],
+    ['/conversations/conv/runs'],
   )
-  assert.deepEqual(again.steps[0].payload.data_classes, [
-    'text',
-    'canvas_metadata',
-    'media_metadata',
-  ])
 })
 
 

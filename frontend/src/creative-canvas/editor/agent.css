@@ -1401,3 +1401,44 @@
   margin-top: -4px;
   text-align: right;
 }
+
+/* 外发说明：盖在助手面板上，关闭后回到原来的对话。 */
+.cc-egress-settings {
+  position: absolute;
+  inset: 52px 0 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  background: var(--s2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cc-egress-settings p {
+  margin: 0;
+}
+.cc-egress-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cc-egress-settings > .btn-danger {
+  align-self: flex-start;
+}
+.cc-egress-status {
+  color: var(--muted);
+}
+.cc-egress-library {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.cc-egress-library input {
+  margin-top: 4px;
+}
+.cc-egress-error {
+  color: var(--danger);
+}

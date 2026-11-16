@@ -438,9 +438,7 @@ func TestLibraryResultsStayWithinConversationAndConsent(t *testing.T) {
 	if _, err := other.readLibraryResult(t.Context(), query); err == nil {
 		t.Fatal("cross account")
 	}
-	if _, err := f.db.Exec(`UPDATE creative_egress_consents SET revoked_at=now() WHERE account_id='agent-a' AND id=$1`, h.held.ConsentID); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	if _, err := h.readLibraryResult(t.Context(), query); err == nil {
 		t.Fatal("revoked consent")
 	}

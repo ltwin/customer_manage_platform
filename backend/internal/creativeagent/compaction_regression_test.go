@@ -64,6 +64,8 @@ func TestHistoryGuardUsesCurrentToolsAfterConsentUpgrade(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
 	// Widened from 16000 by the built-in models in search_assets and
 	// read_asset, which come with library access.
+	// Start with library search off; the upgrade below turns it on.
+	f.consent = contextConsent(t, f.fixture, f.conversation.ID)
 	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.ContextWindowTokens = 16600 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 0
@@ -458,7 +460,7 @@ func TestCompactionPrecedesHistoryMessageLimit(t *testing.T) {
 
 func TestCompactionTranscriptExcludesSkillBodies(t *testing.T) {
 	for _, name := range []string{loadSkillTool, readSkillTool} {
-		text := transcriptLine("tool", Body{ToolName: name, Blocks: []Block{{Type: "text", Text: "skill-instructions-must-not-be-summarized"}}})
+		text := transcriptLine("tool", Body{ToolName: name, Blocks: []Block{{Type: "text", Text: "skill-instructions-must-not-be-summarized"}}}, true)
 		if strings.Contains(text, "skill-instructions-must-not-be-summarized") {
 			t.Errorf("%s body entered compaction transcript: %s", name, text)
 		}

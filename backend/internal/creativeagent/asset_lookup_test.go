@@ -22,17 +22,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-func libraryConsent(t *testing.T, f *fixture, conversation string, ids ...string) Consent {
+func libraryConsent(t *testing.T, f *fixture, _ string, _ ...string) Consent {
 	t.Helper()
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": []string{"text", "image_preview", "canvas_metadata", "media_metadata"}, "selected_revision_ids": ids}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var c Consent
-	if err := json.Unmarshal(receipt.Outcome.Response, &c); err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return f.accountConsent(f.alice, true)
 }
 
 func TestLibraryConsentAcceptsExplicitConversationInput(t *testing.T) {
@@ -72,7 +64,7 @@ func TestConversationReferenceOutlivesHistoryWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
-		ok, err := readableInTx(t.Context(), tx, run.ID, consent.ID, id)
+		ok, err := readableInTx(t.Context(), tx, run.ID, consent, id)
 		if err == nil && !ok {
 			t.Error("older conversation reference is unreadable")
 		}
@@ -177,22 +169,6 @@ func TestConversationAssetsPaginationAndIsolation(t *testing.T) {
 		if _, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":100}`, id)); !errors.Is(err, errReadRefused) {
 			t.Fatalf("foreign read: %v", err)
 		}
-	}
-}
-
-func TestRevokedConversationReferenceCannotUseLibraryBranch(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	id := f.revision(f.alice, "撤销的参考")
-	previous := contextConsent(t, f, c.ID, id)
-	appendLookupMessage(t, f, c.ID, []ContentRef{{RevisionID: id, Role: "input"}}, "原引用")
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": previous.ID, "expected_revision": previous.Revision})); err != nil {
-		t.Fatal(err)
-	}
-	h := lookupHandler(t, f, c.ID, libraryConsent(t, f, c.ID, id))
-	if _, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":100}`, id)); !errors.Is(err, errReadRefused) {
-		t.Fatalf("revocation bypassed: %v", err)
 	}
 }
 
@@ -416,95 +392,6 @@ func TestAssistantFindsReadsPlacesAndSavesLibraryContent(t *testing.T) {
 	}
 	if f.count("creative_message_content_refs", "content_revision_id=$1 AND role='result'", asset.ContentRevisionID) != 1 {
 		t.Fatal("read lost conversation retention")
-	}
-}
-
-func TestRevokedTextCannotLeaveThroughCanvasPreview(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	initial := &runtimeHandler{service: f.service, scope: f.alice}
-	secret := "不应再次外发的画布正文"
-	if _, err := initial.editCanvas(t.Context(), f.canvasID, "secret-node", fmt.Sprintf(`{"actions":[{"type":"add_node","key":"secret","node_type":"text","text":%q}]}`, secret)); err != nil {
-		t.Fatal(err)
-	}
-	canvas, err := creativecanvas.GetCanvas(t.Context(), f.alice, f.canvasID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := *canvas.Nodes[0].ContentRevisionID
-	previous := contextConsent(t, f, c.ID, id)
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": previous.ID, "expected_revision": previous.Revision})); err != nil {
-		t.Fatal(err)
-	}
-	h := lookupHandler(t, f, c.ID, contextConsent(t, f, c.ID))
-	result, err := h.readCanvas(t.Context(), `{"offset":0,"limit":10}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(result, secret) {
-		t.Fatal("revoked text leaked through read_canvas")
-	}
-}
-
-func TestPagedReadResultCannotReenterRevokedHistory(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	secret := "不能再次外发的分页正文"
-	id := f.revision(f.alice, strings.Repeat(secret, 500))
-	previous := contextConsent(t, f, c.ID, id)
-	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
-		switch n {
-		case 1:
-			return scriptedResult(r, call("read", 0, readAssetTool, fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":8192}`, id))), nil
-		case 2:
-			var result struct {
-				ItemID string `json:"item_id"`
-			}
-			if err := json.Unmarshal([]byte(toolResult(r, 0)), &result); err != nil || result.ItemID == "" {
-				t.Fatalf("large result locator: %s %v", toolResult(r, 0), err)
-			}
-			return scriptedResult(r, call("page", 0, readResultTool, fmt.Sprintf(`{"item_id":%q,"offset":0,"limit":8192}`, result.ItemID))), nil
-		case 3:
-			if !strings.Contains(toolResult(r, 0), secret) {
-				t.Fatal("page did not contain source text")
-			}
-		default:
-			for _, m := range r.Chat.Messages {
-				for _, b := range m.Blocks {
-					if strings.Contains(b.Text, secret) {
-						t.Fatal("revoked page body reached next run")
-					}
-				}
-			}
-			if n == 4 {
-				return scriptedResult(r, call("history", 0, readHistoryTool, `{"before_ordinal":0,"limit":20}`)), nil
-			}
-		}
-		return scriptedResult(r), nil
-	}
-	run, err := f.startRun(f.alice, c.ID, previous.ID, InstructionSegment{Type: "text", Text: "读取参考"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.work(f.alice, run.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": previous.ID, "expected_revision": previous.Revision})); err != nil {
-		t.Fatal(err)
-	}
-	consent := contextConsent(t, f, c.ID)
-	run, err = f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "继续讨论"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.work(f.alice, run.ID); err != nil {
-		t.Fatal(err)
-	}
-	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
-	if err != nil || got.State != RunSucceeded {
-		t.Fatalf("run %+v %v", got, err)
 	}
 }
 
@@ -749,18 +636,6 @@ func TestAssistantFindsReadsAndPlacesALibraryModel(t *testing.T) {
 // Without a thumbnail the facts still come, with the reason; without media
 // metadata the read is refused.
 func TestReadingAModelWithoutItsThumbnail(t *testing.T) {
-	grant := func(t *testing.T, f *fixture, c string, classes ...string) Consent {
-		t.Helper()
-		receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": classes}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var consent Consent
-		if err := json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
-			t.Fatal(err)
-		}
-		return consent
-	}
 	read := func(t *testing.T, h *runtimeHandler, rev string) map[string]any {
 		t.Helper()
 		out, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev))
@@ -782,22 +657,6 @@ func TestReadingAModelWithoutItsThumbnail(t *testing.T) {
 		got := read(t, lookupHandler(t, f, c.ID, libraryConsent(t, f, c.ID)), rev)
 		if got["thumbnail_omitted"] != "model_cannot_see_images" || got["image_revision_id"] != nil || got["model"] == nil {
 			t.Fatalf("read %v", got)
-		}
-	})
-	t.Run("image preview not allowed", func(t *testing.T) {
-		f, c, _, _ := visualScene(t, true)
-		_, rev := f.modelAsset()
-		got := read(t, lookupHandler(t, f, c.ID, grant(t, f, c.ID, "text", "canvas_metadata", "media_metadata")), rev)
-		if got["thumbnail_omitted"] != "image_preview_not_allowed" || got["image_revision_id"] != nil || got["model"] == nil {
-			t.Fatalf("read %v", got)
-		}
-	})
-	t.Run("no media metadata", func(t *testing.T) {
-		f, c, _, _ := visualScene(t, true)
-		_, rev := f.modelAsset()
-		h := lookupHandler(t, f, c.ID, grant(t, f, c.ID, "text", "image_preview", "canvas_metadata"))
-		if _, err := h.readAsset(t.Context(), fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, rev)); !errors.Is(err, ErrEgressRequired) {
-			t.Fatalf("read without media metadata: %v", err)
 		}
 	})
 }

@@ -85,11 +85,7 @@ func TestARunThatNeverDispatchesReleasesItsHold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{
-		"consent_id": consent.ID, "expected_revision": "1",
-	})); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	if err := f.work(f.alice, run.ID); err != nil {
 		t.Fatal(err)
 	}

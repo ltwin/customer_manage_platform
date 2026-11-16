@@ -74,7 +74,7 @@ func (w sceneWaiter) Admit(ctx context.Context, tx store.TxAccountScope, runID s
 	if err != nil {
 		return nil, err
 	}
-	if err = w.s.admitParkedRunInTx(ctx, tx, held, now); err != nil {
+	if _, err = w.s.admitParkedRunInTx(ctx, tx, held, now); err != nil {
 		return refuse(err)
 	}
 	return &sceneGate{c: c, held: held}, nil
@@ -232,23 +232,19 @@ var _ creativescene.JobWaiter = sceneWaiter{}
 // admitParkedRunInTx rechecks what a run's write needs once the caller holds
 // the run: its deadline, active skills and a standing consent. It is the part
 // of admitRunInTx that does not depend on holding the claim's lease.
-func (s *Service) admitParkedRunInTx(ctx context.Context, tx store.TxAccountScope, held claim, now time.Time) error {
+func (s *Service) admitParkedRunInTx(ctx context.Context, tx store.TxAccountScope, held claim, now time.Time) (Consent, error) {
 	if !now.Before(held.Deadline) {
-		return llmgateway.ErrDeadline
+		return Consent{}, llmgateway.ErrDeadline
 	}
 	// The skill control lock, between the run and the consent: the design puts
 	// the skill control row after operation/account/slot/budget/conversation/run
 	// and before the resource locks, and the dispatch intent this transaction is
 	// about to record must not be able to overtake a withdrawal.
 	if err := s.requireActiveSkillsInTx(ctx, tx, held); err != nil {
-		return err
+		return Consent{}, err
 	}
-	consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
-	if err != nil {
-		return err
-	}
-	// The content refs were matched against this consent when the run was
-	// created and a consent's scope never changes afterwards, so what is
-	// re-checked here is whether it still stands at all.
-	return coversRun(consent, held.ConversationID, nil)
+	// The content refs were checked when the run was created; what is
+	// re-checked here is whether the account's consent still stands under
+	// the notice the run was admitted with.
+	return effectiveConsentInTx(ctx, tx, held.ConsentID)
 }

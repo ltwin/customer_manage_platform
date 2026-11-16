@@ -21,15 +21,14 @@ var ErrRecoveryEvidence = errors.New("creative step cannot be safely recovered")
 // with FND-08's operation-receipt adapters, not through a generic replay switch.
 func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
 	var in struct {
-		RunID     string   `json:"run_id"`
-		StepIDs   []string `json:"step_ids"`
-		ConsentID string   `json:"egress_consent_id"`
+		RunID   string   `json:"run_id"`
+		StepIDs []string `json:"step_ids"`
 	}
 	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.retry_run", Capability: "agent_start", Validate: func(raw json.RawMessage) error {
 		if err := creativeops.Decode(raw, &in); err != nil {
 			return err
 		}
-		if in.RunID == "" || in.ConsentID == "" || len(in.StepIDs) != 1 {
+		if in.RunID == "" || len(in.StepIDs) != 1 {
 			return creativeops.ErrValidation
 		}
 		return nil
@@ -136,11 +135,10 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if json.Unmarshal(snapshot, &skill) != nil {
 			return creativeops.Outcome{}, ErrRecoveryEvidence
 		}
-		consent, err := readConsentForUpdate(ctx, tx, in.ConsentID)
+		// The account's consent in force, not the source run's: a retry is a
+		// new run and is admitted under the notice shown now.
+		consent, err := effectiveConsentInTx(ctx, tx, "")
 		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err = coversRun(consent, source.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if _, err = lockOpenConversationInTx(ctx, tx, source.ConversationID); err != nil {

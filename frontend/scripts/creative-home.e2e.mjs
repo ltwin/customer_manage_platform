@@ -11,7 +11,7 @@ const base = process.env.CREATIVE_EDITOR_URL ?? 'http://localhost:5173'
 const output = process.env.CREATIVE_QA_OUTPUT_DIR ?? '/tmp/creative-home-qa'
 mkdirSync(output, { recursive: true })
 // 首次外发说明的版本跟着源码走，升级版本时不用改这里。
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 const browser = await chromium.launch({ headless: true })
 const errors = []
 const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8z8DwHwAFhAJ/wlseKgAAAABJRU5ErkJggg=='
@@ -58,6 +58,15 @@ const freshServer = () => ({
   skills: true,
   uploadGate: null,
   uploads: new Map(),
+  // 账号的外发同意（服务端状态）。用例默认由页面里的 fetch 垫片给出「已同意」，
+  // 不经过这里；只有 029 的用例从没同意过开始。
+  consent: { policy_version: noticeVersion, effective: false, revision: '0', consent: null },
+})
+const agreedState = (library) => ({
+  policy_version: noticeVersion,
+  effective: true,
+  revision: '1',
+  consent: { id: 'ccec_home', policy_version: noticeVersion, library_access: library, granted_at: '2026-11-13T00:00:00Z' },
 })
 const fixture = () => {
   counts = { running: 2, waiting: 2 }
@@ -86,7 +95,7 @@ const fixture = () => {
     project(5, '未命名项目'),
   ]
 }
-// 默认已看过首次外发说明，其余用例不被弹窗挡住；只有 029 的用例从没看过开始。
+// 默认账号已同意发送前说明，其余用例不被弹窗挡住；只有 029 的用例从没同意过开始。
 async function fresh({ width = 1280, height = 800, init, clock = false, notice = noticeVersion } = {}) {
   await context?.close()
   context = await browser.newContext({ viewport: { width, height } })
@@ -101,7 +110,18 @@ async function fresh({ width = 1280, height = 800, init, clock = false, notice =
   // 开发模式按模块逐个请求，默认 250 条的 Resource Timing 缓冲在页面接口发出前就满了，
   // 用例里按 performance 条目等待的请求会记不进去。
   await page.addInitScript(() => performance.setResourceTimingBufferSize(5000))
-  if (notice) await page.addInitScript((version) => localStorage.setItem('creative-egress-notice:qa-home', version), notice)
+  // 账号已同意发送前说明：服务端状态由 fetch 垫片给出；notice 为空时账号还没同意。
+  if (notice)
+    await page.addInitScript((version) => {
+      const f = window.fetch
+      window.fetch = (i, o) => {
+        const u = typeof i === 'string' ? i : i.url
+        const m = (o && o.method) || (typeof i === 'string' ? 'GET' : i.method)
+        if (!u.endsWith('/api/v1/creative/egress-consent') || m !== 'GET') return f(i, o)
+        const consent = { id: 'ccec_qa', policy_version: version, library_access: true, granted_at: '2026-11-13T00:00:00Z' }
+        return Promise.resolve(new Response(JSON.stringify({ policy_version: version, effective: true, revision: '1', consent }), { headers: { 'content-type': 'application/json' } }))
+      }
+    }, notice)
   if (init) await page.addInitScript(init)
   // 开发模式的 StrictMode 会挂载两次、取消第一次请求，只数真正完成的读取。
   page.on('requestfinished', (request) => {
@@ -174,14 +194,14 @@ async function startRoutes(route, url, json) {
     const made = replay(server.posts.conversations, () => ({ id: `conv${++server.created.conversations}`, project_id: 'pn1', canvas_id: path.split('/')[2], title: '新对话', title_source: 'default', archived: false, revision: '1', updated_at: '2026-10-11T00:00:00Z' }))
     return typeof made.then === 'function' ? made : json(made, 201)
   }
-  if (method === 'POST' && path.endsWith('/egress-consents')) {
-    if (server.fault.consent503) {
-      server.posts.consents.push({ key, body })
-      server.fault.consent503 = false
-      return json({ error: { code: 'unavailable', message: '服务暂时不可用' } }, 503)
-    }
-    const made = replay(server.posts.consents, () => ({ id: `consent${++server.created.consents}`, conversation_id: path.split('/')[2], approved_revisions: body.payload.selected_revision_ids.length }))
-    return typeof made.then === 'function' ? made : json(made, 201)
+  if (path === '/egress-consent' && method === 'GET') return json(server.consent)
+  if (path === '/egress-consent' && method === 'POST') {
+    // 与服务端一致：按摄影师看到的状态版本有条件地写。
+    if (body.payload.expected_revision !== server.consent.revision)
+      return json({ error: { code: 'creative_revision_conflict', message: '内容已被其他窗口修改，本机这次修改未保存' } }, 409)
+    server.posts.consents.push({ key, body })
+    server.consent = { ...agreedState(body.payload.library_access), revision: String(Number(server.consent.revision) + 1) }
+    return json(server.consent)
   }
   if (method === 'POST' && path.endsWith('/runs')) {
     if (server.fault.run503) {
@@ -189,12 +209,19 @@ async function startRoutes(route, url, json) {
       server.fault.run503 = false
       return json({ error: { code: 'unavailable', message: '服务暂时不可用' } }, 503)
     }
+    if (server.fault.runRevoked) {
+      // 本页读过「已同意」之后，另一台设备撤回了。
+      server.posts.runs.push({ key, body })
+      server.fault.runRevoked = false
+      server.consent = { policy_version: noticeVersion, effective: false, revision: '2', consent: null, revoked_at: '2026-11-13T01:00:00Z' }
+      return json({ error: { code: 'creative_egress_revoked', message: '外发同意已撤回，重新同意发送前说明后才能继续；已发出的内容无法召回' } }, 409)
+    }
     if (server.fault.run422) {
       server.posts.runs.push({ key, body })
       server.fault.run422 = false
       return json({ error: { code: 'creative_model_unavailable', message: 'Model unavailable' } }, 422)
     }
-    const made = replay(server.posts.runs, () => ({ id: `run${++server.created.runs}`, conversation_id: path.split('/')[2], canvas_id: 'cn1', trigger_message_id: 'm1', egress_consent_id: body.payload.egress_consent_id, model_key: body.payload.model_key, state: 'queued', settlement_state: 'pending', limits_version: '1', revision: '1', last_event_seq: '0', pruned_through_seq: '0', deadline_at: '2026-10-11T01:00:00Z', created_at: '2026-10-11T00:00:00Z' }))
+    const made = replay(server.posts.runs, () => ({ id: `run${++server.created.runs}`, conversation_id: path.split('/')[2], canvas_id: 'cn1', trigger_message_id: 'm1', egress_consent_id: 'ccec_home', model_key: body.payload.model_key, state: 'queued', settlement_state: 'pending', limits_version: '1', revision: '1', last_event_seq: '0', pruned_through_seq: '0', deadline_at: '2026-10-11T01:00:00Z', created_at: '2026-10-11T00:00:00Z' }))
     // 服务端已经受理，但响应在路上断了。
     if (server.fault.runLost) {
       server.fault.runLost = false
@@ -514,7 +541,7 @@ try {
     assert.equal(await openedWithAgent(), true, 'canvas opens with the assistant')
     assert.equal(server.posts.projects.length, 1, 'one project')
     assert.equal(server.posts.conversations.length, 1)
-    assert.equal(server.posts.consents.length, 1)
+    assert.equal(server.posts.consents.length, 0, 'an account that agreed is not asked')
     assert.equal(server.posts.runs.length, 2)
     assert.equal(keys(server.posts.runs).length, 1, 'retry keeps the run identity')
     assert.equal(server.created.runs, 1)
@@ -562,8 +589,7 @@ try {
     assert.equal(await openedWithAgent(), true)
     assert.equal(server.posts.projects.length, 1, 'no second project')
     assert.equal(server.posts.conversations.length, 1, 'the conversation is reused')
-    assert.equal(server.posts.consents.length, 2)
-    assert.equal(keys(server.posts.consents).length, 2, 'a new message gets new identities')
+    assert.equal(keys(server.posts.runs).length, 2, 'a new message gets new identities')
     assert.deepEqual(server.posts.runs.at(-1).body.payload.instruction.instruction_segments, [{ type: 'text', text: '改过的说法' }])
   })
 
@@ -593,16 +619,9 @@ try {
     await prompt().fill('按这两张图出方向')
     await prompt().press('Enter')
     await openedWithAgent()
-    const consent = server.posts.consents[0].body.payload
-    assert.deepEqual(consent, {
-      purpose: 'creative_assistance',
-      mode: 'account_library',
-      data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
-      selected_revision_ids: ['ccrv_lib1', 'ccrv_up1'],
-    })
     const run = server.posts.runs[0].body.payload
     assert.equal(run.model_key, 'vision')
-    assert.equal(run.egress_consent_id, 'consent1')
+    assert.equal('egress_consent_id' in run, false, 'a run carries no authorisation')
     assert.deepEqual(run.instruction.instruction_segments, [
       { type: 'skill_ref', skill_id: 'sk', skill_version_id: 'skv' },
       { type: 'text', text: '按这两张图出方向' },
@@ -740,21 +759,21 @@ try {
 
     at('step 2 returns 503')
     await fresh()
-    server.fault.consent503 = true
+    server.fault.run503 = true
     server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', revision: '1', unavailable: false }]
     await page.goto(`${base}/creative`)
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
     await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
-    await prompt().fill('授权失败也要留着')
+    await prompt().fill('发送失败也要留着')
     await prompt().press('Enter')
-    await page.getByText('项目「授权失败也要留着」已建好，消息还没确认送达。').waitFor()
+    await page.getByText('项目「发送失败也要留着」已建好，消息还没确认送达。').waitFor()
     assert.ok(page.url().endsWith('/creative'))
-    assert.equal(await prompt().inputValue(), '授权失败也要留着')
+    assert.equal(await prompt().inputValue(), '发送失败也要留着')
     assert.equal(await refs().count(), 1)
     await page.getByRole('button', { name: '重试发送' }).click()
     assert.equal(await openedWithAgent(), true)
-    assert.equal(keys(server.posts.consents).length, 1)
-    assert.equal(server.created.consents, 1)
+    assert.equal(keys(server.posts.runs).length, 1)
+    assert.equal(server.created.runs, 1)
     assert.equal(server.posts.projects.length, 1)
   })
 
@@ -764,7 +783,6 @@ try {
     await page.goto(`${base}/creative`)
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
     const dialog = page.getByRole('alertdialog', { name: '发送前说明' })
-    const seen = () => page.evaluate(() => localStorage.getItem('creative-egress-notice:qa-home'))
     at('first send explains before anything is created')
     await prompt().fill('海边婚纱外景')
     await prompt().press('Enter')
@@ -776,7 +794,8 @@ try {
     assert.equal(await privacy.getAttribute('target'), '_blank')
     // 焦点先落在「取消」，不是正文里的链接：再按一次 Enter 只会关掉说明。
     await page.waitForFunction(() => document.activeElement?.textContent === '取消')
-    await dialog.getByText(/助手还会按需查找资产库/).waitFor()
+    await dialog.getByText(/自动开始回复处理结果/).waitFor()
+    assert.equal(await dialog.getByRole('checkbox', { name: /允许助手检索我的素材库/ }).isChecked(), true)
     assert.equal(server.posts.projects.length, 0, 'no project before the notice is acknowledged')
     await page.evaluate(() => Promise.all(document.querySelector(".overlay.open").getAnimations({ subtree: true }).map((a) => a.finished)))
     await page.screenshot({ path: `${output}/egress-notice.png` })
@@ -785,7 +804,7 @@ try {
     await dialog.waitFor({ state: 'detached' })
     assert.equal(await prompt().inputValue(), '海边婚纱外景')
     assert.equal(await prompt().evaluate((el) => el === document.activeElement), true, 'focus returns to the input')
-    assert.equal(await seen(), null)
+    assert.equal(server.posts.consents.length, 0)
     at('escape is a cancel too, and the notice comes back')
     await sendButton().click()
     await dialog.waitFor()
@@ -803,9 +822,9 @@ try {
     await prompt().fill('海边婚纱外景')
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
     await sendButton().click()
-    await dialog.getByRole('button', { name: '知道了，发送' }).click()
+    await dialog.getByRole('button', { name: '同意并发送' }).click()
     assert.equal(await openedWithAgent('cn2'), true)
-    assert.equal(await seen(), noticeVersion)
+    assert.deepEqual(server.posts.consents.map((p) => p.body.payload), [{ policy_version: noticeVersion, library_access: true, expected_revision: '0' }])
     assert.equal(server.created.runs, 1)
     at('the same account is not asked again')
     await page.goto(`${base}/creative`)
@@ -835,9 +854,29 @@ try {
     await page.screenshot({ path: `${output}/privacy-390.png`, fullPage: true })
   })
 
+  await record('029-fix-reask-after-revoked-elsewhere', async () => {
+    // 别处撤回后发送被拒：重新弹出说明，同意后用同一份输入自动再发一次。
+    await fresh({ notice: null })
+    server.consent = agreedState(true)
+    server.fault.runRevoked = true
+    await page.goto(`${base}/creative`)
+    await prompt().fill('别处撤回之后')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().press('Enter')
+    const dialog = page.getByRole('alertdialog', { name: '发送前说明' })
+    await dialog.waitFor()
+    assert.equal(server.posts.runs.length, 1, 'the first run was refused')
+    await dialog.getByRole('button', { name: '同意并发送' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.deepEqual(server.posts.consents.map((p) => p.body.payload), [{ policy_version: noticeVersion, library_access: true, expected_revision: '2' }])
+    assert.equal(server.created.runs, 1, 'the same input went again after agreeing')
+    assert.equal(server.posts.projects.length, 1, 'no second project')
+  })
+
   await record('029-AC-03', async () => {
-    // 看过的是旧版说明：再问一次。
-    await fresh({ notice: 'egress-2000-01-1' })
+    // 同意的是旧版说明：再问一次。
+    await fresh({ notice: null })
+    server.consent = { ...agreedState(true), effective: false, consent: { ...agreedState(true).consent, policy_version: 'egress-2000-01-1' } }
     await page.goto(`${base}/creative`)
     await prompt().fill('说明升级之后')
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
@@ -845,9 +884,9 @@ try {
     const dialog = page.getByRole('alertdialog', { name: '发送前说明' })
     await dialog.waitFor()
     assert.equal(server.posts.projects.length, 0)
-    await dialog.getByRole('button', { name: '知道了，发送' }).click()
+    await dialog.getByRole('button', { name: '同意并发送' }).click()
     assert.equal(await openedWithAgent(), true)
-    assert.equal(await page.evaluate(() => localStorage.getItem('creative-egress-notice:qa-home')), noticeVersion)
+    assert.equal(server.posts.consents.length, 1)
   })
 
   await record('062-AC-06', async () => {

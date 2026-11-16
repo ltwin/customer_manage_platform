@@ -32,8 +32,9 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id/events", w.WatchCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id/blocks/:block_id/detail", w.GetCreativeAgentRunBlockDetail)
-	r.POST("/creative/conversations/:id/egress-consents", w.GrantCreativeEgressConsent)
-	r.POST("/creative/egress-consents/:id/revoke", w.RevokeCreativeEgressConsent)
+	r.GET("/creative/egress-consent", w.GetCreativeEgressConsent)
+	r.POST("/creative/egress-consent", w.GrantCreativeEgressConsent)
+	r.POST("/creative/egress-consent/revoke", w.RevokeCreativeEgressConsent)
 }
 
 // creativeAgentError maps the assistant's own refusals. creativeError delegates
@@ -54,9 +55,11 @@ func creativeAgentError(c *gin.Context, err error) {
 		}
 		abortErrorWithTypedDetails(c, 429, "creative_agent_busy", "已有一次创作正在进行，完成后再提交", details)
 	case errors.Is(err, creativeagent.ErrConsentRevoked):
-		abortError(c, 409, "creative_egress_revoked", "该授权已撤销；已发出的内容无法召回")
+		abortError(c, 409, "creative_egress_revoked", "外发同意已撤回，重新同意发送前说明后才能继续；已发出的内容无法召回")
 	case errors.Is(err, creativeagent.ErrEgressRequired):
-		abortError(c, 403, "creative_egress_required", "本次提交超出已授权的外发范围")
+		abortError(c, 403, "creative_egress_required", "需要先同意当前版本的发送前说明")
+	case errors.Is(err, creativeagent.ErrPolicyChanged):
+		abortError(c, 409, "creative_egress_policy_changed", "说明已更新，请刷新后重新查看")
 	case errors.Is(err, creativeagent.ErrBudgetExceeded):
 		abortError(c, 429, "creative_llm_budget_exceeded", "本月模型额度已用尽")
 	case errors.Is(err, creativeagent.ErrModelCapability):
@@ -272,12 +275,32 @@ func (h *handlers) ListCreativeAgentMessages(c *gin.Context, id string, p ListCr
 	c.JSON(200, value)
 }
 
-func (h *handlers) GrantCreativeEgressConsent(c *gin.Context, id string, _ GrantCreativeEgressConsentParams) {
+// GetCreativeEgressConsent is the account's answer to the pre-send notice; the
+// client shows the notice when it is not in force.
+func (h *handlers) GetCreativeEgressConsent(c *gin.Context) {
 	agent, ok := h.agentService(c)
 	if !ok {
 		return
 	}
-	h.creativeWrite(c, "conversation_id", id, agent.GrantConsent)
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	state, err := agent.ReadAccountConsent(c.Request.Context(), scope)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
+	c.JSON(200, state)
+}
+
+func (h *handlers) GrantCreativeEgressConsent(c *gin.Context, _ GrantCreativeEgressConsentParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "", "", agent.GrantAccountConsent)
 }
 
 // CreateCreativeAgentRun answers 202: the submission was accepted, not
@@ -346,12 +369,12 @@ func (h *handlers) GetCreativeAgentRunBlockDetail(c *gin.Context, id string, blo
 	c.JSON(200, detail)
 }
 
-func (h *handlers) RevokeCreativeEgressConsent(c *gin.Context, id string, _ RevokeCreativeEgressConsentParams) {
+func (h *handlers) RevokeCreativeEgressConsent(c *gin.Context, _ RevokeCreativeEgressConsentParams) {
 	agent, ok := h.agentService(c)
 	if !ok {
 		return
 	}
-	h.creativeWrite(c, "consent_id", id, agent.RevokeConsent)
+	h.creativeWrite(c, "", "", agent.RevokeAccountConsent)
 }
 
 func (h *handlers) ListCreativeAgentRuns(c *gin.Context, id string) {

@@ -40,8 +40,8 @@ export function recalledModel(
 }
 // 一条待确认链：每一步的请求在发出前就定好并存进本机，结果不确定时只能按
 // 原操作身份重放（包括刷新之后），不能再起一次运行。建对话返回的 ID 填进后续
-// 路径里的 {conversation}；外发授权返回的 ID 填进紧随其后那次运行的
-// egress_consent_id。
+// 路径里的 {conversation}。外发按账号的同意核对（见 useEgressConsent），链里
+// 没有授权这一步。
 export type AgentStep = {
   path: string
   operation: string
@@ -90,41 +90,22 @@ export function conversationStep(canvasID: string): AgentStep {
     title: untitledConversation,
   })
 }
-// 发一条消息的两步：发送即授权，清单只放本条引用，另允许按需查库与读取本对话内容；首页和画布内
-// 助手都用它组装，两处的外发规则因此不会走样。
+// 发一条消息：建一次运行。外发按账号的同意核对，请求里不带授权；首页和画布内
+// 助手都用它组装，两处的请求因此不会走样。
 export function messageSteps(
   conversation: string,
   message: {
     model: string
-    imageInput: boolean
-    revisionIDs: string[]
     segments: Segment[]
     // Sent from the scene editor: the run works on its scene and selection.
     scene?: SceneContext | null
   },
 ): AgentStep[] {
-  const createdAt = new Date().toISOString()
   return [
-    agentStep(
-      `/conversations/${conversation}/egress-consents`,
-      {
-        purpose: 'creative_assistance',
-        mode: 'account_library',
-        data_classes: [
-          'text',
-          'canvas_metadata',
-          'media_metadata',
-          ...(message.imageInput ? ['image_preview'] : []),
-        ],
-        selected_revision_ids: message.revisionIDs,
-      },
-      createdAt,
-    ),
     agentStep(
       `/conversations/${conversation}/runs`,
       {
         model_key: message.model,
-        egress_consent_id: '',
         instruction: {
           schema_version: 1,
           instruction_segments: message.segments,
@@ -138,7 +119,6 @@ export function messageSteps(
             }
           : {}),
       },
-      createdAt,
     ),
   ]
 }
@@ -160,12 +140,6 @@ export function advanceChain(
       path: step.path.replace(conversationSlot, id),
     }))
     if (draft) draft = { ...draft, conversation: id }
-  } else if (done.path.endsWith('/egress-consents')) {
-    const [run, ...more] = steps
-    steps = [
-      { ...run, payload: { ...run.payload, egress_consent_id: id } },
-      ...more,
-    ]
   }
   return {
     steps,
@@ -283,6 +257,17 @@ function readStep(value: unknown): AgentStep {
     payload: value.payload,
   }
 }
+// 说明更新、刷新页面前存下的输入框草稿（见 AgentPanel 的 keepForReload）。
+export const agentReloadDraftKey = (account: string, canvasID: string) =>
+  `creative-agent-reload-draft:${account}:${canvasID}`
+export function reloadDraft(raw: string | null): AgentDraft | null {
+  if (!raw) return null
+  try {
+    return readDraft(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
 function readDraft(d: unknown): AgentDraft {
   if (
     !record(d) ||
@@ -316,7 +301,7 @@ function readDraft(d: unknown): AgentDraft {
   }
 }
 // 旧版本存的是「当前一步 + 可选的下一次运行」，转换成链；请求体逐字保留，
-// 重放时与原请求一致。
+// 重放时与原请求一致（逐条授权那一步随后由 withoutGrants 去掉）。
 function legacySteps(value: Record<string, unknown>): AgentStep[] {
   if (typeof value.path !== 'string' || typeof value.body !== 'string')
     throw new Error('待确认操作记录损坏，请保留记录并重新加载')
@@ -349,6 +334,19 @@ function legacySteps(value: Record<string, unknown>): AgentStep[] {
   )
   return steps
 }
+// 本机可能还存着上线前的链：逐条授权那一步已经没有接口，去掉；随后那次运行
+// 的 egress_consent_id 也不再被接受，一并去掉。运行那一步若已经发出、结果
+// 不确定，重放会被当作另一请求拒绝，摄影师重新发送即可。
+function withoutGrants(steps: AgentStep[]): AgentStep[] {
+  return steps
+    .filter((step) => !step.path.endsWith('/egress-consents'))
+    .map((step) => {
+      if (!('egress_consent_id' in step.payload)) return step
+      const payload = { ...step.payload }
+      delete payload.egress_consent_id
+      return { ...step, payload }
+    })
+}
 export function pendingAgentChain(
   raw: string | null,
 ): PendingAgentChain | null {
@@ -361,6 +359,9 @@ export function pendingAgentChain(
   else if (Array.isArray(value.steps) && value.steps.length)
     steps = value.steps.map(readStep)
   else throw new Error('待确认操作记录损坏，请保留记录并重新加载')
+  steps = withoutGrants(steps)
+  if (!steps.length)
+    throw new Error('待确认操作记录损坏，请保留记录并重新加载')
   // 只有第一步可能还要建对话，之后的步骤才会用到它的编号。
   if (steps[0].path.includes(conversationSlot))
     throw new Error('待发送对话身份缺失，请保留记录')
@@ -393,8 +394,10 @@ const failures: Record<string, string> = {
   creative_model_turn_limit: '已达到本次思考轮数上限',
   creative_tool_limit: '模型一次发起的工具调用过多，已停止',
   creative_tool_not_allowed: '模型调用了未授权的工具，已停止',
-  creative_egress_revoked: '外发授权已撤销',
-  creative_egress_required: '这次请求需要新的外发授权',
+  creative_egress_revoked: '外发同意已撤回，已停止',
+  creative_egress_required: '发送前说明有更新，重新同意后才能继续',
+  creative_egress_library_closed:
+    '素材库检索已关闭，本次运行已停止；需要时在「外发说明」里重新打开',
   creative_skill_unavailable: '所选 Skill 已不可用',
   creative_llm_budget_exceeded: '本月模型额度已用完',
   creative_context_limit: '内容超过本次运行的长度上限',
@@ -421,24 +424,7 @@ export function sendRefusal(
   return failures[code] ?? refusals[code] ?? error.message
 }
 
-// 首次外发说明（V6-029）：第一次发送前弹窗说明一次，按账号和说明版本记在本机。
-// 这条记录只决定弹不弹窗；每次发送照样按本条消息的范围建授权，由后端核对。
-// 版本与后端 creativeagent.policyVersion 一致，两边一起改（单测会核对）。
-// 助手要发送新的数据类型时改写说明并升级版本，所有账号会再看一次。
-export const egressNoticeVersion = 'egress-2026-10-2'
-const noticeKey = (account: string) => `creative-egress-notice:${account}`
-// 读不到本机存储时当作没看过：宁可多弹一次，也不漏掉说明。
-export function noticeSeen(storage: Storage | null, account: string): boolean {
-  try {
-    return storage?.getItem(noticeKey(account)) === egressNoticeVersion
-  } catch {
-    return false
-  }
-}
-export function rememberNotice(storage: Storage | null, account: string) {
-  try {
-    storage?.setItem(noticeKey(account), egressNoticeVersion)
-  } catch {
-    // 记不住只是下次再弹一次。
-  }
-}
+// 发送前说明的版本：这一版前端展示的说明文字。与后端 creativeagent.policyVersion
+// 一致，两边一起改（单测会核对）。服务端报的版本与这里不同，说明页面是旧的，
+// 不能拿旧文字去换新版本的同意，提示刷新。
+export const egressPolicyVersion = 'egress-2026-11-1'

@@ -90,10 +90,9 @@ func TestLiveCosplaySkill(t *testing.T) {
 			}
 			conversation := f.conversation(f.alice, f.canvasID)
 			// What the panel grants by default: text, image previews and canvas metadata.
-			consent := contextConsent(t, f, conversation.ID)
+			_ = contextConsent(t, f, conversation.ID)
 			receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
-				"conversation_id": conversation.ID, "model_key": modelKey, "egress_consent_id": consent.ID,
-				"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{
+				"conversation_id": conversation.ID, "model_key": modelKey, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{
 					{Type: "skill_ref", SkillID: skill.SkillID, SkillVersionID: skill.VersionID},
 					{Type: "text", Text: c.prompt},
 				}},

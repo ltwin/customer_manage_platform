@@ -1,12 +1,14 @@
 // Run with the frontend Vite server on CREATIVE_AGENT_URL (default :5179).
 // 发送即显示：点发送就画出消息、清空输入框；读回真消息后不重复；
 // 往已有会话里发只重读这个会话；被拒时原文回到输入框。
+// 发送前说明按账号记在服务端：第一次发送弹出，取消不发、草稿留着；同意后发出；
+// 已同意的账号换浏览器（本机什么都没存）不再弹；在「外发说明」撤回后再发会重新弹。
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(
+const policyVersion = /egressPolicyVersion = '([^']+)'/.exec(
   readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'),
 )[1]
 const fixture = new URL('../.agent-send-qa.html', import.meta.url)
@@ -20,7 +22,6 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
 createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',defaultOpen:true,canvas:{nodes:[]}}));
 </script></body></html>`,
 )
@@ -59,12 +60,20 @@ const message = (id, ordinal, run, role, text) => ({
   body: { blocks: [{ type: 'text', text }] },
 })
 
-async function open(browser, { refuse = false } = {}) {
+const consentState = (effective, library = true) => ({
+  policy_version: policyVersion,
+  effective,
+  revision: effective ? '1' : '0',
+  consent: effective ? { id: 'ccec_1', policy_version: policyVersion, library_access: library, granted_at: '2026-11-13T00:00:00Z' } : null,
+})
+
+async function open(browser, { refuse = false, agreed = true, revokedElsewhere = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
   page.on('pageerror', (error) => {
     throw error
   })
   const reads = { catalog: 0, conversations: 0, messages: 0 }
+  const consent = { state: consentState(agreed), posts: [], runs: 0 }
   let accepted = false
   let release
   const gate = new Promise((resolve) => (release = resolve))
@@ -84,12 +93,32 @@ async function open(browser, { refuse = false } = {}) {
     const one = /\/assets\/([^/]+)$/.exec(path)?.[1]
     if (one) return json(assets.find((a) => a.id === one))
     if (path.endsWith('/asset-groups')) return json({ items: [], asset_counts: {}, hierarchy_revision: '1' })
+    if (path.endsWith('/egress-consent') && request.method() === 'GET') return json(consent.state)
     if (request.method() === 'POST') {
-      if (path.endsWith('/egress-consents'))
-        return json({ id: 'consent-new', conversation_id: 'c', revision: '1', purpose: 'creative_assistance', policy_version: noticeVersion, scope: {}, granted_at: '2026-10-15T00:00:00Z' }, 201)
+      if (path.endsWith('/egress-consent')) {
+        const payload = request.postDataJSON().payload
+        // 与服务端一致：按摄影师看到的状态版本有条件地写。
+        if (payload.expected_revision !== consent.state.revision)
+          return json({ error: { code: 'creative_revision_conflict', message: '内容已被其他窗口修改，本机这次修改未保存' } }, 409)
+        consent.posts.push(payload)
+        consent.state = { ...consentState(true, payload.library_access), revision: String(Number(consent.state.revision) + 1) }
+        return json(consent.state)
+      }
+      if (path.endsWith('/egress-consent/revoke')) {
+        consent.posts.push('revoke')
+        consent.state = { ...consentState(false), revision: '2', revoked_at: '2026-11-13T01:00:00Z' }
+        return json(consent.state)
+      }
       if (path.endsWith('/runs')) {
+        consent.runs++
+        assert.equal('egress_consent_id' in request.postDataJSON().payload, false, 'a run carries no authorisation')
         // Held until the test has looked at the panel mid-send.
         await gate
+        // 这个页面读过「已同意」、发出之前，另一台设备撤回了。
+        if (revokedElsewhere && consent.runs === 1)
+          consent.state = { ...consentState(false), revision: '2', revoked_at: '2026-11-13T01:00:00Z' }
+        if (!consent.state.effective)
+          return json({ error: { code: 'creative_egress_revoked', message: '外发同意已撤回，重新同意发送前说明后才能继续；已发出的内容无法召回' } }, 409)
         if (refuse) return json({ code: 'creative_validation', message: '提交内容无效' }, 422)
         accepted = true
         return json({ ...runBase, id: 'run9', trigger_message_id: 'm9', state: 'queued' }, 202)
@@ -122,7 +151,7 @@ async function open(browser, { refuse = false } = {}) {
   })
   await page.goto(url)
   await page.getByRole('log', { name: '对话消息' }).getByText('第一轮的回答').waitFor()
-  return { page, reads, release }
+  return { page, reads, release, consent }
 }
 
 const browser = await chromium.launch({ headless: true })
@@ -162,6 +191,93 @@ try {
     await page.getByRole('alert').waitFor()
     await log.locator('.cc-agent-exchange.is-sending').waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.querySelector('[aria-label="创作问题"]')?.textContent?.includes('会被拒的一句'))
+    await page.close()
+  }
+  // 第一次发送弹出发送前说明：取消不发，草稿留着；同意后发出，记在服务端。
+  {
+    const { page, release, consent } = await open(browser, { agreed: false })
+    release()
+    const editor = page.getByRole('textbox', { name: '创作问题' })
+    await editor.click()
+    await page.keyboard.type('第一次发送')
+    await page.keyboard.press('Enter')
+    const notice = page.getByRole('alertdialog', { name: '发送前说明' })
+    await notice.waitFor()
+    await notice.getByText('自动开始回复处理结果').waitFor()
+    const library = notice.getByRole('checkbox')
+    assert.equal(await library.isChecked(), true, 'library search is on by default')
+    await page.screenshot({ path: '/tmp/creative-agent-egress-notice.png' })
+    await notice.getByRole('button', { name: '取消' }).click()
+    await notice.waitFor({ state: 'detached' })
+    assert.equal(consent.runs, 0, 'nothing was sent after cancelling')
+    assert.deepEqual(consent.posts, [], 'no consent was recorded after cancelling')
+    assert.ok((await editor.innerText()).includes('第一次发送'), 'the draft stays')
+    await page.keyboard.press('Enter')
+    await notice.waitFor()
+    await notice.getByRole('button', { name: '同意并发送' }).click()
+    // 发送中的气泡一闪而过，等受理后读回的那条。
+    await page.getByRole('log', { name: '对话消息' }).getByText('第二轮：出三版').waitFor()
+    assert.deepEqual(consent.posts, [{ policy_version: policyVersion, library_access: true, expected_revision: '0' }])
+    assert.equal(consent.runs, 1)
+    await page.close()
+  }
+  // 在「外发说明」里撤回：再发送时重新弹出说明。
+  {
+    const { page, release, consent } = await open(browser)
+    release()
+    await page.getByRole('combobox', { name: '对话操作' }).click()
+    await page.getByRole('option', { name: /外发说明/ }).click()
+    const settings = page.getByRole('dialog', { name: '外发说明' })
+    await settings.getByText(/已同意/).waitFor()
+    await page.screenshot({ path: '/tmp/creative-agent-egress-settings.png' })
+    await settings.getByRole('button', { name: '撤回同意' }).click()
+    const confirm = page.getByRole('alertdialog', { name: '撤回外发同意' })
+    await confirm.getByText('已经发出的内容无法召回').waitFor()
+    await confirm.getByRole('button', { name: '撤回同意' }).click()
+    await settings.getByText(/已于 .* 撤回/).waitFor()
+    assert.deepEqual(consent.posts, ['revoke'])
+    await settings.getByRole('button', { name: '关闭' }).click()
+    const editor = page.getByRole('textbox', { name: '创作问题' })
+    await editor.click()
+    await page.keyboard.type('撤回后再发')
+    await page.keyboard.press('Enter')
+    await page.getByRole('alertdialog', { name: '发送前说明' }).waitFor()
+    assert.equal(consent.runs, 0)
+    await page.close()
+  }
+  // 另一台设备撤回后，本页以为还同意着：发送被拒，重新弹出说明，同意后用同一份
+  // 草稿自动再发一次，不用摄影师重打。
+  {
+    const { page, release, consent } = await open(browser, { revokedElsewhere: true })
+    release()
+    const editor = page.getByRole('textbox', { name: '创作问题' })
+    await editor.click()
+    await page.keyboard.type('别处撤回后发')
+    await page.keyboard.press('Enter')
+    const notice = page.getByRole('alertdialog', { name: '发送前说明' })
+    await notice.waitFor()
+    assert.equal(consent.runs, 1, 'the first send was refused by the server')
+    await notice.getByRole('button', { name: '同意并发送' }).click()
+    await page.getByRole('log', { name: '对话消息' }).getByText('第二轮：出三版').waitFor()
+    assert.equal(consent.runs, 2, 'the same draft went again after agreeing')
+    assert.deepEqual(consent.posts, [{ policy_version: policyVersion, library_access: true, expected_revision: '2' }])
+    assert.equal((await editor.innerText()).trim(), '', 'the resent draft left the composer')
+    await page.close()
+  }
+  // 面板打开后另一台设备撤回：切换素材库开关不能把同意恢复回来，显示最新状态。
+  {
+    const { page, release, consent } = await open(browser)
+    release()
+    await page.getByRole('combobox', { name: '对话操作' }).click()
+    await page.getByRole('option', { name: /外发说明/ }).click()
+    const settings = page.getByRole('dialog', { name: '外发说明' })
+    await settings.getByText(/已同意/).waitFor()
+    consent.state = { ...consentState(false), revision: '2', revoked_at: '2026-11-13T01:00:00Z' }
+    await settings.getByRole('checkbox').click()
+    await settings.getByText(/已于 .* 撤回/).waitFor()
+    await settings.getByText('外发同意刚在其他窗口或设备上改过，已显示最新状态').waitFor()
+    assert.deepEqual(consent.posts, [], 'a stale switch recorded nothing')
+    assert.equal(consent.state.effective, false, 'the withdrawal stands')
     await page.close()
   }
   // 「+」一处收齐：上传、资产库、画布引用和命令，不再另有回形针。

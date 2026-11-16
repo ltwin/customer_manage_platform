@@ -2,7 +2,6 @@ package creativeagent
 
 import (
 	"context"
-	"errors"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -27,24 +26,23 @@ type readAccess interface {
 type runReadAccess struct{ h *runtimeHandler }
 
 func (a runReadAccess) readable(ctx context.Context, tx store.TxAccountScope, id string, library bool) (bool, error) {
-	return readableRevisionInTx(ctx, tx, a.h.held.RunID, a.h.held.ConsentID, id, library)
+	scope, err := readScopeInTx(ctx, tx)
+	if err != nil {
+		return false, err
+	}
+	return readableRevisionInTx(ctx, tx, a.h.held.RunID, scope, id, library)
 }
 
 func (a runReadAccess) consent(ctx context.Context, tx store.TxAccountScope) (Consent, error) {
-	return readConsentForUpdate(ctx, tx, a.h.held.ConsentID)
+	return effectiveConsentInTx(ctx, tx, a.h.held.ConsentID)
 }
 
 func (a runReadAccess) imageCapable() bool { return a.h.held.Model.Capability.ImageInput }
 
+// libraryAllowed: library search switched off refuses the call; a consent
+// that no longer stands ends the run.
 func (a runReadAccess) libraryAllowed(ctx context.Context, metadata bool) error {
-	// search_assets is offered without the grant for its built-in source; an
-	// account search in a run that started without it is refused, not a
-	// run-ending egress request. A grant revoked mid-run still ends it.
-	err := a.h.requireLibrary(ctx, metadata)
-	if errors.Is(err, ErrEgressRequired) && !a.h.libraryEnabled {
-		return refuseTool("这个对话没有资产库授权，查不了账号里的素材；内置材质和内置模型（素体）用 source: \"builtin\" 查")
-	}
-	return err
+	return a.h.requireLibrary(ctx, metadata)
 }
 
 // externalReadAccess is an external agent connection's authorization: the

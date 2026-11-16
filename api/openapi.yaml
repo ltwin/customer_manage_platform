@@ -1368,13 +1368,33 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
-  /creative/conversations/{id}/egress-consents:
+  /creative/egress-consent:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeEgressConsent
+      summary: 读取本账号对发送前说明的同意；前端据此决定是否弹出说明
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeEgressConsentState'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     post:
       tags: [creative-foundation]
       operationId: grantCreativeEgressConsent
-      summary: 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门
+      summary: 同意当前版本的发送前说明，或修改是否允许检索素材库
+      description: >-
+        账号级同意：之后换对话、换浏览器都不再询问，直到说明版本升级或摄影师撤回。
+        与现有同意的版本和素材库选择相同时不新增记录，返回现状。
+        policy_version 不是服务端当前版本时返回 409 creative_egress_policy_changed；
+        expected_revision 与当前状态版本不符（例如另一台设备刚撤回或改过）时返回 409 creative_revision_conflict，
+        客户端应重新读取状态再请摄影师确认。
       parameters:
-      - {in: path, name: id, required: true, schema: {type: string}}
       - in: header
         name: Idempotency-Key
         required: true
@@ -1385,23 +1405,23 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/GrantCreativeEgressConsentRequest'}
       responses:
-        '201':
+        '200':
           description: 成功；同一操作回放原回执
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/CreativeEgressConsent'}
+              schema: {$ref: '#/components/schemas/CreativeEgressConsentState'}
         default:
           description: 请求失败
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
-  /creative/egress-consents/{id}/revoke:
+  /creative/egress-consent/revoke:
     post:
       tags: [creative-foundation]
       operationId: revokeCreativeEgressConsent
-      summary: 阻止后续外发；不承诺召回已发出的内容
+      summary: 撤回外发同意；不能再开始新的回复，进行中的回复在下一次调用模型前停下，已发出的内容无法召回
+      description: 已经没有同意时返回现状，不报错。本账号所有对话的压缩摘要随之失效。
       parameters:
-      - {in: path, name: id, required: true, schema: {type: string}}
       - in: header
         name: Idempotency-Key
         required: true
@@ -1416,7 +1436,7 @@ paths:
           description: 成功；同一操作回放原回执
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/CreativeEgressConsent'}
+              schema: {$ref: '#/components/schemas/CreativeEgressConsentState'}
         default:
           description: 请求失败
           content:
@@ -9651,21 +9671,18 @@ components:
     CreativeAgentRunPayload:
       type: object
       additionalProperties: false
-      required: [instruction, model_key, egress_consent_id]
+      required: [instruction, model_key]
       description: >-
         一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传；
         指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
+        外发按账号当前有效的同意核对，客户端不传授权；没有有效同意时返回
+        403 creative_egress_required 或 409 creative_egress_revoked。
       properties:
         instruction: {$ref: '#/components/schemas/CreativeAgentInstruction'}
         model_key:
           type: string
           description: >-
             必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。
-        egress_consent_id:
-          type: string
-          description: >-
-            本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次，
-            所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。
         scene_context:
           type: object
           additionalProperties: false
@@ -9785,7 +9802,8 @@ components:
     CreativeAgentRetryPayload:
       type: object
       additionalProperties: false
-      required: [step_ids, egress_consent_id]
+      required: [step_ids]
+      description: 重试按账号当前有效的同意核对，客户端不传授权。
       properties:
         step_ids:
           type: array
@@ -9793,7 +9811,6 @@ components:
           maxItems: 1
           items: {type: string}
           description: 当前只恢复未提交结果的 read_skill_resource；模型、成功或未知步骤明确拒绝。
-        egress_consent_id: {type: string}
     CreativeAgentRetryRequest:
       type: object
       additionalProperties: false
@@ -9819,7 +9836,9 @@ components:
           type: string
           description: 由服务端从会话读出；客户端给的对不上也不采信。
         trigger_message_id: {type: string}
-        egress_consent_id: {type: string}
+        egress_consent_id:
+          type: string
+          description: 运行准入时账号当前有效的外发同意（准入证据）；本次变更前创建的运行指向当时的会话级授权。
         model_key: {type: string}
         skill_id: {type: string}
         skill_version_id: {type: string}
@@ -10127,47 +10146,50 @@ components:
         operation_id: {type: string, format: uuid}
         client_created_at: {type: string, format: date-time}
         payload: {$ref: '#/components/schemas/CreativeAgentConversationCreatePayload'}
-    CreativeEgressConsentScope:
+    CreativeEgressAccountConsent:
       type: object
       additionalProperties: false
-      required: [mode, data_classes]
-      properties:
-        mode: {type: string, enum: [selected_revisions, account_library]}
-        data_classes:
-          type: array
-          minItems: 1
-          items: {type: string, enum: [text, image_preview, media_metadata, canvas_metadata]}
-    CreativeEgressConsent:
-      type: object
-      additionalProperties: false
-      description: 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。
-      required: [id, purpose, scope, policy_version, revision, granted_at, approved_revisions]
+      required: [id, policy_version, library_access, granted_at]
       properties:
         id: {type: string}
-        purpose: {type: string, enum: [creative_assistance]}
-        conversation_id: {type: string}
-        scope: {$ref: '#/components/schemas/CreativeEgressConsentScope'}
-        policy_version: {type: string}
-        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        policy_version: {type: string, description: 同意时的说明版本，可能低于当前版本}
+        library_access: {type: boolean, description: 是否允许助手检索素材库}
         granted_at: {type: string, format: date-time}
-        revoked_at: {type: string, format: date-time}
-        approved_revisions: {type: integer, description: 本次授权覆盖的修订数量；清单另存不随回执外发}
+    CreativeEgressConsentState:
+      type: object
+      additionalProperties: false
+      description: >-
+        本账号对发送前说明的同意。内容发给平台签约的模型服务商；不对摄影师列出具体服务商，
+        每次调用实际发往哪家记录在调用证据上。
+      required: [policy_version, effective, revision, consent]
+      properties:
+        policy_version: {type: string, description: 服务端当前的说明版本}
+        effective: {type: boolean, description: 当前同意存在，且版本等于 policy_version}
+        revision:
+          type: string
+          pattern: '^(0|[1-9][0-9]*)$'
+          description: 状态版本；从未同意过时为 "0"
+        consent:
+          allOf:
+          - {$ref: '#/components/schemas/CreativeEgressAccountConsent'}
+          nullable: true
+          description: 当前同意；从未同意或已撤回时为 null
+        revoked_at:
+          type: string
+          format: date-time
+          description: 仅在当前没有同意、且最近一次是撤回时返回
     CreativeEgressConsentGrantPayload:
       type: object
       additionalProperties: false
-      required: [purpose, mode, data_classes]
+      required: [policy_version, library_access, expected_revision]
       properties:
-        purpose: {type: string, enum: [creative_assistance]}
-        mode: {type: string, enum: [selected_revisions, account_library]}
-        data_classes:
-          type: array
-          minItems: 1
-          items: {type: string, enum: [text, image_preview, media_metadata, canvas_metadata]}
-        selected_revision_ids:
-          description: 本条消息显式引用的内容修订，两种模式均可提供且运行引用必须在清单内。account_library 另允许助手按需查找资产库；历史内容按本对话引用判定。
-          type: array
-          maxItems: 200
-          items: {type: string}
+        policy_version: {type: string, minLength: 1, maxLength: 64, description: 摄影师看到的说明版本，必须等于服务端当前版本}
+        library_access: {type: boolean, description: 是否允许助手检索素材库}
+        expected_revision:
+          type: string
+          pattern: '^(0|[1-9][0-9]*)$'
+          maxLength: 19
+          description: 发起方读到的 CreativeEgressConsentState.revision；与服务端当前状态不符时返回 409 creative_revision_conflict，不写入
     GrantCreativeEgressConsentRequest:
       type: object
       additionalProperties: false
@@ -10179,9 +10201,7 @@ components:
     CreativeEgressConsentRevokePayload:
       type: object
       additionalProperties: false
-      required: [expected_revision]
-      properties:
-        expected_revision: {$ref: '#/components/schemas/CreativeRevision'}
+      properties: {}
     RevokeCreativeEgressConsentRequest:
       type: object
       additionalProperties: false

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(
   readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'),
 )[1]
 const fixture = new URL('../.agent-queue-qa.html', import.meta.url)
@@ -24,7 +24,8 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
+// 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
+{const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',defaultOpen:true,canvas:{nodes:[]}})));
 </script></body></html>`,
 )
@@ -150,7 +151,6 @@ async function scene({ state = 'running', send, storage, cancel } = {}) {
     return { ...server.run, last_event_seq: String(server.seq) }
   }
   const accepting = async ({ path, json, body, server }) => {
-    if (path.endsWith('/egress-consents')) return json({ id: `consent-${server.sends.length}` })
     if (path.endsWith('/steers') || path.endsWith('/supplements'))
       return json(await accept(body.payload.instruction_segments), 202)
     const id = `run${Object.keys(server.runs).length + 2}`
@@ -260,16 +260,16 @@ try {
     await s.type('第一条')
     await s.type('第二条')
     await s.finish('succeeded')
-    await s.until(() => s.server.sends.length >= 2, 'the head was sent')
+    await s.until(() => s.server.sends.length >= 1, 'the head was sent')
     await sleep(800)
-    assert.deepEqual(paths(s), ['/conversations/conversation/egress-consents', '/conversations/conversation/runs'])
-    assert.deepEqual(s.server.sends[1].body.payload.instruction.instruction_segments, [{ type: 'text', text: '第一条' }])
+    assert.deepEqual(paths(s), ['/conversations/conversation/runs'])
+    assert.deepEqual(s.server.sends[0].body.payload.instruction.instruction_segments, [{ type: 'text', text: '第一条' }])
     await s.page.locator('.cc-agent-user', { hasText: '第一条' }).waitFor()
     assert.deepEqual(await s.queued(), ['第二条\n插队'], 'the second stays queued behind the new run')
     // The same finished run seen again (a snapshot, a reconnect) sends nothing more.
     await s.emit('run.state_changed', { state: 'succeeded' })
     await sleep(500)
-    assert.equal(s.server.sends.length, 2)
+    assert.equal(s.server.sends.length, 1)
     await s.close()
   })
 
@@ -280,8 +280,8 @@ try {
     await s.queue.getByRole('button', { name: '删除这条' }).first().click()
     assert.deepEqual(await s.queued(), ['第二条\n插队'])
     await s.finish('succeeded')
-    await s.until(() => s.server.sends.length >= 2, 'the remaining one was sent')
-    assert.deepEqual(s.server.sends[1].body.payload.instruction.instruction_segments, [{ type: 'text', text: '第二条' }])
+    await s.until(() => s.server.sends.length >= 1, 'the remaining one was sent')
+    assert.deepEqual(s.server.sends[0].body.payload.instruction.instruction_segments, [{ type: 'text', text: '第二条' }])
     await s.close()
   })
 
@@ -486,12 +486,12 @@ try {
   await check('same: a queued message is the request a direct send would have made', async () => {
     const direct = await scene({ state: 'succeeded' })
     await direct.type('同一句话')
-    await direct.until(() => direct.server.sends.length >= 2, 'sent directly')
+    await direct.until(() => direct.server.sends.length >= 1, 'sent directly')
     const queued = await scene()
     await queued.type('同一句话')
     await queued.finish('succeeded')
-    await queued.until(() => queued.server.sends.length >= 2, 'sent from the queue')
-    const shape = (s) => s.server.sends.slice(0, 2).map((entry) => ({ path: entry.path, payload: entry.body.payload }))
+    await queued.until(() => queued.server.sends.length >= 1, 'sent from the queue')
+    const shape = (s) => s.server.sends.slice(0, 1).map((entry) => ({ path: entry.path, payload: entry.body.payload }))
     assert.deepEqual(shape(queued), shape(direct))
     await direct.close()
     await queued.close()

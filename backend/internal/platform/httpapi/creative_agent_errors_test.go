@@ -71,6 +71,7 @@ func TestARunRefusalIsAnAnswerAndNotAServerFault(t *testing.T) {
 		{"写槽位被占", creativeagent.BusyError{ActiveRunID: "ccrn_1"}, 429, "creative_agent_busy"},
 		{"授权不覆盖", creativeagent.ErrEgressRequired, 403, "creative_egress_required"},
 		{"授权已撤销", creativeagent.ErrConsentRevoked, 409, "creative_egress_revoked"},
+		{"说明已更新", creativeagent.ErrPolicyChanged, 409, "creative_egress_policy_changed"},
 		{"额度用尽", creativeagent.ErrBudgetExceeded, 429, "creative_llm_budget_exceeded"},
 		{"模型不可用", creativeagent.ErrModelCapability, 422, "creative_model_capability_missing"},
 		{"片段本部署跑不了", creativeagent.ErrUnsupportedSegment, 422, "creative_segment_unsupported"},

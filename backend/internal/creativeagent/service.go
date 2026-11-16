@@ -51,7 +51,11 @@ const limitsVersion = "creative-agent-10"
 // egress-2026-10-1 moved from "this vendor" to "the platform's contracted
 // model providers": which company serves a model is the platform's routing
 // decision, recorded per attempt, not something the photographer picks.
-const policyVersion = "egress-2026-10-2"
+// egress-2026-11-1 moved the consent to the account, added the clause that
+// the assistant may reply on its own after background work and bill for it,
+// and made library search a separate choice. Tests stand in for a later
+// notice by aging the stored consent, never by changing this.
+const policyVersion = "egress-2026-11-1"
 
 // consentRecipient fills the recipient column every consent row still has.
 // The disclosure names the platform's providers as a group (privacy notice).

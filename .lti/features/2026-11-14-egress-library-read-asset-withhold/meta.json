@@ -1,0 +1,17 @@
+{
+  "uid": "0c5e1e5d-a722-49ce-ab16-e07cd4e7ba9b",
+  "revision": 1,
+  "id": "egress-library-read-asset-withhold",
+  "kind": "issue",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-11-14T09:34:49.324Z",
+  "updatedAt": "2026-11-14T09:34:49.402Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

@@ -140,11 +140,8 @@ func admitTitleInTx(ctx context.Context, tx store.TxAccountScope, task titleTask
 	if err := tx.RequireCreativeCapability(ctx, "agent_start"); err != nil {
 		return err
 	}
-	consent, err := readConsentForUpdate(ctx, tx, task.ConsentID)
-	if err != nil {
-		return err
-	}
-	return coversRun(consent, task.ConversationID, nil)
+	_, err := effectiveConsentInTx(ctx, tx, task.ConsentID)
+	return err
 }
 
 func (s *Service) nameConversation(ctx context.Context, scope store.AccountScope, task titleTask) error {

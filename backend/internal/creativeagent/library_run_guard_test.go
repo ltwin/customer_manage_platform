@@ -40,7 +40,7 @@ func TestLibraryPhaseRechecksRunAdmission(t *testing.T) {
 				h.held.Deadline = time.Now().Add(-time.Minute)
 				want = llmgateway.ErrDeadline
 			case "consent_revoked":
-				_, err = f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": h.held.ConsentID, "expected_revision": "1"}))
+				f.withdraw(f.alice)
 				want = ErrConsentRevoked
 			}
 			if err != nil {

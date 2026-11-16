@@ -255,9 +255,9 @@ func TestLiveSkillEvaluation(t *testing.T) {
 			}
 			version := page.Items[0].VersionID
 			conversation := f.conversation(f.alice, f.canvasID)
-			consent := libraryConsent(t, f, conversation.ID)
+			_ = libraryConsent(t, f, conversation.ID)
 			execute := func(prompt string) Run {
-				receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation.ID, "model_key": "gpt-6.1-sol", "egress_consent_id": consent.ID, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
+				receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation.ID, "model_key": "gpt-6.1-sol", "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
 				if err != nil {
 					t.Fatal(err)
 				}

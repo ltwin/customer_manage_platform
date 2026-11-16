@@ -36,7 +36,8 @@ import {
 import { SkillPanel, SkillTag, SlashMenu } from '../editor/AgentSkills.tsx'
 import { useSlashMenu } from '../editor/useSlashMenu.ts'
 import LibraryPicker from '../assets/LibraryPicker.tsx'
-import { useEgressNotice } from '../editor/EgressNotice.tsx'
+import { useEgressConsent } from '../editor/EgressNotice.tsx'
+import { forgetConsent, isConsentRefusal } from '../editor/egressConsent.ts'
 import Picker from '../editor/Picker.tsx'
 import { errorMessage } from '../editor/queue.ts'
 import { useJournal } from '../editor/useJournal.ts'
@@ -103,7 +104,7 @@ export default function HomeComposer({
 }) {
   const navigate = useNavigate()
   const { queue, error: storageError } = useJournal(account)
-  const egress = useEgressNotice(account)
+  const egress = useEgressConsent(account)
   const storeKey = homeStartKey(account)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
@@ -287,12 +288,25 @@ export default function HomeComposer({
         // 链已清掉；文字和参考图留着，改了再发仍用这个项目和已建好的对话。
         const conversation =
           outcome.chain.draft?.conversation || current.conversation
-        save({
+        const kept: HomeStart = {
           ...current,
           chain: undefined,
           ...(conversation ? { conversation } : {}),
-        })
+        }
+        save(kept)
         setPending(null)
+        if (isConsentRefusal(outcome.error)) {
+          // 同意在别处撤回或说明更新了：本机记的作废，重新弹出说明，同意后
+          // 用同一份输入再发一次。
+          forgetConsent(account)
+          if (await egress.confirm()) {
+            if (alive.current) await sendMessage(kept)
+            return
+          }
+          if (alive.current)
+            setNotice('发送前说明需要重新确认，这条消息没有发出，输入已保留')
+          return
+        }
         setNotice(sendRefusal(outcome.error, current.attachments.length > 0))
         return
       }
@@ -312,11 +326,7 @@ export default function HomeComposer({
     const selected = catalog.skills.find(
       (item) => item.skill_version_id === current.skill,
     )
-    const chain = homeChain(
-      { ...current, canvasID },
-      { imageInput: chosen.capability.image_input },
-      selected,
-    )
+    const chain = homeChain({ ...current, canvasID }, selected)
     if (
       !replacePendingChain(sessionStorage, slotFor(canvasID).key, null, chain)
     )
@@ -331,9 +341,6 @@ export default function HomeComposer({
   async function send() {
     if (!canSend || !queue) return
     // 首次外发说明放在建项目之前：取消时什么都不建，输入和参考图原样留着。
-    if (!(await egress.confirm()) || !alive.current) return
-    setNotice('')
-    setBusy(true)
     let current: HomeStart = {
       ...(start?.projectID
         ? {
@@ -348,6 +355,11 @@ export default function HomeComposer({
       skill,
       attachments: savedAttachments(attachments.items),
     }
+    // 说明更新、要刷新页面时，输入和参考图先落盘，刷新后照常找回。
+    const keep = () => save(current)
+    if (!(await egress.confirm(keep)) || !alive.current) return
+    setNotice('')
+    setBusy(true)
     try {
       save(current)
       if (!current.projectID) {

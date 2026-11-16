@@ -91,10 +91,7 @@ func TestARevokedConsentStopsNaming(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := f.titleTask()
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice,
-		command(t, map[string]any{"consent_id": consent.ID, "expected_revision": consent.Revision})); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	before, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")
 	if err != nil {
 		t.Fatal(err)

@@ -95,7 +95,7 @@ func creativeError(c *gin.Context, err error) {
 		errors.Is(err, creativeagent.ErrEgressRequired), errors.Is(err, creativeagent.ErrBudgetExceeded),
 		errors.Is(err, creativeagent.ErrModelCapability), errors.Is(err, creativeagent.ErrUnsupportedSegment),
 		errors.Is(err, creativeagent.ErrRunState), errors.Is(err, creativeagent.ErrRecoveryEvidence),
-		errors.Is(err, creativeagent.ErrConversationArchived):
+		errors.Is(err, creativeagent.ErrConversationArchived), errors.Is(err, creativeagent.ErrPolicyChanged):
 		creativeAgentError(c, err)
 	case errors.Is(err, creativeskill.ErrNotFound), errors.Is(err, creativeskill.ErrLimit),
 		errors.Is(err, creativeskill.ErrResourceUnavailable), errors.Is(err, creativeskill.ErrContentMismatch):

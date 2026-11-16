@@ -15,17 +15,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-func contextConsent(t *testing.T, f *fixture, conversation string, ids ...string) Consent {
+func contextConsent(t *testing.T, f *fixture, _ string, _ ...string) Consent {
 	t.Helper()
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "purpose": "creative_assistance", "mode": ScopeSelectedRevisions, "data_classes": []string{"text", "image_preview", "canvas_metadata"}, "selected_revision_ids": ids}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var c Consent
-	if err = json.Unmarshal(receipt.Outcome.Response, &c); err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return f.accountConsent(f.alice, false)
 }
 
 func TestContextToolsAndPairedHistoryReachProvider(t *testing.T) {
@@ -64,7 +56,13 @@ func TestContextToolsAndPairedHistoryReachProvider(t *testing.T) {
 		return scriptedResult(r), nil
 	}
 	for i := 0; i < 2; i++ {
-		run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "继续整理"})
+		// The photographer references the material; that, not a separate
+		// approval list, is what puts it within the run's reach.
+		segments := []InstructionSegment{{Type: "text", Text: "继续整理"}}
+		if i == 0 {
+			segments = append(segments, InstructionSegment{Type: "content_ref", ContentRevisionID: revision})
+		}
+		run, err := f.startRun(f.alice, c.ID, consent.ID, segments...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,7 +93,7 @@ type testImageReader struct{}
 func (testImageReader) AgentImage(_ context.Context, _ store.AccountScope, id string, _ int64) (*llmgateway.ImageInput, error) {
 	return &llmgateway.ImageInput{RevisionID: id, Digest: "sha256-" + strings.Repeat("a", 64), MIME: "image/png", ByteSize: 5, Open: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("image")), nil }}, nil
 }
-func TestImageReferenceSurvivesHistoryAndNeedsRenewedConsent(t *testing.T) {
+func TestImageReferenceSurvivesHistory(t *testing.T) {
 	f := setup(t)
 	original, err := f.service.models.Model(testModelKey)
 	if err != nil {
@@ -118,10 +116,6 @@ func TestImageReferenceSurvivesHistoryAndNeedsRenewedConsent(t *testing.T) {
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
 	id := f.mediaRevision(f.alice, "image", "image/png")
-	textConsent := f.consent(f.alice, c.ID, id)
-	if _, err := f.startRun(f.alice, c.ID, textConsent.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: id}); !errors.Is(err, ErrEgressRequired) {
-		t.Fatalf("image without image consent: %v", err)
-	}
 	consent := contextConsent(t, f, c.ID, id)
 	f.vendor.script = func(ctx context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
 		images := 0
@@ -144,12 +138,8 @@ func TestImageReferenceSurvivesHistoryAndNeedsRenewedConsent(t *testing.T) {
 				}
 			}
 		}
-		expected := 1
-		if n == 4 {
-			expected = 0
-		}
-		if images != expected {
-			t.Fatalf("turn %d: images=%d want %d", n, images, expected)
+		if images != 1 {
+			t.Fatalf("turn %d: images=%d want 1", n, images)
 		}
 		if n == 1 {
 			return scriptedResult(r, llmgateway.ToolCall{ID: "read-image", Name: readAssetTool, Arguments: json.RawMessage(fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":100}`, id))}), nil
@@ -160,9 +150,6 @@ func TestImageReferenceSurvivesHistoryAndNeedsRenewedConsent(t *testing.T) {
 		segments := []InstructionSegment{{Type: "text", Text: "描述这张图"}}
 		if i == 0 {
 			segments = append(segments, InstructionSegment{Type: "content_ref", ContentRevisionID: id})
-		}
-		if i == 2 {
-			consent = f.consent(f.alice, c.ID)
 		}
 		run, err := f.startRun(f.alice, c.ID, consent.ID, segments...)
 		if err != nil {
@@ -323,6 +310,12 @@ func TestImageBudgetPrioritizesCurrentReferences(t *testing.T) {
 				ids[i] = f.mediaRevision(f.alice, "image", "image/png")
 			}
 			consent := contextConsent(t, f, c.ID, ids...)
+			// Earlier in the conversation the photographer shared these images.
+			refs := make([]ContentRef, len(ids))
+			for i, id := range ids {
+				refs[i] = ContentRef{RevisionID: id, Role: "input"}
+			}
+			appendLookupMessage(t, f, c.ID, refs, "之前发过的图")
 			run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "描述图片"})
 			if err != nil {
 				t.Fatal(err)

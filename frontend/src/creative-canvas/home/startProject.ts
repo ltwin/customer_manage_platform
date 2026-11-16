@@ -115,7 +115,6 @@ export function recoverHomeStart(
 // 参考图按添加顺序作为 content_ref 追加在后面。
 export function homeChain(
   start: HomeStart & { canvasID: string },
-  model: { imageInput: boolean },
   skill?: { skill_id: string; skill_version_id: string },
 ): PendingAgentChain {
   const ids = start.attachments.map((item) => item.id)
@@ -140,8 +139,6 @@ export function homeChain(
       ...(start.conversation ? [] : [conversationStep(start.canvasID)]),
       ...messageSteps(start.conversation || conversationSlot, {
         model: start.model,
-        imageInput: model.imageInput,
-        revisionIDs: ids,
         segments,
       }),
     ],

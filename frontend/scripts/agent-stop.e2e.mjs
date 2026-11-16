@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(
   readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'),
 )[1]
 const fixture = new URL('../.agent-stop-qa.html', import.meta.url)
@@ -24,7 +24,8 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
+// 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
+{const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',defaultOpen:true,canvas:{nodes:[]}})));
 </script></body></html>`,
 )
@@ -302,7 +303,7 @@ try {
     for (let i = 0; i < 40 && s.server.sends.length === 0; i++) await sleep(50)
     assert(s.server.sends.length > 0, 'sent after the stop')
     assert(s.server.sends[0].at >= answeredAt, 'sent after the stop answered')
-    assert(s.server.sends[0].path.endsWith('/egress-consents'))
+    assert(s.server.sends[0].path.endsWith('/runs'))
     await s.close()
   })
 
@@ -317,7 +318,6 @@ try {
         return json(server.runs[entry.run])
       },
       send: async ({ path, json, server }) => {
-        if (path.endsWith('/egress-consents')) return json({ id: 'consent-2' })
         await gate
         return runs({ json, server })
       },
@@ -409,7 +409,7 @@ try {
     await respond()
     for (let i = 0; i < 40 && s.server.sends.length === 0; i++) await sleep(50)
     await sleep(300)
-    assert.deepEqual(s.server.sends.map((send) => send.path.split('/').at(-1)), ['egress-consents'], 'only the second message was sent')
+    assert.deepEqual(s.server.sends.map((send) => send.path.split('/').at(-1)), ['runs'], 'only the second message was sent')
     // The mock refuses it, so its words come back to the composer.
     await editor.getByText('第二条').waitFor()
     await s.close()

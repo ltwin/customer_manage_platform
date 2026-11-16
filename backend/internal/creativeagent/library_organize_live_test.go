@@ -75,8 +75,8 @@ func TestLiveAgentLibraryOrganizeTwentyImages(t *testing.T) {
 		}
 	}
 	c := f.conversation(f.alice, f.canvasID)
-	consent := libraryConsent(t, f, c.ID)
-	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "egress_consent_id": consent.ID, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: "请整理资产库中全部 20 张合成配色参考图片：逐张查看图片，按画面补写空描述，并创建和添加合适的标签。每张都要查看后再写，不改任何已有标题，不覆盖非空描述，也不生成图片。我已指派这项整理，请把20张全部完成，再按你添加的标签搜索验证可检索。每批最多8张，请分批完成。"}}}}))
+	_ = libraryConsent(t, f, c.ID)
+	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: "请整理资产库中全部 20 张合成配色参考图片：逐张查看图片，按画面补写空描述，并创建和添加合适的标签。每张都要查看后再写，不改任何已有标题，不覆盖非空描述，也不生成图片。我已指派这项整理，请把20张全部完成，再按你添加的标签搜索验证可检索。每批最多8张，请分批完成。"}}}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,8 +207,8 @@ func TestLiveAgentLibraryOverwriteRequiresConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := f.conversation(f.alice, f.canvasID)
-	consent := libraryConsent(t, f, c.ID)
-	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "egress_consent_id": consent.ID, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: fmt.Sprintf("请整理资产库素材 %s，帮我优化它已有的标题和描述，让它更好检索。", asset)}}}}))
+	_ = libraryConsent(t, f, c.ID)
+	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: fmt.Sprintf("请整理资产库素材 %s，帮我优化它已有的标题和描述，让它更好检索。", asset)}}}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestLiveAgentLibraryOverwriteRequiresConfirmation(t *testing.T) {
 
 func liveLibraryRun(t *testing.T, f *fixture, conversation, consent, prompt string) string {
 	t.Helper()
-	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "model_key": "gpt-6.1-sol", "egress_consent_id": consent, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
+	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "model_key": "gpt-6.1-sol", "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1340,120 +1340,6 @@ func (e CreativeDocumentPurgeResultPurged) Valid() bool {
 	}
 }
 
-// Defines values for CreativeEgressConsentPurpose.
-const (
-	CreativeEgressConsentPurposeCreativeAssistance CreativeEgressConsentPurpose = "creative_assistance"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentPurpose enum.
-func (e CreativeEgressConsentPurpose) Valid() bool {
-	switch e {
-	case CreativeEgressConsentPurposeCreativeAssistance:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreativeEgressConsentGrantPayloadDataClasses.
-const (
-	CreativeEgressConsentGrantPayloadDataClassesCanvasMetadata CreativeEgressConsentGrantPayloadDataClasses = "canvas_metadata"
-	CreativeEgressConsentGrantPayloadDataClassesImagePreview   CreativeEgressConsentGrantPayloadDataClasses = "image_preview"
-	CreativeEgressConsentGrantPayloadDataClassesMediaMetadata  CreativeEgressConsentGrantPayloadDataClasses = "media_metadata"
-	CreativeEgressConsentGrantPayloadDataClassesText           CreativeEgressConsentGrantPayloadDataClasses = "text"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadDataClasses enum.
-func (e CreativeEgressConsentGrantPayloadDataClasses) Valid() bool {
-	switch e {
-	case CreativeEgressConsentGrantPayloadDataClassesCanvasMetadata:
-		return true
-	case CreativeEgressConsentGrantPayloadDataClassesImagePreview:
-		return true
-	case CreativeEgressConsentGrantPayloadDataClassesMediaMetadata:
-		return true
-	case CreativeEgressConsentGrantPayloadDataClassesText:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreativeEgressConsentGrantPayloadMode.
-const (
-	CreativeEgressConsentGrantPayloadModeAccountLibrary    CreativeEgressConsentGrantPayloadMode = "account_library"
-	CreativeEgressConsentGrantPayloadModeSelectedRevisions CreativeEgressConsentGrantPayloadMode = "selected_revisions"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadMode enum.
-func (e CreativeEgressConsentGrantPayloadMode) Valid() bool {
-	switch e {
-	case CreativeEgressConsentGrantPayloadModeAccountLibrary:
-		return true
-	case CreativeEgressConsentGrantPayloadModeSelectedRevisions:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreativeEgressConsentGrantPayloadPurpose.
-const (
-	CreativeEgressConsentGrantPayloadPurposeCreativeAssistance CreativeEgressConsentGrantPayloadPurpose = "creative_assistance"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadPurpose enum.
-func (e CreativeEgressConsentGrantPayloadPurpose) Valid() bool {
-	switch e {
-	case CreativeEgressConsentGrantPayloadPurposeCreativeAssistance:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreativeEgressConsentScopeDataClasses.
-const (
-	CreativeEgressConsentScopeDataClassesCanvasMetadata CreativeEgressConsentScopeDataClasses = "canvas_metadata"
-	CreativeEgressConsentScopeDataClassesImagePreview   CreativeEgressConsentScopeDataClasses = "image_preview"
-	CreativeEgressConsentScopeDataClassesMediaMetadata  CreativeEgressConsentScopeDataClasses = "media_metadata"
-	CreativeEgressConsentScopeDataClassesText           CreativeEgressConsentScopeDataClasses = "text"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentScopeDataClasses enum.
-func (e CreativeEgressConsentScopeDataClasses) Valid() bool {
-	switch e {
-	case CreativeEgressConsentScopeDataClassesCanvasMetadata:
-		return true
-	case CreativeEgressConsentScopeDataClassesImagePreview:
-		return true
-	case CreativeEgressConsentScopeDataClassesMediaMetadata:
-		return true
-	case CreativeEgressConsentScopeDataClassesText:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreativeEgressConsentScopeMode.
-const (
-	CreativeEgressConsentScopeModeAccountLibrary    CreativeEgressConsentScopeMode = "account_library"
-	CreativeEgressConsentScopeModeSelectedRevisions CreativeEgressConsentScopeMode = "selected_revisions"
-)
-
-// Valid indicates whether the value is a known member of the CreativeEgressConsentScopeMode enum.
-func (e CreativeEgressConsentScopeMode) Valid() bool {
-	switch e {
-	case CreativeEgressConsentScopeModeAccountLibrary:
-		return true
-	case CreativeEgressConsentScopeModeSelectedRevisions:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for CreativeFoundationCapabilitiesSchemaVersion.
 const (
 	CreativeFoundationCapabilitiesSchemaVersionN1 CreativeFoundationCapabilitiesSchemaVersion = 1
@@ -4704,7 +4590,7 @@ type CreateCreativeAgentRunRequest struct {
 	ClientCreatedAt time.Time          `json:"client_created_at"`
 	OperationId     openapi_types.UUID `json:"operation_id"`
 
-	// Payload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
+	// Payload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。 外发按账号当前有效的同意核对，客户端不传授权；没有有效同意时返回 403 creative_egress_required 或 409 creative_egress_revoked。
 	Payload CreativeAgentRunPayload `json:"payload"`
 }
 
@@ -5406,19 +5292,19 @@ type CreativeAgentModelCapability struct {
 	ToolChoice      bool `json:"tool_choice"`
 }
 
-// CreativeAgentRetryPayload defines model for CreativeAgentRetryPayload.
+// CreativeAgentRetryPayload 重试按账号当前有效的同意核对，客户端不传授权。
 type CreativeAgentRetryPayload struct {
-	EgressConsentId string `json:"egress_consent_id"`
-
 	// StepIds 当前只恢复未提交结果的 read_skill_resource；模型、成功或未知步骤明确拒绝。
 	StepIds []string `json:"step_ids"`
 }
 
 // CreativeAgentRetryRequest defines model for CreativeAgentRetryRequest.
 type CreativeAgentRetryRequest struct {
-	ClientCreatedAt time.Time                 `json:"client_created_at"`
-	OperationId     openapi_types.UUID        `json:"operation_id"`
-	Payload         CreativeAgentRetryPayload `json:"payload"`
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+
+	// Payload 重试按账号当前有效的同意核对，客户端不传授权。
+	Payload CreativeAgentRetryPayload `json:"payload"`
 }
 
 // CreativeAgentRun defines model for CreativeAgentRun.
@@ -5432,7 +5318,9 @@ type CreativeAgentRun struct {
 	CreatedAt      time.Time `json:"created_at"`
 
 	// DeadlineAt 本次运行的有界执行期限；等待与恢复都不延长它。
-	DeadlineAt      time.Time  `json:"deadline_at"`
+	DeadlineAt time.Time `json:"deadline_at"`
+
+	// EgressConsentId 运行准入时账号当前有效的外发同意（准入证据）；本次变更前创建的运行指向当时的会话级授权。
 	EgressConsentId string     `json:"egress_consent_id"`
 	ErrorCode       *string    `json:"error_code,omitempty"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
@@ -5485,11 +5373,8 @@ type CreativeAgentRunPage struct {
 	Items []CreativeAgentRun `json:"items"`
 }
 
-// CreativeAgentRunPayload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
+// CreativeAgentRunPayload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。 外发按账号当前有效的同意核对，客户端不传授权；没有有效同意时返回 403 creative_egress_required 或 409 creative_egress_revoked。
 type CreativeAgentRunPayload struct {
-	// EgressConsentId 本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次， 所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。
-	EgressConsentId string `json:"egress_consent_id"`
-
 	// Instruction 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
 	Instruction CreativeAgentInstruction `json:"instruction"`
 
@@ -6418,61 +6303,50 @@ type CreativeDocumentTrashResult struct {
 // CreativeDocumentUnitRevisions 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
 type CreativeDocumentUnitRevisions map[string]CreativeRevision
 
-// CreativeEgressConsent 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。
-type CreativeEgressConsent struct {
-	// ApprovedRevisions 本次授权覆盖的修订数量；清单另存不随回执外发
-	ApprovedRevisions int                          `json:"approved_revisions"`
-	ConversationId    *string                      `json:"conversation_id,omitempty"`
-	GrantedAt         time.Time                    `json:"granted_at"`
-	Id                string                       `json:"id"`
-	PolicyVersion     string                       `json:"policy_version"`
-	Purpose           CreativeEgressConsentPurpose `json:"purpose"`
+// CreativeEgressAccountConsent defines model for CreativeEgressAccountConsent.
+type CreativeEgressAccountConsent struct {
+	GrantedAt time.Time `json:"granted_at"`
+	Id        string    `json:"id"`
 
-	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	Revision  CreativeRevision           `json:"revision"`
-	RevokedAt *time.Time                 `json:"revoked_at,omitempty"`
-	Scope     CreativeEgressConsentScope `json:"scope"`
+	// LibraryAccess 是否允许助手检索素材库
+	LibraryAccess bool `json:"library_access"`
+
+	// PolicyVersion 同意时的说明版本，可能低于当前版本
+	PolicyVersion string `json:"policy_version"`
 }
-
-// CreativeEgressConsentPurpose defines model for CreativeEgressConsent.Purpose.
-type CreativeEgressConsentPurpose string
 
 // CreativeEgressConsentGrantPayload defines model for CreativeEgressConsentGrantPayload.
 type CreativeEgressConsentGrantPayload struct {
-	DataClasses []CreativeEgressConsentGrantPayloadDataClasses `json:"data_classes"`
-	Mode        CreativeEgressConsentGrantPayloadMode          `json:"mode"`
-	Purpose     CreativeEgressConsentGrantPayloadPurpose       `json:"purpose"`
+	// ExpectedRevision 发起方读到的 CreativeEgressConsentState.revision；与服务端当前状态不符时返回 409 creative_revision_conflict，不写入
+	ExpectedRevision string `json:"expected_revision"`
 
-	// SelectedRevisionIds 本条消息显式引用的内容修订，两种模式均可提供且运行引用必须在清单内。account_library 另允许助手按需查找资产库；历史内容按本对话引用判定。
-	SelectedRevisionIds *[]string `json:"selected_revision_ids,omitempty"`
+	// LibraryAccess 是否允许助手检索素材库
+	LibraryAccess bool `json:"library_access"`
+
+	// PolicyVersion 摄影师看到的说明版本，必须等于服务端当前版本
+	PolicyVersion string `json:"policy_version"`
 }
-
-// CreativeEgressConsentGrantPayloadDataClasses defines model for CreativeEgressConsentGrantPayload.DataClasses.
-type CreativeEgressConsentGrantPayloadDataClasses string
-
-// CreativeEgressConsentGrantPayloadMode defines model for CreativeEgressConsentGrantPayload.Mode.
-type CreativeEgressConsentGrantPayloadMode string
-
-// CreativeEgressConsentGrantPayloadPurpose defines model for CreativeEgressConsentGrantPayload.Purpose.
-type CreativeEgressConsentGrantPayloadPurpose string
 
 // CreativeEgressConsentRevokePayload defines model for CreativeEgressConsentRevokePayload.
-type CreativeEgressConsentRevokePayload struct {
-	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	ExpectedRevision CreativeRevision `json:"expected_revision"`
+type CreativeEgressConsentRevokePayload = map[string]interface{}
+
+// CreativeEgressConsentState 本账号对发送前说明的同意。内容发给平台签约的模型服务商；不对摄影师列出具体服务商， 每次调用实际发往哪家记录在调用证据上。
+type CreativeEgressConsentState struct {
+	// Consent 当前同意；从未同意或已撤回时为 null
+	Consent nullable.Nullable[CreativeEgressAccountConsent] `json:"consent"`
+
+	// Effective 当前同意存在，且版本等于 policy_version
+	Effective bool `json:"effective"`
+
+	// PolicyVersion 服务端当前的说明版本
+	PolicyVersion string `json:"policy_version"`
+
+	// Revision 状态版本；从未同意过时为 "0"
+	Revision string `json:"revision"`
+
+	// RevokedAt 仅在当前没有同意、且最近一次是撤回时返回
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
-
-// CreativeEgressConsentScope defines model for CreativeEgressConsentScope.
-type CreativeEgressConsentScope struct {
-	DataClasses []CreativeEgressConsentScopeDataClasses `json:"data_classes"`
-	Mode        CreativeEgressConsentScopeMode          `json:"mode"`
-}
-
-// CreativeEgressConsentScopeDataClasses defines model for CreativeEgressConsentScope.DataClasses.
-type CreativeEgressConsentScopeDataClasses string
-
-// CreativeEgressConsentScopeMode defines model for CreativeEgressConsentScope.Mode.
-type CreativeEgressConsentScopeMode string
 
 // CreativeEmptyPayload defines model for CreativeEmptyPayload.
 type CreativeEmptyPayload = map[string]interface{}
@@ -10463,11 +10337,6 @@ type ArchiveCreativeAgentConversationParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
-// GrantCreativeEgressConsentParams defines parameters for GrantCreativeEgressConsent.
-type GrantCreativeEgressConsentParams struct {
-	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
-}
-
 // ListCreativeAgentMessagesParams defines parameters for ListCreativeAgentMessages.
 type ListCreativeAgentMessagesParams struct {
 	// BeforeOrdinal 不含该序号；留空表示从最新开始
@@ -10544,6 +10413,11 @@ type TrashCreativeDocumentParams struct {
 
 // UntrashCreativeDocumentParams defines parameters for UntrashCreativeDocument.
 type UntrashCreativeDocumentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GrantCreativeEgressConsentParams defines parameters for GrantCreativeEgressConsent.
+type GrantCreativeEgressConsentParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -11144,9 +11018,6 @@ type ApplyCreativeImageEditJSONRequestBody = ApplyCreativeImageEditRequest
 // ArchiveCreativeAgentConversationJSONRequestBody defines body for ArchiveCreativeAgentConversation for application/json ContentType.
 type ArchiveCreativeAgentConversationJSONRequestBody = CreativeAgentConversationStateRequest
 
-// GrantCreativeEgressConsentJSONRequestBody defines body for GrantCreativeEgressConsent for application/json ContentType.
-type GrantCreativeEgressConsentJSONRequestBody = GrantCreativeEgressConsentRequest
-
 // RenameCreativeAgentConversationJSONRequestBody defines body for RenameCreativeAgentConversation for application/json ContentType.
 type RenameCreativeAgentConversationJSONRequestBody = RenameCreativeAgentConversationRequest
 
@@ -11170,6 +11041,9 @@ type TrashCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
 
 // UntrashCreativeDocumentJSONRequestBody defines body for UntrashCreativeDocument for application/json ContentType.
 type UntrashCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
+
+// GrantCreativeEgressConsentJSONRequestBody defines body for GrantCreativeEgressConsent for application/json ContentType.
+type GrantCreativeEgressConsentJSONRequestBody = GrantCreativeEgressConsentRequest
 
 // RevokeCreativeEgressConsentJSONRequestBody defines body for RevokeCreativeEgressConsent for application/json ContentType.
 type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentRequest
@@ -14027,9 +13901,6 @@ type ServerInterface interface {
 	// 归档对话：从列表移走，恢复前不能再发起运行
 	// (POST /creative/conversations/{id}/archive)
 	ArchiveCreativeAgentConversation(c *gin.Context, id string, params ArchiveCreativeAgentConversationParams)
-	// 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门
-	// (POST /creative/conversations/{id}/egress-consents)
-	GrantCreativeEgressConsent(c *gin.Context, id string, params GrantCreativeEgressConsentParams)
 	// 从最新往回分页；每页按阅读顺序返回
 	// (GET /creative/conversations/{id}/messages)
 	ListCreativeAgentMessages(c *gin.Context, id string, params ListCreativeAgentMessagesParams)
@@ -14081,9 +13952,15 @@ type ServerInterface interface {
 
 	// (POST /creative/documents/{id}/untrash)
 	UntrashCreativeDocument(c *gin.Context, id string, params UntrashCreativeDocumentParams)
-	// 阻止后续外发；不承诺召回已发出的内容
-	// (POST /creative/egress-consents/{id}/revoke)
-	RevokeCreativeEgressConsent(c *gin.Context, id string, params RevokeCreativeEgressConsentParams)
+	// 读取本账号对发送前说明的同意；前端据此决定是否弹出说明
+	// (GET /creative/egress-consent)
+	GetCreativeEgressConsent(c *gin.Context)
+	// 同意当前版本的发送前说明，或修改是否允许检索素材库
+	// (POST /creative/egress-consent)
+	GrantCreativeEgressConsent(c *gin.Context, params GrantCreativeEgressConsentParams)
+	// 撤回外发同意；不能再开始新的回复，进行中的回复在下一次调用模型前停下，已发出的内容无法召回
+	// (POST /creative/egress-consent/revoke)
+	RevokeCreativeEgressConsent(c *gin.Context, params RevokeCreativeEgressConsentParams)
 	// 本账号可用的全部生成模型；节点能否生成由客户端按节点类型、版本和画布状态判断，提交时服务端仍会复核
 	// (GET /creative/generation/catalog)
 	GetCreativeGenerationCatalog(c *gin.Context)
@@ -17131,60 +17008,6 @@ func (siw *ServerInterfaceWrapper) ArchiveCreativeAgentConversation(c *gin.Conte
 	siw.Handler.ArchiveCreativeAgentConversation(c, id, params)
 }
 
-// GrantCreativeEgressConsent operation middleware
-func (siw *ServerInterfaceWrapper) GrantCreativeEgressConsent(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(string(BearerAuthScopes), []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GrantCreativeEgressConsentParams
-
-	headers := c.Request.Header
-
-	// ------------- Required header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey openapi_types.UUID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
-		if err != nil {
-			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	} else {
-		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GrantCreativeEgressConsent(c, id, params)
-}
-
 // ListCreativeAgentMessages operation middleware
 func (siw *ServerInterfaceWrapper) ListCreativeAgentMessages(c *gin.Context) {
 
@@ -17990,20 +17813,71 @@ func (siw *ServerInterfaceWrapper) UntrashCreativeDocument(c *gin.Context) {
 	siw.Handler.UntrashCreativeDocument(c, id, params)
 }
 
+// GetCreativeEgressConsent operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeEgressConsent(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeEgressConsent(c)
+}
+
+// GrantCreativeEgressConsent operation middleware
+func (siw *ServerInterfaceWrapper) GrantCreativeEgressConsent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GrantCreativeEgressConsentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GrantCreativeEgressConsent(c, params)
+}
+
 // RevokeCreativeEgressConsent operation middleware
 func (siw *ServerInterfaceWrapper) RevokeCreativeEgressConsent(c *gin.Context) {
 
 	var err error
 	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
 
 	c.Set(string(BearerAuthScopes), []string{})
 
@@ -18041,7 +17915,7 @@ func (siw *ServerInterfaceWrapper) RevokeCreativeEgressConsent(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.RevokeCreativeEgressConsent(c, id, params)
+	siw.Handler.RevokeCreativeEgressConsent(c, params)
 }
 
 // GetCreativeGenerationCatalog operation middleware
@@ -21370,7 +21244,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/character-ips", wrapper.SuggestCreativeCharacterIPs)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
 	router.POST(options.BaseURL+"/creative/conversations/:id/archive", wrapper.ArchiveCreativeAgentConversation)
-	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/conversations/:id/messages", wrapper.ListCreativeAgentMessages)
 	router.POST(options.BaseURL+"/creative/conversations/:id/rename", wrapper.RenameCreativeAgentConversation)
 	router.POST(options.BaseURL+"/creative/conversations/:id/restore", wrapper.RestoreCreativeAgentConversation)
@@ -21388,7 +21261,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/documents/:id/scene-jobs", wrapper.ListCreativeSceneJobs)
 	router.POST(options.BaseURL+"/creative/documents/:id/trash", wrapper.TrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/documents/:id/untrash", wrapper.UntrashCreativeDocument)
-	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
+	router.GET(options.BaseURL+"/creative/egress-consent", wrapper.GetCreativeEgressConsent)
+	router.POST(options.BaseURL+"/creative/egress-consent", wrapper.GrantCreativeEgressConsent)
+	router.POST(options.BaseURL+"/creative/egress-consent/revoke", wrapper.RevokeCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/generation/catalog", wrapper.GetCreativeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/image-edit-capabilities", wrapper.GetCreativeImageEditCapabilities)
 	router.POST(options.BaseURL+"/creative/image-edit-renders", wrapper.CreateCreativeImageEditRender)

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"time"
 
@@ -39,6 +38,11 @@ var (
 	// run would send. It is deliberately distinct from ErrConsentRevoked: one
 	// was never granted, the other was taken back.
 	ErrEgressRequired = errors.New("creative egress consent does not cover this run")
+	// ErrLibraryClosed is ErrEgressRequired for one reason the photographer can
+	// name: library search was closed while the run still held what library
+	// reads returned. It answers to errors.Is(err, ErrEgressRequired) so every
+	// gate keeps refusing it; only the reason told to the photographer differs.
+	ErrLibraryClosed = fmt.Errorf("%w: library search closed", ErrEgressRequired)
 	// ErrRunState is a run asked to do something its current state forbids.
 	ErrRunState = errors.New("creative run state does not allow this")
 )
@@ -190,11 +194,10 @@ type Instruction struct {
 }
 
 type createRun struct {
-	ConversationID  string        `json:"conversation_id"`
-	Instruction     Instruction   `json:"instruction"`
-	ModelKey        string        `json:"model_key"`
-	EgressConsentID string        `json:"egress_consent_id"`
-	SceneContext    *SceneContext `json:"scene_context"`
+	ConversationID string        `json:"conversation_id"`
+	Instruction    Instruction   `json:"instruction"`
+	ModelKey       string        `json:"model_key"`
+	SceneContext   *SceneContext `json:"scene_context"`
 }
 
 // CreateRun turns one submission into work. Everything that makes the run real
@@ -226,7 +229,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err := creativeops.Decode(raw, &input); err != nil {
 				return err
 			}
-			if input.ConversationID == "" || input.EgressConsentID == "" ||
+			if input.ConversationID == "" ||
 				input.Instruction.SchemaVersion != instructionSchemaVersion || !input.SceneContext.valid() {
 				return creativeops.ErrValidation
 			}
@@ -274,8 +277,8 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				return creativeops.Outcome{}, err
 			}
 			// Lock order: the project row (above), the conversation's write slot, then the gateway's group and
-			// budget rows, then the conversation, then the consent, then the
-			// content revisions it authorises.
+			// budget rows, then the conversation, then the account's consent
+			// state, then the content revisions.
 			if err := acquireSlotInTx(ctx, tx, input.ConversationID, runID, claim, now); err != nil {
 				return creativeops.Outcome{}, err
 			}
@@ -288,11 +291,12 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				return creativeops.Outcome{}, err
 			}
 			canvasID := conversation.CanvasID
-			consent, err := readConsentForUpdate(ctx, tx, input.EgressConsentID)
+			// The account's consent in force. There is no per-message
+			// authorisation: what the message references is checked below for
+			// ownership, display rights and data class, and the run records
+			// the consent it was admitted under.
+			consent, err := effectiveConsentInTx(ctx, tx, "")
 			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if err := coversRun(consent, input.ConversationID, resolved.ContentRefs); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			if resolved.Skill != nil {
@@ -310,17 +314,6 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			// and could have been overtaken by a withdrawal; this one cannot.
 			imageCount := 0
 			for _, ref := range resolved.ContentRefs {
-				// Being able to display a revision and having authorised it to
-				// leave the account are two different permissions, and the run
-				// needs both.
-				approved, err := tx.Exists(ctx, "creative_egress_consent_contents",
-					"consent_id=$2 AND content_revision_id=$3", consent.ID, ref.RevisionID)
-				if err != nil {
-					return creativeops.Outcome{}, err
-				}
-				if !approved {
-					return creativeops.Outcome{}, ErrEgressRequired
-				}
 				rev, err := creativecontent.RequireUsable(ctx, tx, ref.RevisionID, "display")
 				if err != nil {
 					return creativeops.Outcome{}, translateContent(err)
@@ -517,29 +510,6 @@ func jsonValue(value any) (any, error) {
 		return nil, nil
 	}
 	return json.Marshal(value)
-}
-
-// coversRun decides whether the authorisation on file reaches what this run
-// would actually send. Every clause answers a different question, and a run may
-// only start when all of them say yes.
-func coversRun(consent Consent, conversationID string, _ []ContentRef) error {
-	switch {
-	case consent.RevokedAt != nil:
-		return ErrConsentRevoked
-	case consent.ConversationID != conversationID:
-		// A consent granted for another conversation authorises another set of
-		// words; the photographer's own messages are part of what leaves.
-		return ErrEgressRequired
-	case consent.PolicyVersion != policyVersion:
-		// A new disclosure needs a new consent rather than a silent reuse of an
-		// agreement to different words.
-		return ErrEgressRequired
-	case !slices.Contains(consent.Scope.DataClasses, "text"):
-		return ErrEgressRequired
-	case consent.Scope.Mode != ScopeSelectedRevisions && consent.Scope.Mode != ScopeAccountLibrary:
-		return ErrEgressRequired
-	}
-	return nil
 }
 
 // turnBindingKey is the durable name of one model turn. It is derived from the

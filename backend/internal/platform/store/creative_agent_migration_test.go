@@ -114,8 +114,8 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 
 	consent := func(id, vendor string) error {
 		_, err := db.Exec(`INSERT INTO creative_egress_consents
-			(id,account_id,vendor_key,purpose,scope,policy_version)
-			VALUES($1,'mig-agent',$2,'creative_assistance','{"mode":"account_library","data_classes":["text"]}'::jsonb,'p-1')`, id, vendor)
+			(id,account_id,vendor_key,purpose,conversation_id,scope,policy_version)
+			VALUES($1,'mig-agent',$2,'creative_assistance','ccco_mig','{"mode":"account_library","data_classes":["text"]}'::jsonb,'p-1')`, id, vendor)
 		return err
 	}
 	if err := consent("ccec_00000000-0000-4000-8000-000000000001", "deepseek"); err != nil {

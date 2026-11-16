@@ -75,11 +75,8 @@ func (s *Service) SteerRun(ctx context.Context, scope store.AccountScope, comman
 			// message becomes the next turn instead of going unread.
 			return creativeops.Outcome{}, ErrRunState
 		}
-		consent, err := readConsentForUpdate(ctx, tx, c.EgressConsentID)
+		consent, err := effectiveConsentInTx(ctx, tx, c.EgressConsentID)
 		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err = coversRun(consent, c.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if err = s.appendInputBatchInTx(ctx, tx, c, resolved, consent); err != nil {

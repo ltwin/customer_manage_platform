@@ -1,33 +1,84 @@
 ---
 risk:
-  factors: [trust-boundary, broad-impact]
+  factors: [trust-boundary, contract-break, data-migration, broad-impact]
 behavior: changed
 reads: [creative/agent-run]
-decisionsPending: true
+decisionsPending: false
 ---
-
-<!-- 草稿占位：owner 2026-11-11 同意另开此 change，尚未起草完整方案，也未提交批准。 -->
 
 ## Why
 
-摄影师真正做出的外发同意，是首次使用助手时的「发送前说明」，这是账号级的、按说明版本生效的同意。后端仍然按逐个资产修订核对授权：前端每发一条消息就自动建一份授权，修订清单从消息里的附件推出来，摄影师从来没有机会逐项选择。这份账本挡住了正当操作（例如 `agent-message-queue` 里插队带附件），实际上没有保护到任何东西。
+摄影师真正做出的外发同意，是第一次使用助手时的「发送前说明」。但这份同意只记在浏览器里，后端仍然要求前端每发一条消息就自动建一份授权、列出要外发的修订。这份逐条授权账本摄影师从来看不到，也选不了，既拦住了正当操作（插队带附件），也没有起到保护作用；后端还因此核对不了「这个账号是否同意过」，`agent-tool-background` 的自动唤醒没有依据可查。
 
-## What Changes（待起草）
+## What Changes
 
-- 把外发授权收敛为「账号级同意 + 说明版本 + 撤销」。删除逐条消息自动建授权的步骤，以及逐修订清单的核对；保留归属、可用性、用途权利、数据类别和撤销这几项检查。
-- 处理现有的 `creative_egress_consents` / `creative_egress_consent_contents` 数据、可读性判定（`readableInTx`）、派发复核（`admitDispatchInTx`）和前端发送链。
-- 待定：注册时是否补一份正式的同意条款；撤销在账号级下的语义。
+- **账号级外发同意**：同意由服务端按账号记录，包括说明版本、同意时间、是否允许检索素材库、撤回时间。摄影师第一次在画布助手或首页「一句话开始」发送时弹出「发送前说明」，点同意后写入服务端。之后不论换对话、换浏览器还是换设备都不再弹，直到说明版本升级或摄影师撤回。注册流程不变。
+- **说明升新版本**：新版说明在现有内容之外，写明「后台任务完成后，助手可能自动开始回复处理结果，按用量扣积分」，并把「允许助手检索我的素材库」列为单独的勾选项，默认勾选，与现在的行为一致。上线后所有账号在下次发送前重新同意一次；存量的逐条授权不迁移、不推断为账号同意。
+- **BREAKING：去掉逐条授权**：前端发消息不再先建授权；建运行和终态重试的请求不再携带 `egress_consent_id`，由服务端取账号当前有效的同意。逐修订清单不再参与外发判断，会话里的内容也不再因为某一条授权被撤回而被单独拒读。原有的建授权接口和按 ID 撤回接口下线，存量记录保留作历史证据。
+- **保留的检查不变**：外发和读取仍然逐项检查以下内容。
+  - 归属：只能是本账号的内容。
+  - 可用：内容未删除，并且摄影师自己能正常展示（`RequireUsable(display)`，含用途权利）。
+  - 数据类别与模型能力：图片只在模型能看图时发送。
+  - 读取范围：当前画布、本对话里引用过的内容，以及勾选了素材库时的素材库。
+  - 派发前复核：每次派发都重新确认同意仍然有效。
+- **同意失效：说明版本升级与撤回走同一条规则**。服务端说明版本升级后，旧版本的同意随之失效；摄影师主动撤回，效果与版本过期完全相同。同意失效后：
+  - 不能开始新的运行，包括服务端替摄影师自动开始的运行（为 `agent-tool-background` 的自动唤醒预留）；
+  - 已有运行在下一次派发时被拒，与现在旧说明版本的规则相同；
+  - 摄影师下次发送时重新弹出说明，同意后继续。
+- **外发说明入口**：助手面板菜单增加「外发说明」，可以查看已同意的版本和时间、修改素材库勾选，以及「撤回同意」。撤回只是把同意标记为失效，不引入额外规则。已经发出的内容无法召回，说明里照实写明。
 
 ## Acceptance Criteria
 
-待起草。
+**同意与弹窗**
+
+- WHEN 一个从未同意过的账号第一次在画布助手里发送消息 THEN 弹出「发送前说明」，正文含自动回复计费条款和素材库勾选项（默认勾选）；点同意后消息发出，服务端记录这个账号的同意（版本、时间、素材库选择）。
+- WHEN 摄影师在弹窗里点取消 THEN 消息不发出、草稿保留，服务端没有同意记录，也没有新运行。
+- WHEN 已同意的账号在另一个浏览器或清空本机存储后发送 THEN 不再弹窗，消息直接发出。
+- WHEN 已同意的账号在首页「一句话开始」发送 THEN 不弹窗；未同意时弹出同一份说明。
+- WHEN 账号只有本 change 上线前留下的逐条授权记录 THEN 下次发送仍弹出新版说明，必须重新同意。
+- WHEN 客户端绕过弹窗，直接调用建运行接口、而账号没有有效同意 THEN 返回需要外发同意的错误（`creative_egress_required`），不建运行、不扣积分。
+- WHEN 账号 A 已同意，账号 B 未同意 THEN 账号 B 建运行被拒；任何接口都不能读到或修改其他账号的同意。
+
+**读取与外发范围**
+
+- WHEN 摄影师新建一条消息，附带一张本账号可用的图片，且模型能看图 THEN 模型请求里有这张图片，不需要任何逐条授权。
+- WHEN 摄影师附带的图片属于另一个账号，或者已被删除，或者用途权利不允许展示 THEN 建运行被拒，原因与现在相同，图片不外发。
+- WHEN 所选模型不支持看图，摄影师却附带了图片 THEN 建运行被拒，提示换一个能看图的模型，图片不外发，与现在相同。
+- WHEN 同意时取消了素材库勾选 THEN 助手没有素材库检索工具，也读不到只在素材库、不在画布和本对话里的素材；画布和本对话里的内容照常可读。
+- WHEN 摄影师在「外发说明」里重新勾选素材库 THEN 之后新建的运行可以检索素材库。
+- WHEN 某个素材在本对话里出现过，后来被摄影师彻底删除或撤销了用途权利 THEN 助手读取时被拒，与现在相同。
+
+**同意失效（版本升级或撤回）**
+
+- WHEN 服务端的说明版本升级，或者摄影师在「外发说明」里撤回同意 THEN 账号的同意变为失效；下次发送时重新弹出说明，界面写明已经发出的内容无法召回。
+- WHEN 同意失效时有一个运行正在执行 THEN 下一次派发被拒，不再有模型请求发出，运行按现有的旧说明规则结束；版本升级和撤回两种情况的结果相同。
+- WHEN 同意失效和一次模型派发同时提交 THEN 失效先提交时，供应商一次都没有被调用；派发先提交时，这一次请求照常完成和计费，后续请求不再发出。
+- WHEN 同一个撤回或同意请求因网络重试被重复提交 THEN 只生效一次，返回同一结果。
+
+**插队、补充、重试与历史**
+
+- WHEN 摄影师插队或补充时附带本账号可用的图片 THEN 照常送达，行为与现在相同。
+- WHEN 摄影师对终态运行点重试 THEN 重试请求不需要客户端提供授权 ID，服务端按账号当前同意核对；没有有效同意时重试被拒。
+- WHEN 打开本 change 上线前的对话和运行记录 THEN 历史消息、运行和费用照常显示，不因为旧授权记录不再使用而报错。
 
 ## Impact
 
-- 代码：`backend/internal/creativeagent/`（consents、runs、context、execute）、`frontend/src/creative-canvas/editor/`（发送链）、`docs/product/creative-canvas-system/data-model.md`。
-- 契约：外发同意的资源边界；`egress-consents` 接口。
+- 代码：
+  - 后端：`backend/internal/creativeagent/`。涉及 `consents.go`、`runs.go`、`retry.go`、`steer.go`、`inputs.go`、`context.go`、`read_access.go`、`execute.go`、`compaction.go`、`title.go`、`library_tools.go`、`character_reference.go`、`builtin_assets.go`、`scene_tools.go`、`scene_waiter.go`、`waiting.go`、`runtime.go`、`context_window.go`，以及 `backend/internal/platform/httpapi/creative_agent.go` 和 `backend/internal/platform/store/migrations/`。
+  - 前端：`frontend/src/creative-canvas/editor/`（`EgressNotice.tsx`、`agentState.ts`、`AgentPanel.tsx`）和 `frontend/src/creative-canvas/home/HomeComposer.tsx`。
+- 契约：
+  - `api/openapi.yaml`：新增账号同意的读取、同意、撤回接口。下线 `/creative/conversations/{id}/egress-consents` 和 `/creative/egress-consents/{id}/revoke`。建运行请求和重试请求去掉 `egress_consent_id`。运行读取结构里的 `egress_consent_id` 改为指向账号同意（design 决定保留还是改名）。
+  - `data`：新增账号外发同意的持久化；`creative_egress_consents` 和 `creative_egress_consent_contents` 改为只读历史。
+  - `docs/product/creative-canvas-system/data-model.md`「外发同意的资源边界」：重写为账号级同意。
+  - `.lti/contracts/data.md`「运行中附带内容的外发授权」：其中的「后续」一句随本 change 落地。
+  - glossary：新增「外发同意」。
+  - 产品与开发文档同步：`docs/dev/creative-agent.md` 和隐私说明页 `/privacy`。
+- 外部：无。模型服务商和外发路由不变。
 
 ## Risk Notes
 
-- trust-boundary：这是外发隐私边界的收敛，需要逐项确认撤销、用途权利、工具返回素材的授权不被放宽。
-- broad-impact：建运行、补充、工具读取、派发复核都会受影响。
+- **trust-boundary**：本 change 收敛的是外发隐私边界，也就是什么内容可以离开平台、发给模型服务商。去掉逐修订清单后，读取范围只由「当前画布 + 本对话引用 + 勾选时的素材库」决定。design 必须逐个分支证明：现在靠清单才能读到的内容，改后不会有原本读不到、现在却读得到的情况。现有代码里，触发消息自己的引用同时由清单和 `run_id` 分支覆盖，而工具返回的素材从来不经过清单。撤回改为账号级，并且与说明版本过期共用一条规则，原来「被某条撤回授权列过的修订在本对话永久拒读」的规则会消失。这一处行为放宽已由 owner 于 2026-11-13 确认接受。
+- **contract-break**：两个授权接口下线，`egress_consent_id` 从两个请求结构里移除。这几处只有本仓库前端在用，外部助手（MCP）不走这套授权。前后端同版本发布：先发支持「不带 ID」的后端，再发前端，最后下线旧接口。
+- **data-migration**：新增账号同意表（或扩展现有表，由 design 决定），并给运行记录关联账号同意。存量授权不回填、不转换，旧运行的授权引用保持可读。迁移只增加结构，反向迁移在已有账号同意记录时拒绝破坏性删除。
+- **broad-impact**：`creativeagent` 里有 18 个文件、3 条前端发送链读取或传递授权，涉及建运行、补充、插队、重试、压缩、标题生成、工具读取和派发复核。现有测试里大量用例通过逐条授权构造数据，需要一并改写。
+- **与其他 change 的关系**：本 change 排在 `agent-tool-background` 之前。后者的自动唤醒依赖本 change 提供的服务端账号同意和含自动回复计费条款的说明版本；它的通知读取规则也要基于本 change 收敛后的读取范围重新设计。
