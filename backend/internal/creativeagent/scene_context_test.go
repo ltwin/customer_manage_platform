@@ -579,14 +579,19 @@ func TestEditingContextAndChangesUseTheReferenceSnapshot(t *testing.T) {
 	body := Body{Blocks: []Block{{Type: "scene_ref", Scene: &BlockScene{
 		DocumentID: doc, Objects: []BlockSceneObject{{ID: pillar}},
 	}}}}
+	var snapshots []creativescene.ReferenceContext
 	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
-		snapshots, err := fillSceneRefsInTx(t.Context(), tx, body)
-		if err != nil {
-			return err
-		}
-		// Another transaction commits after the explicit reference is frozen.
-		f.writeScene(creativedocument.Photographer, doc, []string{"object:" + pillar}, map[string]any{"op": "update_objects",
-			"updates": []any{map[string]any{"object_id": pillar, "name": "后来改名"}}})
+		var err error
+		snapshots, err = fillSceneRefsInTx(t.Context(), tx, body)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Commit the read to release its content lock, then move the scene on.
+	// The inputs must still use the supplied snapshot when the head is newer.
+	f.writeScene(creativedocument.Photographer, doc, []string{"object:" + pillar}, map[string]any{"op": "update_objects",
+		"updates": []any{map[string]any{"object_id": pillar, "name": "后来改名"}}})
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
 		inputs, err := sceneInputsInTx(t.Context(), tx, c.ID, &SceneContext{DocumentID: doc, SelectedObjectIDs: []string{pillar}}, snapshots)
 		if err != nil {
 			return err
