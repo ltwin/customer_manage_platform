@@ -1,12 +1,12 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 7,
+  "revision": 8,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T07:00:33.560Z",
+  "updatedAt": "2026-11-16T07:06:35.659Z",
   "risk": {
     "factors": [
       "data-migration"
@@ -46,6 +46,13 @@
     {
       "at": "2026-11-16T07:00:32.987Z",
       "summary": "实施细节：新节点的节点行与身份行显式共用一次数据库时间（各取默认值相差 1–2ms，撤销恢复后不相等）；契约语义不变",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T07:06:35.093Z",
+      "summary": "挂载点：nodeKind.tsx 拆为 nodeKind.ts 与 KindIcon.tsx（fast-refresh 规则要求组件单独成文件）",
       "contentHash": "dc39462a0c25a5e0",
       "added": [],
       "removed": []

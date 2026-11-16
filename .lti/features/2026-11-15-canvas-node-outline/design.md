@@ -55,7 +55,7 @@ type Outline = { rows: OutlineRow[]; total: number; matched: number | null } // 
 | 工作区编排 | 面板开关与当前标签、工具栏「节点树」按钮、把选中/重命名/定位接到节点树 | `panelTab` 状态 | `WorkspacePage.tsx` |
 | 画布定位 | 暴露「把视口带到节点」 | `revealRef`（同 `centerRef` 模式）；`viewport.ts:revealViewport` | `CanvasView.tsx`、`viewport.ts` |
 
-依赖方向：`NodeOutline` → `outline.ts`、`api.ts` 类型；`WorkspacePage` 连接 `NodeOutline` 与 `CanvasView`；`NodeOutline` 不 import `CanvasView`（`KindIcon`、`untitled` 搬到可共享位置，见挂载点）。
+依赖方向：`NodeOutline` → `outline.ts`、`api.ts` 类型；`WorkspacePage` 连接 `NodeOutline` 与 `CanvasView`；`NodeOutline` 不 import `CanvasView`（`KindIcon`、`untitled` 搬到共享文件，见挂载点）。
 
 主流程：
 
@@ -158,8 +158,9 @@ persistObject(kind=node, live):
 | `frontend/src/creative-canvas/editor/outline.ts` | 新增 | `buildOutline` 纯函数 |
 | `frontend/src/creative-canvas/editor/NodeOutline.tsx` | 新增 | 节点树组件 |
 | `frontend/src/creative-canvas/editor/outline.css` | 新增 | 节点树样式 |
-| `frontend/src/creative-canvas/editor/nodeKind.tsx` | 新增 | 从 `CanvasView.tsx` 移出 `KindIcon`、`nodeKind`、`untitled`、`kindLabel`，两处共用 |
-| `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 改为引用 `nodeKind.tsx`；新增 `revealRef` prop |
+| `frontend/src/creative-canvas/editor/nodeKind.ts` | 新增 | 从 `CanvasView.tsx` 移出 `nodeKind`、`untitled`、`kindLabel`，两处共用 |
+| `frontend/src/creative-canvas/editor/KindIcon.tsx` | 新增 | 从 `CanvasView.tsx` 移出 `KindIcon`（组件单独成文件，满足 fast-refresh 规则） |
+| `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 改为引用 `nodeKind.ts`、`KindIcon.tsx`；新增 `revealRef` prop |
 | `frontend/src/creative-canvas/editor/viewport.ts:revealViewport` | 新增 | 定位算法 |
 | `frontend/src/creative-canvas/editor/LibraryDrawer.tsx` | 修改 | 标签头、`tab`/`onTab`/`outline` props、按标签分派键盘与主体 |
 | `frontend/src/creative-canvas/editor/library.css` | 修改 | 标签样式 |
