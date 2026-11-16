@@ -51,13 +51,18 @@ const fixture = ({ archived = false } = {}) => ({
   edges: [], node_inputs: [], changes: [], object_states: [],
 })
 
-async function fresh({ archived = false, width = 1600, height = 1000, offline = true } = {}) {
+async function fresh({ archived = false, width = 1600, height = 1000, offline = true, longList = false } = {}) {
   await context?.close()
   context = await browser.newContext({ viewport: { width, height } })
   page = await context.newPage()
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
   const canvas = fixture({ archived })
+  if (longList) {
+    canvas.nodes.push(...Array.from({ length: 45 }, (_, i) =>
+      makeNode('filler-' + i, 'core.text', -4000 - i * 350, -5000, '2026-11-02T10:00:00Z')))
+    canvas.nodes.push(makeNode('neighbor', 'core.text', 1760, 700, '2026-10-28T10:00:00Z'))
+  }
   await page.addInitScript(() => {
     const original = window.fetch.bind(window)
     window.fetch = async (input, init) => {
@@ -266,6 +271,36 @@ try {
     assert.deepEqual(on, ['far', 'g', 'photo', 'left', 'busy', 'hero'])
   })
 
+  await record('canvas-scroll', async () => {
+    await openTree()
+    await row('hero').click()
+    await settle()
+    const list = tree()
+    const a = await node('hero').boundingBox()
+    const b = await node('neighbor').boundingBox()
+    assert.ok(a && b, 'both nodes are mounted on the canvas')
+    const x = Math.min(a.x, b.x) - 12, y = Math.min(a.y, b.y) - 26
+    const x2 = Math.max(a.x + a.width, b.x + b.width) + 12
+    const y2 = Math.max(a.y + a.height, b.y + b.height) + 12
+    await page.mouse.click(x, y)
+    await list.evaluate((el) => { el.scrollTop = 0 })
+    const firstRowInView = () => row('hero').evaluate((el) => {
+      const bounds = el.getBoundingClientRect()
+      const scroller = el.closest('[role="tree"]').getBoundingClientRect()
+      return bounds.top >= scroller.top && bounds.bottom <= scroller.bottom
+    })
+    assert.equal(await firstRowInView(), false, 'selected rows start below the visible list')
+    at('box selection highlights both nodes and scrolls to the first')
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x2, y2, { steps: 18 })
+    await page.mouse.up()
+    await settle()
+    assert.equal(await row('hero').getAttribute('aria-selected'), 'true')
+    assert.equal(await row('neighbor').getAttribute('aria-selected'), 'true')
+    assert.equal(await firstRowInView(), true, 'the first selected row should be visible')
+  }, { longList: true })
+
   await record('rename', async () => {
     await openTree()
     at('double-click renames the node on the canvas')
@@ -275,8 +310,8 @@ try {
     await input.press('Enter')
     await node('photo').locator('.cc-node-header h3', { hasText: '黄昏人像' }).waitFor()
     await row('photo').locator('.cc-outline-title', { hasText: '黄昏人像' }).waitFor()
-    at('undo restores the name')
-    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    at('Cmd/Ctrl+Z restores the name')
+    await page.keyboard.press('ControlOrMeta+z')
     await node('photo').locator('.cc-node-header h3', { hasText: '晨光人像' }).waitFor()
     await row('photo').locator('.cc-outline-title', { hasText: '晨光人像' }).waitFor()
   })
@@ -336,4 +371,4 @@ try {
   await browser.close()
 }
 const failed = Object.entries(results).filter(([, r]) => r !== 'pass')
-if (failed.length || (!process.env.ONLY && Object.keys(results).length !== 9)) process.exitCode = 1
+if (failed.length || (!process.env.ONLY && Object.keys(results).length !== 10)) process.exitCode = 1

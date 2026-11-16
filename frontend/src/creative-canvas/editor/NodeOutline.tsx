@@ -101,14 +101,14 @@ export default function NodeOutline({
   }, [first, active])
   useEffect(() => {
     const id = scrollTarget.current
-    if (!id) return
+    if (!active || !id || id !== first) return
     const row = list.current?.querySelector<HTMLElement>(
       `[data-node="${CSS.escape(id)}"]`,
     )
     if (!row) return
     row.scrollIntoView({ block: 'nearest' })
     scrollTarget.current = null
-  }, [outline])
+  }, [active, first, outline])
 
   const visibleIDs = outline.rows.map((r) => r.id)
   const focusable =

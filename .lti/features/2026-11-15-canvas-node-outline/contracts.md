@@ -23,7 +23,7 @@
 }
 ```
 
-- 兼容性：只增字段，不破坏现有调用方；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端本地投影的节点（离线 / 保存中）以客户端当前时间填该字段，仅供类型完整，排序不以它为准（见 design「排序」）。
+- 兼容性：只增字段；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端未确认节点排在同级已确认节点之前，彼此按本地入队时间倒序、同值按 ID 升序；确认后以服务端创建时间为准（见 design「排序」）。
 
 ## data: ADD 画布对象的创建时间
 

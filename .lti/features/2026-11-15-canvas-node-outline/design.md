@@ -185,7 +185,7 @@ persistObject(kind=node, live):
 | 字段头哈希未变 | 现有 graph / undo 测试全过 | 不出现 `ErrGraphIntegrity` |
 | 排序、搜索（NFKC/大小写）、类型筛选、祖先路径、计数、pending 置顶、空态 | `creative-canvas-outline.test.ts` | proposal 中对应 AC 的输入输出逐条有用例 |
 | 定位算法 | 同上单测 | 能放下时倍率不变且居中；放不下时缩小且不低于下限；insets 生效 |
-| 点击定位、画布框选高亮并滚动、Cmd 多选不移动视口、双击改名 + 撤销、标签切换、资产库任务强制资产标签、390px 无横向滚动 | `creative-canvas-outline.e2e.mjs`（mock API，单用例逐个跑，换端口） | 各断言通过，无 `pageerror` |
+| 点击定位、画布框选高亮并滚动、Cmd 多选不移动视口、双击改名 + 撤销、标签切换、资产库任务强制资产标签、390px 无横向滚动 | `creative-canvas-outline.e2e.mjs`（mock API，单用例逐个跑，换端口） | 各断言通过，无 `pageerror`；长列表中用真实框选手势确认首个选中行进入可见区 |
 | 资产库回归 | 现有 `creative-library.e2e.mjs`、`creative-canvas-viewport.e2e.mjs` 中涉及 `#creative-library` 的用例 | 通过；只跑这两个文件里受影响的用例 |
 | 前端门禁 | `make check-frontend` | 通过 |
 

@@ -1530,3 +1530,11 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 会话级的旧行（`conversation_id` 不为 null）和 `creative_egress_consent_contents` 改为只读历史，不再写入，也不参与门禁和读取；它们的清理沿用会话删除时的既有规则。
 - 迁移只增加表、列和索引，不回填。所有账号上线后都处于「没有同意」状态。反向迁移在已有账号级行时拒绝破坏性删除。
 - 说明版本升级只改服务端常量，不改数据；旧版本的同意自然失效。
+
+## 画布对象的创建时间
+
+- 用途：记录画布对象（节点、连线、输入、版本）第一次出现的时间，使节点被删除后再经撤销恢复时能还原创建时间。本次只有节点使用它。
+- 存储：`creative_graph_identities` 新增列 `created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()`。身份行在对象删除后保留（`is_live = false`），所以它比 `creative_nodes` 行活得久，是对象创建时间的权威来源。
+- 派生：`creative_nodes.created_at`（已存在列）改为由应用保证与身份行一致：节点行插入时一律写入身份行的 `created_at`：首次创建时同一次变更新建的对象共用一次 `clock_timestamp()`，节点行与身份行取同一值；撤销恢复时沿用身份行原值。读接口取 `creative_nodes.created_at`。
+- 迁移：`0084_creative_graph_identity_created_at`。加列（默认值 `clock_timestamp()` 是易变函数，加列时整表重写一次，同 0060、0072 的做法）后回填：`UPDATE creative_graph_identities i SET created_at = n.created_at FROM creative_nodes n WHERE n.account_id = i.account_id AND n.id = i.id`。从 0040 之前直接升级的库，节点在迁移结束后才由 `seedCreativeGraphIdentities` 补建身份行，补建时写入节点行的 `created_at`。已删除节点的身份行没有可回填的来源，保留迁移时刻；它们若在迁移后被撤销恢复，会排到最前（一次性、仅限上线前已删除且仍在撤销窗口内的节点）。`down` 删除该列。
+- 一致性：业务不变量「恢复的节点保持原创建时间」由 `persistObject` 保证；数据库只保证非空与默认值。
