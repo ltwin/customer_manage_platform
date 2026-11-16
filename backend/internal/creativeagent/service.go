@@ -225,6 +225,8 @@ type Service struct {
 	// catalog read. A pointer, because a run executes on a copy of the service
 	// and every copy should share one record.
 	unavailableLogged *sync.Map
+	// toolSources finish agent tool tasks by tool key (tool_task_finisher.go).
+	toolSources map[string]toolTaskSource
 }
 
 // NewService takes the gateway as well as its catalog. The two must be the same

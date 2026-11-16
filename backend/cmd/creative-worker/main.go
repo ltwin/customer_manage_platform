@@ -162,6 +162,10 @@ func run() error {
 	go func() { defer close(agentDone); sweepAgentRuns(ctx, db, agent) }()
 	sceneJobsDone := make(chan struct{})
 	go func() { defer close(sceneJobsDone); creativescene.RunSweep(ctx, db, slog.Default()) }()
+	// Agent tool tasks: woken by NOTIFY from the source triggers, with a
+	// fallback scan (agent-tool-background).
+	toolTasksDone := make(chan struct{})
+	go func() { defer close(toolTasksDone); agent.RunToolTaskFinisher(ctx, db) }()
 	recoveryDone := make(chan struct{})
 	go func() {
 		defer close(recoveryDone)
@@ -178,6 +182,7 @@ func run() error {
 	<-recoveryDone
 	<-agentDone
 	<-sceneJobsDone
+	<-toolTasksDone
 	<-generationDone
 	<-trashDone
 	<-imageEditDone

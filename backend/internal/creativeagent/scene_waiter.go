@@ -100,34 +100,10 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 	if job.ToolCallID == nil {
 		return nil
 	}
-	var state, name, parent string
-	var index int
-	var input []byte
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_steps", "state,tool_key,parent_model_step_id,tool_call_index,input",
-		"id=$2 AND run_id=$3 AND kind='tool'", *job.ToolCallID, g.c.ID).Scan(&state, &name, &parent, &index, &input); err != nil {
-		return fmt.Errorf("creative agent: parked step %s: %w", *job.ToolCallID, err)
-	}
-	if state == "prepared" {
-		var call llmgateway.ToolCall
-		if err := json.Unmarshal(input, &call); err != nil {
-			return err
-		}
-		result, failed, err := sceneToolResult(ctx, tx, job, res, string(call.Arguments))
-		if err != nil {
-			return err
-		}
-		h, err := w.s.parkedHandlerInTx(ctx, tx, g.held)
-		if err != nil {
-			return err
-		}
-		code := ""
-		if failed {
-			code = "creative_tool_failed"
-		}
-		if _, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: *job.ToolCallID, CallID: runtimeCallID(parent, index), Name: name,
-			Args: string(call.Arguments), Result: result, Failed: failed, Code: code}); err != nil {
-			return err
-		}
+	if err := w.s.publishParkedStepWithInTx(ctx, tx, g, *job.ToolCallID, func(args string) (string, bool, error) {
+		return sceneToolResult(ctx, tx, job, res, args)
+	}); err != nil {
+		return err
 	}
 	if g.c.State != RunWaitingClient {
 		return nil
@@ -138,6 +114,48 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 	}
 	// Admit took the project lock, so the slot comes next in order.
 	_, err = w.s.resumeClientWait(ctx, tx, g.c, now)
+	return err
+}
+
+// publishParkedStepInTx publishes result as the tool result of a call that
+// parked on stepID, in the order callTool publishes one. A step that is no
+// longer prepared was already written and is left alone.
+func (s *Service) publishParkedStepInTx(ctx context.Context, tx store.TxAccountScope, g *sceneGate, stepID, result string, failed bool) error {
+	return s.publishParkedStepWithInTx(ctx, tx, g, stepID, func(string) (string, bool, error) { return result, failed, nil })
+}
+
+// publishParkedStepWithInTx is publishParkedStepInTx with the result built
+// from the call's arguments, only once the step is known to be prepared.
+func (s *Service) publishParkedStepWithInTx(ctx context.Context, tx store.TxAccountScope, g *sceneGate, stepID string,
+	build func(args string) (string, bool, error)) error {
+	var state, name, parent string
+	var index int
+	var input []byte
+	if err := tx.QueryRowForUpdate(ctx, "creative_agent_steps", "state,tool_key,parent_model_step_id,tool_call_index,input",
+		"id=$2 AND run_id=$3 AND kind='tool'", stepID, g.c.ID).Scan(&state, &name, &parent, &index, &input); err != nil {
+		return fmt.Errorf("creative agent: parked step %s: %w", stepID, err)
+	}
+	if state != "prepared" {
+		return nil
+	}
+	var call llmgateway.ToolCall
+	if err := json.Unmarshal(input, &call); err != nil {
+		return err
+	}
+	result, failed, err := build(string(call.Arguments))
+	if err != nil {
+		return err
+	}
+	h, err := s.parkedHandlerInTx(ctx, tx, g.held)
+	if err != nil {
+		return err
+	}
+	code := ""
+	if failed {
+		code = "creative_tool_failed"
+	}
+	_, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: stepID, CallID: runtimeCallID(parent, index), Name: name,
+		Args: string(call.Arguments), Result: result, Failed: failed, Code: code})
 	return err
 }
 
