@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,15 @@ type stubGenerator struct {
 	generate func(context.Context, creativegeneration.AgentGeneration) error
 	// pending keeps every generation running, so a foreground call parks.
 	pending bool
+	// cancelled holds executions cancelled from their card.
+	cancelled []string
+}
+
+func (s *stubGenerator) CancelAgentGenerationInTx(_ context.Context, _ store.TxAccountScope, _, execution string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancelled = append(s.cancelled, execution)
+	return nil
 }
 
 func (s *stubGenerator) Models() []creativegeneration.Model {
@@ -64,8 +74,11 @@ func (s *stubGenerator) SubmitAgentGeneration(ctx context.Context, scope store.A
 // soon as they are accepted, unless pending says otherwise.
 func (s *stubGenerator) AgentGenerationInTx(_ context.Context, _ store.TxAccountScope, _, nodeID, execution string) (creativegeneration.AgentGenerationResult, bool, error) {
 	s.mu.Lock()
-	pending := s.pending
+	pending, cancelled := s.pending, slices.Contains(s.cancelled, execution)
 	s.mu.Unlock()
+	if cancelled {
+		return creativegeneration.AgentGenerationResult{NodeID: nodeID, ExecutionID: execution, State: "cancelled", ApplyState: "discarded"}, true, nil
+	}
 	if pending {
 		return creativegeneration.AgentGenerationResult{NodeID: nodeID, ExecutionID: execution, State: "running", ApplyState: "pending"}, false, nil
 	}

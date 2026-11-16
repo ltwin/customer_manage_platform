@@ -661,6 +661,17 @@ func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string, k
 	return nil
 }
 
+// CancelJobInTx cancels one unfinished job in the caller's transaction: a
+// background job the photographer cancels from its card. A job that already
+// ended keeps its result.
+func CancelJobInTx(ctx context.Context, tx store.TxAccountScope, id string) error {
+	jobs, err := LockJobs(ctx, tx, []string{id})
+	if err != nil || len(jobs) == 0 || Terminal(jobs[0].State) {
+		return err
+	}
+	return finishJob(ctx, tx, jobs[0], JobResult{Failure: &JobFailure{Code: JobCancelled, Message: "任务已取消"}}, false, true, time.Time{})
+}
+
 // finishJob moves a locked job to its terminal state with its result.
 func finishJob(ctx context.Context, tx store.TxAccountScope, job Job, res JobResult, expired, cancelled bool, created time.Time) error {
 	body, err := json.Marshal(res)

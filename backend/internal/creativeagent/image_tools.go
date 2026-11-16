@@ -26,6 +26,9 @@ type ImageCompressor interface {
 	// ConcludeAgentCompress finishes a candidate that stopped encoding:
 	// adopts a ready one, or discards it when adopt is false.
 	ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, renderID string, adopt bool) (creativeimageedit.AgentCompressResult, error)
+	// DiscardAgentCompressInTx discards a candidate whatever its stage, for a
+	// background compress cancelled from its card; one adopted first stays.
+	DiscardAgentCompressInTx(ctx context.Context, tx store.TxAccountScope, in creativeimageedit.AgentCompress, renderID string) (creativeimageedit.AgentCompressResult, error)
 }
 
 // SetImageCompressor binds image editing at composition time. A deployment
@@ -131,6 +134,13 @@ func concludeCompress(ctx context.Context, c ImageCompressor, scope store.Accoun
 	if err != nil {
 		return toolTaskOutcome{}, err
 	}
+	return compressOutcome(result, adopt)
+}
+
+// compressOutcome is the tool answer and task state for a candidate's final
+// state; a candidate not adopted because the call was stopped or cancelled
+// reads cancelled.
+func compressOutcome(result creativeimageedit.AgentCompressResult, adopt bool) (toolTaskOutcome, error) {
 	raw, err := json.Marshal(struct {
 		Success bool `json:"success"`
 		creativeimageedit.AgentCompressResult

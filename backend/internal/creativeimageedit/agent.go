@@ -155,6 +155,45 @@ func (s *Service) ConcludeAgentCompress(ctx context.Context, scope store.Account
 	return s.adoptForAgent(ctx, scope, r, result, agentOperation(in.Seed, "apply"))
 }
 
+// DiscardAgentCompressInTx discards the assistant's candidate in the
+// caller's transaction, whatever its stage, and reports where it ended: the
+// photographer cancelled the background compress. One adopted first stays
+// adopted (agent-tool-background).
+func (s *Service) DiscardAgentCompressInTx(ctx context.Context, tx store.TxAccountScope, in AgentCompress, renderID string) (AgentCompressResult, error) {
+	if in.Quality == 0 {
+		in.Quality = QualityDefault
+	}
+	r, err := readRender(ctx, tx, true, "id=$2", renderID)
+	if err != nil {
+		return AgentCompressResult{}, err
+	}
+	now, err := tx.CreativeNow(ctx)
+	if err != nil {
+		return AgentCompressResult{}, err
+	}
+	if r.effective(now).active() {
+		if err := finishInTx(ctx, tx, r, "discarded", "", nil); err != nil {
+			return AgentCompressResult{}, err
+		}
+		if r, err = readRender(ctx, tx, false, "id=$2", renderID); err != nil {
+			return AgentCompressResult{}, err
+		}
+	}
+	r = r.effective(now)
+	result := AgentCompressResult{NodeID: r.NodeID, RenderID: r.ID, Quality: in.Quality, SourceRevisionID: r.SourceRevisionID}
+	switch r.State {
+	case "applied":
+		return applied(result, r), nil
+	case "not_reduced":
+		result.State, result.Reason, result.SourceSize = AgentNotReduced, "按这个质量压缩后文件没有变小，没有创建新版本；可以换更低的质量再试", r.SourceSize
+	case "failed":
+		result.State, result.Reason = AgentFailed, failureReason(r.ErrorCode)
+	default:
+		result.State, result.Reason = AgentNotApplied, "压缩已取消，图片没有改动"
+	}
+	return result, nil
+}
+
 func (s *Service) createForAgent(ctx context.Context, scope store.AccountScope, in AgentCompress, operation string) (Render, error) {
 	canvas, err := creativecanvas.GetCanvas(ctx, scope, in.CanvasID)
 	if err != nil {

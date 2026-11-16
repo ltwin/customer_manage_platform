@@ -17,11 +17,12 @@ import (
 // stubCompressor stands in for image editing; its own database tests cover
 // the candidate and the adoption.
 type stubCompressor struct {
-	mu       sync.Mutex
-	calls    []creativeimageedit.AgentCompress
-	pending  bool
-	adopts   []bool
-	conclude creativeimageedit.AgentCompressResult
+	mu        sync.Mutex
+	calls     []creativeimageedit.AgentCompress
+	pending   bool
+	adopts    []bool
+	discarded []string
+	conclude  creativeimageedit.AgentCompressResult
 }
 
 func (s *stubCompressor) AcceptAgentCompress(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress) (string, error) {
@@ -51,6 +52,13 @@ func (s *stubCompressor) ConcludeAgentCompress(_ context.Context, _ store.Accoun
 		return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentNotApplied, Reason: "助手已停止"}, nil
 	}
 	return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentApplied, Quality: in.Quality, SourceSize: 1000, OutputSize: 600, ReductionPercent: 40}, nil
+}
+
+func (s *stubCompressor) DiscardAgentCompressInTx(_ context.Context, _ store.TxAccountScope, in creativeimageedit.AgentCompress, render string) (creativeimageedit.AgentCompressResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.discarded = append(s.discarded, render)
+	return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentNotApplied, Reason: "压缩已取消"}, nil
 }
 
 func (s *stubCompressor) set(pending bool) {

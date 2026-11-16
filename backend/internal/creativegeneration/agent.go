@@ -186,6 +186,13 @@ func AgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID,
 }
 
 // AgentGenerationInTx 同名方法，供助手经接口调用。
+// CancelAgentGenerationInTx cancels a background assistant generation from
+// its card: not yet sent is withdrawn and free, already sent is charged and
+// not adopted (agent-tool-background).
+func (p *Product) CancelAgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, executionID string) error {
+	return creativecanvas.CancelExecutionInTx(ctx, tx, creativecanvas.ExecutionTarget{CanvasID: canvasID, ExecutionID: executionID})
+}
+
 func (p *Product) AgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, executionID string) (AgentGenerationResult, bool, error) {
 	return AgentGenerationInTx(ctx, tx, canvasID, nodeID, executionID)
 }

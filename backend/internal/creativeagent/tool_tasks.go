@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -256,4 +259,218 @@ func (sceneTaskSource) settle(ctx context.Context, tx store.TxAccountScope, task
 		state = taskFailed
 	}
 	return toolTaskOutcome{Done: true, State: state, Result: result, Failed: failed}, nil
+}
+
+// ToolTask is a long-running tool's task as the panel sees it
+// (contracts: CreativeAgentToolTask).
+type ToolTask struct {
+	Handle     string               `json:"handle"`
+	Mode       string               `json:"mode"`
+	State      string               `json:"state"`
+	Revision   creativeops.Revision `json:"revision"`
+	Result     json.RawMessage      `json:"result,omitempty"`
+	FinishedAt *time.Time           `json:"finished_at,omitempty"`
+	ToolKey    string               `json:"tool_key"`
+	RunID      string               `json:"run_id"`
+	ToolStepID string               `json:"tool_step_id"`
+}
+
+func readToolTaskInTx(ctx context.Context, tx store.TxAccountScope, id string) (ToolTask, error) {
+	var t ToolTask
+	var revision int64
+	var result []byte
+	err := tx.QueryRow(ctx, "creative_agent_tool_tasks", "id,mode,state,revision,result,finished_at,tool_key,source_run_id,tool_step_id", "id=$2", id).
+		Scan(&t.Handle, &t.Mode, &t.State, &revision, &result, &t.FinishedAt, &t.ToolKey, &t.RunID, &t.ToolStepID)
+	if errors.Is(err, store.ErrNoRows) {
+		return t, ErrNotFound
+	}
+	t.Revision, t.Result = creativeops.Revision(revision), result
+	return t, err
+}
+
+func toolTaskReceipt(ctx context.Context, tx store.TxAccountScope, id string) (creativeops.Outcome, error) {
+	t, err := readToolTaskInTx(ctx, tx, id)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
+	raw, err := json.Marshal(t)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
+	return creativeops.Outcome{HTTPStatus: 200, Response: raw, ResultKind: "agent_tool_task", ResultID: &t.Handle, ResultRevision: &t.Revision}, nil
+}
+
+// peekToolTask reads a task by its handle without locking it: the task row
+// is locked last (design: 锁顺序).
+func peekToolTask(ctx context.Context, tx store.TxAccountScope, handle string) (toolTask, error) {
+	task, err := scanToolTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", handle))
+	if errors.Is(err, store.ErrNoRows) {
+		return task, ErrNotFound
+	}
+	return task, err
+}
+
+func emptyPayload(raw json.RawMessage) error {
+	var payload struct{}
+	return creativeops.Decode(raw, &payload)
+}
+
+// DetachToolTask ends the assistant's foreground wait on a long-running
+// tool: the call answers "moved to the background" and the run goes on; the
+// task's result later arrives as a notice. A source that already finished
+// answers the call with its real result instead. A stopped run refuses.
+// Locks: operation, project, run (admitRun), source, task.
+func (s *Service) DetachToolTask(ctx context.Context, scope store.AccountScope, handle string, command creativeops.Command) (creativeops.Receipt, error) {
+	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.detach_tool_task", Capability: "creative_read", Validate: emptyPayload,
+		Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
+			task, err := peekToolTask(ctx, tx, handle)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if task.State != taskRunning || task.Mode != modeForeground {
+				return toolTaskReceipt(ctx, tx, handle)
+			}
+			g, err := sceneWaiter{s: s}.admitRun(ctx, tx, task.SourceRunID)
+			if errors.Is(err, creativescene.ErrRunGate) {
+				if errors.Is(err, store.ErrCreativeAccessDenied) {
+					return creativeops.Outcome{}, store.ErrCreativeAccessDenied
+				}
+				return creativeops.Outcome{}, ErrRunState
+			}
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			source, ok := s.toolSources[task.ToolKey]
+			if !ok {
+				return creativeops.Outcome{}, fmt.Errorf("creative agent: no source for tool %s", task.ToolKey)
+			}
+			outcome, err := source.settle(ctx, tx, task)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			row, err := scanToolTask(tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", handle))
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if row.State != taskRunning || row.Mode != modeForeground {
+				return toolTaskReceipt(ctx, tx, handle)
+			}
+			if outcome.Done {
+				// Finished first: the call gets its real answer.
+				if err := finishTaskRow(ctx, tx, row, outcome); err != nil {
+					return creativeops.Outcome{}, err
+				}
+				if err := s.publishForegroundInTx(ctx, tx, g, row, outcome); err != nil {
+					return creativeops.Outcome{}, err
+				}
+				return toolTaskReceipt(ctx, tx, handle)
+			}
+			if _, err := tx.Update(ctx, "creative_agent_tool_tasks", "mode='background',next_check_at=clock_timestamp(),revision=revision+1,updated_at=clock_timestamp()",
+				"id=$2 AND state='running' AND mode='foreground'", handle); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			detached, err := json.Marshal(struct {
+				TaskHandle string `json:"task_handle"`
+				State      string `json:"state"`
+				Detached   bool   `json:"detached"`
+			}{handle, taskRunning, true})
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if err := s.publishForegroundInTx(ctx, tx, g, row, toolTaskOutcome{Result: string(detached)}); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			return toolTaskReceipt(ctx, tx, handle)
+		}}, command)
+}
+
+// CancelToolTask cancels a background task from its card. A task still in
+// the foreground has no cancel (move it to the background first); one that
+// already ended keeps its result. Locks: operation, project, source, task.
+func (s *Service) CancelToolTask(ctx context.Context, scope store.AccountScope, handle string, command creativeops.Command) (creativeops.Receipt, error) {
+	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.cancel_tool_task", Capability: "manual_write", Validate: emptyPayload,
+		Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
+			task, err := peekToolTask(ctx, tx, handle)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if task.State != taskRunning {
+				return toolTaskReceipt(ctx, tx, handle)
+			}
+			if task.Mode != modeBackground {
+				return creativeops.Outcome{}, ErrRunState
+			}
+			if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, task.CanvasID); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			outcome, err := s.cancelSourceInTx(ctx, tx, task)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			row, err := scanToolTask(tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", handle))
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if row.State != taskRunning {
+				return toolTaskReceipt(ctx, tx, handle)
+			}
+			if _, err := tx.Update(ctx, "creative_agent_tool_tasks", "stop_requested_at=clock_timestamp()", "id=$2", handle); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if err := finishTaskRow(ctx, tx, row, outcome); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			return toolTaskReceipt(ctx, tx, handle)
+		}}, command)
+}
+
+// cancelSourceInTx cancels a background task's source in its domain and
+// reads where it ended: cancelled, or the result it reached first.
+func (s *Service) cancelSourceInTx(ctx context.Context, tx store.TxAccountScope, task toolTask) (toolTaskOutcome, error) {
+	args, err := stepArgs(ctx, tx, task.ToolStepID)
+	if err != nil {
+		return toolTaskOutcome{}, err
+	}
+	switch task.ToolKey {
+	case generateNodeTool:
+		if s.generator == nil {
+			return toolTaskOutcome{}, errors.New("creative agent: generation is not bound")
+		}
+		if err := s.generator.CancelAgentGenerationInTx(ctx, tx, task.CanvasID, task.SourceID); err != nil {
+			return toolTaskOutcome{}, err
+		}
+		var node struct {
+			NodeID string `json:"node_id"`
+		}
+		if err := json.Unmarshal([]byte(args), &node); err != nil {
+			return toolTaskOutcome{}, err
+		}
+		result, done, err := s.generator.AgentGenerationInTx(ctx, tx, task.CanvasID, node.NodeID, task.SourceID)
+		if err != nil {
+			return toolTaskOutcome{}, err
+		}
+		if !done {
+			result.State, result.ApplyState = "cancelled", "discarded"
+		}
+		return generationOutcome(result)
+	case compressImageTool:
+		if s.compressor == nil {
+			return toolTaskOutcome{}, errors.New("creative agent: image editing is not bound")
+		}
+		in, err := compressInput(task.CanvasID, task.SourceRunID+"/"+task.ToolStepID, args)
+		if err != nil {
+			return toolTaskOutcome{}, err
+		}
+		result, err := s.compressor.DiscardAgentCompressInTx(ctx, tx, in, task.SourceID)
+		if err != nil {
+			return toolTaskOutcome{}, err
+		}
+		return compressOutcome(result, false)
+	case writeModelTool, exportShotsTool:
+		if err := creativescene.CancelJobInTx(ctx, tx, task.SourceID); err != nil {
+			return toolTaskOutcome{}, err
+		}
+		return sceneTaskSource{}.settle(ctx, tx, task)
+	}
+	return toolTaskOutcome{}, fmt.Errorf("creative agent: %s cannot run in the background", task.ToolKey)
 }

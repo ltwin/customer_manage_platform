@@ -52,6 +52,10 @@ type Generator interface {
 	// StopAgentGeneration ends the generation a call with this seed submitted,
 	// if the gateway has not sent it yet. Sent ones cannot be stopped.
 	StopAgentGeneration(ctx context.Context, scope store.AccountScope, canvasID, seed string) (bool, error)
+	// CancelAgentGenerationInTx cancels a background generation from its
+	// card: not yet sent is withdrawn, already sent is charged and its result
+	// discarded. The caller holds the project lock.
+	CancelAgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, executionID string) error
 }
 
 // SetGenerator binds generation at composition time. Without it, or while no

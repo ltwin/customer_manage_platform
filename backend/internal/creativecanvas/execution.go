@@ -570,6 +570,27 @@ func cancelNodeExecution(ctx context.Context, scope store.AccountScope, c creati
 	})
 }
 
+// CancelExecutionInTx cancels an execution in the caller's transaction, the
+// internal cancellation CancelNodeExecution sends, generations included. It is
+// for an assistant generation the photographer cancels from its background
+// card (agent-tool-background, a local exception to the 2026-10-09 rule): a
+// request not yet sent is withdrawn, one already sent still runs and is
+// charged, and its result is discarded. The caller holds the project lock.
+func CancelExecutionInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
+	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
+	if err != nil {
+		return err
+	}
+	e, err := readExecution(ctx, tx, target)
+	if err != nil {
+		return err
+	}
+	if e.ApplyState != "pending" {
+		return nil
+	}
+	return finishExecution(ctx, tx, canvas, e, "cancelled", "discarded", "")
+}
+
 func minTime(a, b time.Time) time.Time {
 	if a.Before(b) {
 		return a
