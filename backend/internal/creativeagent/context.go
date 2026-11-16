@@ -96,7 +96,7 @@ func directlyReadableInTx(ctx context.Context, tx store.TxAccountScope, runID st
 	if present, err := tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND content_revision_id=$3", canvasID, id); present || err != nil {
 		return present, err
 	}
-	present, err := tx.Exists(ctx, "creative_message_content_refs", "content_revision_id=$2 AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete' AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$4)) OR run_id=$4))", id, conversationID, runID)
+	present, err := tx.Exists(ctx, "creative_message_content_refs", "content_revision_id=$2 AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete' AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$4)) OR run_id=$4 OR (role='system' AND id IN (SELECT notification_message_id FROM creative_agent_tool_tasks WHERE account_id=$1 AND conversation_id=$3 AND notification_message_id IS NOT NULL))))", id, conversationID, runID)
 	if err != nil || present || !libraryOpen(consent, library) {
 		return present, err
 	}

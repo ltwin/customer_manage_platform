@@ -181,7 +181,7 @@ func (s *Service) projectHistoryInTx(ctx context.Context, tx store.TxAccountScop
 		before = 1<<62 - 1
 	}
 	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id,reasoning,ordinal",
-		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool') AND ordinal>$3 AND ordinal<$4",
+		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool','system') AND ordinal>$3 AND ordinal<$4",
 		[]store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID, from, before)
 	if err != nil {
 		return out, err
@@ -222,6 +222,9 @@ func (s *Service) projectHistoryInTx(ctx context.Context, tx store.TxAccountScop
 		return out, err
 	}
 	out.Unscanned = read == s.limits.HistoryMessages
+	if items, err = s.historyNoticesInTx(ctx, tx, items); err != nil {
+		return out, err
+	}
 	slices.Reverse(items)
 	// Drop the leading partial run when the row bound starts inside a tool pair.
 	for len(items) > 0 && items[0].Role != "user" {
@@ -729,6 +732,44 @@ func conversationRunsInTx(ctx context.Context, tx store.TxAccountScope, conversa
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+// historyNoticesInTx keeps the completion notices a model request already
+// carried, as the tool data that request saw, once each; a notice not yet
+// delivered is left out here and goes as new input instead.
+func (s *Service) historyNoticesInTx(ctx context.Context, tx store.TxAccountScope, items []historyItem) ([]historyItem, error) {
+	var ids []string
+	for _, item := range items {
+		if item.Role == "system" {
+			ids = append(ids, item.Group)
+		}
+	}
+	if len(ids) == 0 {
+		return items, nil
+	}
+	delivered, err := deliveredNoticesInTx(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := items[:0]
+	for _, item := range items {
+		if item.Role != "system" {
+			out = append(out, item)
+			continue
+		}
+		task, ok := delivered[item.Group]
+		if !ok {
+			continue
+		}
+		content, err := noticeContent(task)
+		if err != nil {
+			return nil, err
+		}
+		item.Role, item.Body = "user", Body{Blocks: []Block{{Type: "text", Text: content}}}
+		item.Text = content
+		out = append(out, item)
+	}
+	return out, nil
 }
 
 func bodyMessage(body Body, role string) *schema.Message {

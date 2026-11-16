@@ -738,7 +738,7 @@ func (s *Service) admitDispatchConsentInTx(ctx context.Context, tx store.TxAccou
 // The ordinal comes from the run's own counter under its row lock, so two
 // workers cannot hand out the same position.
 func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim, previousModel string,
-	chat llmgateway.ChatRequest, composition contextComposition, replayed ...int) (stepID, bindingKey string, err error) {
+	chat llmgateway.ChatRequest, composition contextComposition, notices []string, replayed ...int) (stepID, bindingKey string, err error) {
 	// The 256 KiB input contract, checked on the request as assembled — the
 	// system prompt the skill contributed, the history, the quoted bodies, the
 	// separators and the tool definitions, all of it.
@@ -818,7 +818,10 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 			bindingKey = turnBindingKey(held.RunID, existingOrdinal)
 			// A replayed turn may return the result it paid for without a
 			// dispatch, so the inputs it carried are marked here too.
-			return markInputsDeliveredInTx(ctx, tx, held.RunID, replayed)
+			if err := markInputsDeliveredInTx(ctx, tx, held.RunID, replayed); err != nil {
+				return err
+			}
+			return markNoticesDeliveredInTx(ctx, tx, stepID, notices)
 		}
 		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='tool' AND state='prepared'", held.RunID)
 		if err != nil {
@@ -835,11 +838,19 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 		if err != nil {
 			return err
 		}
+		// The notices the request carries, frozen with it for a replay; the
+		// task rows, not this list, say what was delivered (review C5).
+		var carried any
+		if len(notices) > 0 {
+			if carried, err = json.Marshal(notices); err != nil {
+				return err
+			}
+		}
 		if err := tx.Insert(ctx, "creative_agent_steps",
 			[]string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "input_hash", "input", "started_at",
-				"input_text_bytes", "input_image_count", "context_composition"},
+				"input_text_bytes", "input_image_count", "context_composition", "background_notification_ids"},
 			stepID, held.RunID, ordinal, "model", "prepared", held.Epoch, hash, payload, now,
-			composition.textBytes(), composition.Images, measured); err != nil {
+			composition.textBytes(), composition.Images, measured, carried); err != nil {
 			return err
 		}
 		// A model step has no block of its own: its text block appears with the

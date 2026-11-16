@@ -81,6 +81,9 @@ type runtimeHandler struct {
 	// delivering is the input batches the next request carries for the first
 	// time; its dispatch, or the replay of its step, marks them delivered.
 	delivering []int
+	// notices are the background task notices the next request carries
+	// (agent-tool-background); its dispatch marks them delivered.
+	notices []string
 	// libraryBound is set when the request just bound carries library tool
 	// results, so its dispatch can refuse it if library search closed since.
 	libraryBound bool
@@ -102,6 +105,18 @@ func (h *runtimeHandler) setDelivery(batches []int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.delivering = batches
+}
+
+func (h *runtimeHandler) setNotices(handles []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.notices = handles
+}
+
+func (h *runtimeHandler) carriedNotices() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.notices
 }
 
 func (h *runtimeHandler) delivery() []int {

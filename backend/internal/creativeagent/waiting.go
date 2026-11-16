@@ -411,7 +411,6 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 	}
 	state.Messages = append(state.Messages, messages...)
 	h.setDelivery(batches)
-	limitHistoryImages(state.Messages, h.service.limits.ImagePreviewCount)
 	// The in-run guard: a run whose own turns outgrow the window sheds old
 	// payloads and whole earlier turns, never the summary (design §5).
 	// Tools can change with the current consent or model. Count the current
@@ -424,6 +423,20 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 	}
 	fixed := toolDefinitionBytes(definitions)
 	budget := min(requestByteCeiling(h.service.limits, h.held.Model), h.measure.Ratio.bytesFor(h.held.Model.InputWindowTokens())) - fixed
+	// Finished background tasks follow the tool answers and the
+	// photographer's input, with room set aside before history is trimmed;
+	// what does not fit goes in the next request (design: 完成通知与送达).
+	carried := map[string]bool{}
+	for _, handle := range noticesIn(state.Messages) {
+		carried[handle] = true
+	}
+	notices, err := h.unseenNotices(ctx, carried, budget/4)
+	if err != nil {
+		return ctx, state, err
+	}
+	state.Messages = append(state.Messages, notices...)
+	h.setNotices(noticesIn(state.Messages))
+	limitHistoryImages(state.Messages, h.service.limits.ImagePreviewCount)
 	state.Messages = compactMessages(state.Messages, budget)
 	return ctx, state, nil
 }
