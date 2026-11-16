@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronRight, Library } from 'lucide-react'
-import { MediaFigure } from './MediaView.tsx'
+import { ReferenceContent, ReferencePreview } from './ReferencePreview.tsx'
 import { contentText } from './content.ts'
 import {
   cleanMentions,
@@ -131,7 +131,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
   const [query, setQuery] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
-  const [peek, setPeek] = useState<{ id: string; x: number; y: number } | null>(
+  const [peek, setPeek] = useState<{ id: string; anchor: HTMLElement } | null>(
     null,
   )
   const [expanded, setExpanded] = useState<Expanded | null>(null)
@@ -584,12 +584,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
           if (!(e.target instanceof Element)) return
           const chip = e.target.closest<HTMLElement>('[data-ref]')
           if (chip?.dataset.ref) {
-            const r = chip.getBoundingClientRect()
-            setPeek({
-              id: chip.dataset.ref,
-              x: Math.max(8, Math.min(r.left, window.innerWidth - 216)),
-              y: r.top,
-            })
+            setPeek({ id: chip.dataset.ref, anchor: chip })
           }
         }}
         onPointerOut={(e) => {
@@ -778,59 +773,33 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
           </div>,
           document.querySelector('.cc-workspace') ?? document.body,
         )}
-      {peek &&
-        preview &&
-        createPortal(
-          <div
-            className="cc-generation-ref-peek"
-            role="tooltip"
-            style={{
-              left: peek.x,
-              ...(peek.y > 310
-                ? { bottom: window.innerHeight - peek.y + 8 }
-                : { top: peek.y + 36 }),
-            }}
-          >
-            {preview.scene ? (
-              <p>
-                {preview.scene.objectIDs.length
-                  ? preview.scene.objectIDs
-                      .map((_, i) => preview.scene!.names[i] || '未命名')
-                      .join('、')
-                  : '整个场景'}
-              </p>
-            ) : preview.content && preview.kind !== 'text' ? (
-              <MediaFigure
-                content={preview.content}
-                kind={preview.kind}
-                title={preview.title}
-              />
-            ) : preview.thumbnail ? (
-              <img src={preview.thumbnail} alt={preview.title} />
-            ) : (
-              <p>
-                {preview.content
-                  ? contentText(preview.content.payload)
-                  : '节点尚无内容'}
-              </p>
-            )}
-            <div>
-              <b>{preview.title}</b>
-              <span>
-                {preview.state === 'uploading'
-                  ? '上传中，完成后才能发送'
-                  : preview.state === 'failed'
-                    ? '上传失败'
-                    : preview.scene
-                      ? '场景引用 · 点击修改物件'
-                      : preview.kind === 'text'
-                      ? '文本参考 · 引用处展开为原文'
-                      : `发送时记为 [${preview.label}]`}
-              </span>
-            </div>
-          </div>,
-          document.querySelector('.cc-workspace') ?? document.body,
-        )}
+      {peek && preview && (
+        <ReferencePreview
+          anchor={peek.anchor}
+          title={preview.title}
+          description={
+            preview.state === 'uploading' ? '上传中，完成后才能发送'
+              : preview.state === 'failed' ? '上传失败'
+                : preview.scene ? '场景引用 · 点击修改物件'
+                  : preview.kind === 'text' ? '文本参考 · 引用处展开为原文'
+                    : `发送时记为 [${preview.label}]`
+          }
+        >
+          {preview.scene ? (
+            <p>
+              {preview.scene.objectIDs.length
+                ? preview.scene.objectIDs.map((_, i) => preview.scene?.names[i] || '未命名').join('、')
+                : '整个场景'}
+            </p>
+          ) : preview.content ? (
+            <ReferenceContent content={preview.content} title={preview.title} />
+          ) : preview.thumbnail ? (
+            <img src={preview.thumbnail} alt={preview.title} />
+          ) : (
+            <p>节点尚无内容</p>
+          )}
+        </ReferencePreview>
+      )}
     </>
   )
 })

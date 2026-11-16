@@ -6,12 +6,25 @@ type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Block =
   components['schemas']['CreativeAgentMessage']['body']['blocks'][number]
 
+type MessageSkill = Pick<
+  components['schemas']['CreativeAgentMessageSkill'],
+  'skill_id' | 'skill_version_id' | 'display_name' | 'version_number'
+>
+
 // 用户消息的一段：文字、引用（Skill、素材或场景）、命令，或旧页面从 3D 场景发送时
 // 选中的物体（names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
 // 场景引用的 chip 带 detail：完整的物件名单。
 export type MessagePart =
   | { kind: 'text'; text: string }
-  | { kind: 'chip'; title: string; scene?: true; detail?: string }
+  | {
+      kind: 'chip'
+      title: string
+      scene?: true
+      sceneTitle?: string
+      detail?: string
+      revisionID?: string
+      skill?: MessageSkill
+    }
   | { kind: 'command'; command: string; text?: string }
   | { kind: 'scene'; names: string[] }
 
@@ -34,9 +47,8 @@ function sceneChip(ref: SceneRefDraft): MessagePart {
     kind: 'chip',
     title: sceneRefTitle(ref),
     scene: true,
-    detail: names.length
-      ? `${ref.title || '未命名场景'}：${names.join('、')}`
-      : `整个场景：${ref.title || '未命名场景'}`,
+    sceneTitle: ref.title || '未命名场景',
+    detail: names.length ? names.join('、') : '整个场景',
   }
 }
 
@@ -44,7 +56,7 @@ function sceneChip(ref: SceneRefDraft): MessagePart {
 export function outgoingParts(
   segments: Segment[],
   titleOf: (revisionID: string) => string | undefined,
-  skillName?: string,
+  skill?: MessageSkill,
   scenes: SceneRefDraft[] = [],
 ): MessagePart[] {
   let scene = 0
@@ -62,12 +74,9 @@ export function outgoingParts(
         )
       }
       case 'skill_ref':
-        return { kind: 'chip', title: skillName ?? 'Skill' }
+        return skill ? skillChip(skill) : { kind: 'chip', title: 'Skill' }
       case 'content_ref':
-        return {
-          kind: 'chip',
-          title: titleOf(segment.content_revision_id ?? '') ?? unnamed,
-        }
+        return contentChip(segment.content_revision_id, titleOf)
       case 'command':
         return {
           kind: 'command',
@@ -103,12 +112,28 @@ export function messageParts(
           object.missing ? deletedObject : object.name,
         ),
       })
-    return {
-      kind: 'chip',
-      title:
-        block.skill?.display_name ?? titleOf(block.ref_id ?? '') ?? unnamed,
-    }
+    if (block.skill) return skillChip(block.skill)
+    return contentChip(block.ref_id, titleOf)
   })
+}
+
+function skillChip({ skill_id, skill_version_id, display_name, version_number }: MessageSkill): MessagePart {
+  return {
+    kind: 'chip',
+    title: display_name,
+    skill: { skill_id, skill_version_id, display_name, version_number },
+  }
+}
+
+function contentChip(
+  revisionID: string | undefined,
+  titleOf: (id: string) => string | undefined,
+): MessagePart {
+  return {
+    kind: 'chip',
+    title: (revisionID && titleOf(revisionID)) || unnamed,
+    ...(revisionID && { revisionID }),
+  }
 }
 
 // 服务端受理了：记下触发消息和运行，会话换成服务端给的那个。

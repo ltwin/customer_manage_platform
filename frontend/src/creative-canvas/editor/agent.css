@@ -147,7 +147,7 @@
 .cc-agent-panel button:hover:not(:disabled) {
   border-color: var(--accent);
 }
-.cc-agent-panel :is(button, select, textarea, input):focus-visible {
+.cc-agent-panel :is(button, select, textarea, input, .cc-agent-chip, .cc-agent-scene-tag):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

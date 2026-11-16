@@ -1,6 +1,5 @@
 import { memo, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
-  Box,
   Check,
   ChevronRight,
   FoldVertical,
@@ -34,11 +33,12 @@ import { runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import {
   SceneRunChanges,
-  SceneSelectionTag,
   SceneShot,
 } from './AgentScene.tsx'
 import { messageParts, type MessagePart } from './agentOutgoing.ts'
 import { tokenLabel } from './agentContext.ts'
+import { AgentReference } from './AgentReference.tsx'
+import { selectionLabel } from './agentScene.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind } from './media.ts'
 
@@ -388,11 +388,17 @@ export function UserMessage({
   )
   return (
     <>
-      {scenes.map((part, index) => (
-        <div className="cc-agent-user-scene" key={index}>
-          <SceneSelectionTag names={part.names} />
-        </div>
-      ))}
+      {scenes.map((part, index) => {
+        const { label, detail } = selectionLabel(part.names)
+        return (
+          <div className="cc-agent-user-scene" key={index}>
+            <AgentReference
+              part={{ kind: 'chip', title: label, scene: true, sceneTitle: '发送时选中的物件', detail }}
+              legacySelection
+            />
+          </div>
+        )
+      })}
       <div className="cc-agent-user" aria-busy={sending || undefined}>
         {parts.map((part, index) =>
           part.kind === 'scene' ? null : part.kind === 'command' ? (
@@ -403,15 +409,7 @@ export function UserMessage({
           ) : part.kind === 'text' ? (
             <span key={index}>{part.text}</span>
           ) : (
-            <span
-              className="cc-agent-chip"
-              key={index}
-              title={part.detail}
-              data-scene={part.scene}
-            >
-              {part.scene && <Box size={12} aria-hidden="true" />}
-              {part.title}
-            </span>
+            <AgentReference key={index} part={part} />
           ),
         )}
         {sending && <span className="sr-only">发送中</span>}

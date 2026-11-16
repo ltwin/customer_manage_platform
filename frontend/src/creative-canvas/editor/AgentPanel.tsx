@@ -1076,7 +1076,7 @@ function AgentConversation({
     const parts = outgoingParts(
       segments,
       titleOf,
-      selected?.display_name,
+      selected,
       sceneRefsInOrder(draft, sceneRefs),
     )
     const send: QueuedMessage['send'] = {

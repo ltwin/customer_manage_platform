@@ -23,6 +23,7 @@ const titles = new Map([
 const titleOf = (id: string) => titles.get(id)
 
 test('what was sent is drawn the way the server will draw it', () => {
+  const skill = { skill_id: 's', skill_version_id: 'v', display_name: '人像修图', version_number: 2 }
   const parts = outgoingParts(
     [
       { type: 'skill_ref', skill_id: 's', skill_version_id: 'v' },
@@ -32,14 +33,14 @@ test('what was sent is drawn the way the server will draw it', () => {
       { type: 'content_ref', content_revision_id: 'rev-9' },
     ],
     titleOf,
-    '人像修图',
+    skill,
   )
   assert.deepEqual(parts, [
-    { kind: 'chip', title: '人像修图' },
+    { kind: 'chip', title: '人像修图', skill },
     { kind: 'text', text: '参考' },
-    { kind: 'chip', title: '秋日样片' },
+    { kind: 'chip', title: '秋日样片', revisionID: 'rev-1' },
     { kind: 'text', text: '出三版' },
-    { kind: 'chip', title: '引用素材' },
+    { kind: 'chip', title: '引用素材', revisionID: 'rev-9' },
   ])
   assert.deepEqual(
     outgoingParts(
@@ -52,6 +53,7 @@ test('what was sent is drawn the way the server will draw it', () => {
   assert.deepEqual(
     messageParts(
       [
+        { type: 'skill_ref', skill: { ...skill, digest: 'd' } },
         { type: 'text', text: '参考' },
         { type: 'content_ref', ref_id: 'rev-2' },
         { type: 'command', command: 'compact' },
@@ -59,8 +61,9 @@ test('what was sent is drawn the way the server will draw it', () => {
       titleOf,
     ),
     [
+      { kind: 'chip', title: '人像修图', skill },
       { kind: 'text', text: '参考' },
-      { kind: 'chip', title: '上传的参考图' },
+      { kind: 'chip', title: '上传的参考图', revisionID: 'rev-2' },
       { kind: 'command', command: 'compact', text: undefined },
     ],
   )
@@ -115,9 +118,9 @@ test('scene references are drawn in place, as sent and as stored', () => {
   )
   assert.deepEqual(parts, [
     { kind: 'text', text: '把' },
-    { kind: 'chip', title: '客厅 · 台灯、未命名', scene: true, detail: '客厅：台灯、未命名' },
+    { kind: 'chip', title: '客厅 · 台灯、未命名', scene: true, sceneTitle: '客厅', detail: '台灯、未命名' },
     { kind: 'text', text: '改成金属，' },
-    { kind: 'chip', title: '卧室', scene: true, detail: '整个场景：卧室' },
+    { kind: 'chip', title: '卧室', scene: true, sceneTitle: '卧室', detail: '整个场景' },
   ])
   // Stored: the snapshot's names, and an object gone when sent reads as deleted.
   assert.deepEqual(
@@ -140,8 +143,8 @@ test('scene references are drawn in place, as sent and as stored', () => {
       titleOf,
     ),
     [
-      { kind: 'chip', title: '客厅 · 台灯、已删除的物件', scene: true, detail: '客厅：台灯、已删除的物件' },
-      { kind: 'chip', title: '卧室', scene: true, detail: '整个场景：卧室' },
+      { kind: 'chip', title: '客厅 · 台灯、已删除的物件', scene: true, sceneTitle: '客厅', detail: '台灯、已删除的物件' },
+      { kind: 'chip', title: '卧室', scene: true, sceneTitle: '卧室', detail: '整个场景' },
     ],
   )
 })

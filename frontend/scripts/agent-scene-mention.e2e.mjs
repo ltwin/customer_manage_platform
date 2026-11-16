@@ -66,11 +66,12 @@ const scenes = {
   cwdoc_bed: { id: 'cwdoc_bed', title: '卧室', type_key: 'scene', scene: { objects: [object('bed', '', 'primitive', null, 1)] } },
 }
 
-async function open(query = '', imageInput = true, queued = null) {
+async function open(query = '', imageInput = true, queued = null, withHistory = false) {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const runs = []
+  const previewReads = []
   if (queued) await page.addInitScript((item) => {
     sessionStorage.setItem('creative-agent-queue:qa-account:conversation', JSON.stringify({ items: [item], paused: false }))
   }, queued)
@@ -88,7 +89,48 @@ async function open(query = '', imageInput = true, queued = null) {
         policy_version: noticeVersion, effective: true, revision: '1',
         consent: { id: 'ccec_qa', policy_version: noticeVersion, library_access: false, granted_at: '2026-11-13T00:00:00Z' },
       })
+    if (withHistory && path.endsWith('/conversations/conversation/messages'))
+      return json({ items: [{
+        id: 'stored-message', ordinal: '1', role: 'user', status: 'complete',
+        body: { blocks: [
+          { type: 'content_ref', ref_id: 'ccrv_old_image' },
+          { type: 'content_ref', ref_id: 'ccrv_old_text' },
+          { type: 'content_ref', ref_id: 'ccrv_missing' },
+          {
+            type: 'scene_ref',
+            scene: { document_id: 'cwdoc_living', title: '原来的客厅', revision: 3, objects: [
+              { id: 'lamp', name: '原来的台灯' }, { id: 'key', name: '原来的主光' }, { id: 'gone', name: '', missing: true },
+            ] },
+          },
+          { type: 'scene_ref', scene: { document_id: 'cwdoc_bed', title: '原来的卧室', revision: 1, objects: [] } },
+          { type: 'skill_ref', skill: { skill_id: 'skill', skill_version_id: 'old-version', version_number: 2, display_name: '原来的技能' } },
+          { type: 'scene_selection', scene: { document_id: 'cwdoc_living', title: '客厅', objects: [{ id: 'sofa', name: '旧沙发' }] } },
+        ] },
+      }], prev_cursor: '' })
+    if (withHistory && path.includes('/content-revisions/')) {
+      const id = path.split('/').at(-1)
+      previewReads.push(id)
+      if (id === 'ccrv_old_image')
+        return json({
+          id, kind: 'image', truncated: false, payload: {},
+          media: [{ role: 'display', mime: 'image/png', width: 1, height: 1, blob_id: 'blob' }],
+        })
+      if (id === 'ccrv_old_text')
+        return json({ id, kind: 'text', payload: { body: '发送时保存的原文' }, media: [], truncated: false })
+      return route.fulfill({ status: 404, json: { error: { code: 'not_found', message: '内容不存在' } } })
+    }
+    if (withHistory && path.endsWith('/agent/skills/skill/versions/old-version')) {
+      previewReads.push('old-version')
+      return json({ description: '发送时使用的技能版本说明' })
+    }
     if (req.method() === 'POST') {
+      if (withHistory && path.endsWith('/media-access-tickets')) {
+        assert.equal(req.postDataJSON().content_revision_id, 'ccrv_old_image')
+        return json({
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b8Z0AAAAASUVORK5CYII=',
+          expires_at: new Date(Date.now() + 120000).toISOString(),
+        })
+      }
       if (path.endsWith('/canvases/canvas/conversations')) return json({ id: 'conversation', title: '新对话' })
       if (path.endsWith('/runs')) {
         runs.push(req.postDataJSON().payload)
@@ -97,7 +139,7 @@ async function open(query = '', imageInput = true, queued = null) {
         return route.fulfill({ status: 422, json: { error: { code: 'creative_model_unavailable', message: '测试：不真的运行' } } })
       }
     }
-    if (queued && path.endsWith('/canvases/canvas/conversations')) return json({ items: [{ id: 'conversation', title: '测试对话' }] })
+    if ((queued || withHistory) && path.endsWith('/canvases/canvas/conversations')) return json({ items: [{ id: 'conversation', title: '测试对话' }] })
     if (queued && path.endsWith('/conversations/conversation/runs')) return json({ items: [finished] })
     if (queued && path.endsWith('/agent-runs/previous')) return json(finished)
     const doc = /\/documents\/([^/]+)$/.exec(path)
@@ -113,7 +155,7 @@ async function open(query = '', imageInput = true, queued = null) {
   await page.goto(`${base}/.agent-scene-mention-qa.html${query}`)
   const editor = page.getByRole('textbox', { name: '创作问题' })
   await editor.waitFor()
-  return { page, editor, runs, errors }
+  return { page, editor, runs, errors, previewReads }
 }
 const select = (page, id) => page.evaluate((value) => window.__select(value), id)
 const pending = (page) => page.locator('.cc-prompt-editor [data-pending]')
@@ -144,6 +186,47 @@ async function enterScene(t, selected = [], documentID = 'cwdoc_living') {
 }
 
 const checks = {
+  async 'historical reference chips preview the exact saved revision and snapshot'() {
+    const t = await open('', true, null, true)
+    const refs = t.page.locator('.cc-agent-user .cc-agent-chip')
+    const tooltip = t.page.getByRole('tooltip')
+    await refs.first().waitFor()
+    assert.deepEqual(t.previewReads, [], 'history does not read previews in advance')
+    await refs.nth(0).hover()
+    const image = tooltip.getByRole('img')
+    await image.waitFor()
+    await image.evaluate((el) => el.decode())
+    const box = await tooltip.boundingBox()
+    const viewport = t.page.viewportSize()
+    assert.ok(box.x >= 0 && box.x + box.width <= viewport.width && box.y >= 0 && box.y + box.height <= viewport.height)
+    await refs.nth(1).hover()
+    await tooltip.getByText('发送时保存的原文').waitFor()
+    await refs.nth(2).hover()
+    await tooltip.getByText('素材暂不可预览').waitFor()
+    await refs.nth(3).hover()
+    await tooltip.getByText('原来的台灯、原来的主光、已删除的物件').waitFor()
+    await tooltip.getByText('原来的客厅', { exact: true }).waitFor()
+    await refs.nth(4).hover()
+    await tooltip.getByText('整个场景', { exact: true }).waitFor()
+    await refs.nth(5).hover()
+    await tooltip.getByText('Skill · 第 2 版').waitFor()
+    await tooltip.getByText('发送时使用的技能版本说明').waitFor()
+    await t.page.locator('.cc-agent-user-scene .cc-agent-scene-tag').hover()
+    await tooltip.getByText('旧沙发', { exact: true }).waitFor()
+    await t.editor.hover()
+    await tooltip.waitFor({ state: 'hidden' })
+    await refs.nth(1).focus()
+    await tooltip.getByText('发送时保存的原文').waitFor()
+    await t.page.keyboard.press('Escape')
+    await tooltip.waitFor({ state: 'hidden' })
+    assert.deepEqual(t.previewReads, ['ccrv_old_image', 'ccrv_old_text', 'ccrv_missing', 'old-version'])
+
+    await pickFromMenu(t, '客')
+    await t.page.getByRole('option', { name: /客厅/ }).click()
+    await chips(t.page).first().hover()
+    await tooltip.getByText('场景引用 · 点击修改物件').waitFor()
+    return t
+  },
   async 'keyboard navigation scrolls options into view and inserts the searched object'() {
     const t = await open('?many=1')
     await pickFromMenu(t, '')
