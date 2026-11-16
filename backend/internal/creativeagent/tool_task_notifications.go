@@ -58,9 +58,11 @@ func (s *Service) publishNoticeInTx(ctx context.Context, tx store.TxAccountScope
 	if err != nil {
 		return err
 	}
-	_, err = tx.Update(ctx, "creative_agent_tool_tasks", "notification_state='pending',notification_message_id=$3,updated_at=clock_timestamp()",
-		"id=$2 AND notification_state='none'", task.ID, message.ID)
-	return err
+	if _, err = tx.Update(ctx, "creative_agent_tool_tasks", "notification_state='pending',notification_message_id=$3,updated_at=clock_timestamp()",
+		"id=$2 AND notification_state='none'", task.ID, message.ID); err != nil {
+		return err
+	}
+	return scheduleWakeInTx(ctx, tx, task.ID)
 }
 
 // noticeText is the one line the conversation shows; the structured result

@@ -33,6 +33,14 @@ func (s *Store) WakeDueToolTasks(ctx context.Context, limit int) ([]ToolTaskRef,
 WHERE wake_after IS NOT NULL AND wake_after<=clock_timestamp() ORDER BY wake_after,id LIMIT $1`, limit)
 }
 
+// NextToolTaskWake is the earliest pending wake time across accounts, nil
+// when none is set: the waker sleeps until then instead of a full scan.
+func (s *Store) NextToolTaskWake(ctx context.Context) (*time.Time, error) {
+	var at *time.Time
+	err := s.pool.QueryRow(ctx, `SELECT min(wake_after) FROM creative_agent_tool_tasks WHERE wake_after IS NOT NULL`).Scan(&at)
+	return at, err
+}
+
 func (s *Store) toolTaskRefs(ctx context.Context, query string, limit int) ([]ToolTaskRef, error) {
 	if limit < 1 || limit > 1000 {
 		return nil, fmt.Errorf("tool task page must be between 1 and 1000")

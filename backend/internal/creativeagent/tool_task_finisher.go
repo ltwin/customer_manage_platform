@@ -113,6 +113,8 @@ func (s *Service) RunToolTaskFinisher(ctx context.Context, db *store.Store) {
 	}
 	ticker := time.NewTicker(toolTaskFallbackScan)
 	defer ticker.Stop()
+	timer := time.NewTimer(toolTaskFallbackScan)
+	defer timer.Stop()
 	for {
 		for ctx.Err() == nil {
 			passCtx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -125,6 +127,24 @@ func (s *Service) RunToolTaskFinisher(ctx context.Context, db *store.Store) {
 				break
 			}
 		}
+		// Idle wake-ups ride the same loop: notices just published may have
+		// set a wake time a few seconds out.
+		for ctx.Err() == nil {
+			passCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			n, err := s.WakeDueToolTasks(passCtx, db, toolTaskBatch)
+			cancel()
+			if err != nil && ctx.Err() == nil {
+				s.logger.Warn("creative agent tool task wake", slog.String("error", err.Error()))
+			}
+			if n < toolTaskBatch {
+				break
+			}
+		}
+		next := toolTaskFallbackScan
+		if at, err := db.NextToolTaskWake(ctx); err == nil && at != nil {
+			next = min(next, max(time.Until(*at), 50*time.Millisecond))
+		}
+		timer.Reset(next)
 		select {
 		case <-ctx.Done():
 			return
@@ -133,6 +153,7 @@ func (s *Service) RunToolTaskFinisher(ctx context.Context, db *store.Store) {
 				return
 			}
 		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
