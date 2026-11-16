@@ -1,12 +1,12 @@
 {
   "uid": "32a22e30-4c4f-4fcb-b837-3b86b7ade489",
-  "revision": 5,
+  "revision": 6,
   "id": "agent-tool-background",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-11T12:39:58.970Z",
-  "updatedAt": "2026-11-16T03:20:12.736Z",
+  "updatedAt": "2026-11-16T03:37:12.957Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -44,8 +44,19 @@
       "removed": []
     }
   ],
+  "baseline": {
+    "commit": "ccb471c846a505772c488fc277e2b94776d612fb",
+    "at": "2026-11-16T03:37:12.405Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5c95fadbd127f443152c97300e1b4ed5e9811694ab73051bd03c57b4b73ef763"
+    },
+    "preExisting": [
+      ".lti/snapshots/5c95fadbd127f443152c97300e1b4ed5e9811694ab73051bd03c57b4b73ef763.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
