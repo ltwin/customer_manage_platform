@@ -7,9 +7,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackEgressAccountConsent undoes 0083.
+// rollbackEgressAccountConsent undoes 0084 and then 0083.
 func rollbackEgressAccountConsent(t *testing.T, url string) {
 	t.Helper()
+	rollbackGraphIdentityCreatedAt(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-egress-account-consent", err)
 	}
@@ -67,6 +68,7 @@ VALUES($1,'acct','platform','creative_assistance','ccco_x','{"mode":"account_lib
 		t.Fatal("malformed current_consent_id accepted")
 	}
 
+	rollbackGraphIdentityCreatedAt(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "account-level egress consents exist") {
 		t.Fatalf("lossy rollback accepted: %v", err)
 	}

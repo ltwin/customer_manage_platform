@@ -1,12 +1,12 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 5,
+  "revision": 6,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T06:47:04.815Z",
+  "updatedAt": "2026-11-16T06:47:59.833Z",
   "risk": {
     "factors": [
       "data-migration"
@@ -34,6 +34,13 @@
       "added": [
         "data-migration"
       ],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T06:47:59.272Z",
+      "summary": "更正事实：clock_timestamp() 为易变默认值，加列会整表重写一次（原写不重写）；方案与范围不变",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
       "removed": []
     }
   ],

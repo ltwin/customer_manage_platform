@@ -2,7 +2,7 @@
 
 ## 1. 节点创建时间（后端与契约）
 
-- [ ] 1.1 迁移 0084：`creative_graph_identities.created_at`（`NOT NULL DEFAULT clock_timestamp()`）+ 从 `creative_nodes` 回填，配 `down`；迁移测试覆盖回填值等于节点行时间、`down` 后列消失；迁移回退链测试补上 0084。`check-go PKG=./internal/platform/store/...` 通过
+- [x] 1.1 迁移 0084：`creative_graph_identities.created_at`（`NOT NULL DEFAULT clock_timestamp()`）+ 从 `creative_nodes` 回填，配 `down`；迁移测试覆盖回填值等于节点行时间、`down` 后列消失；迁移回退链测试补上 0084。`check-go PKG=./internal/platform/store/...` 通过
 - [ ] 1.2 先写红测：画布图集成测试「新建 → 删除 → 撤销 → 重做删除 → 撤销」期间节点 `created_at` 不变，移动 / 改名后不变，复制得到更晚的时间；当前因字段不存在或恢复被重置而失败
 - [ ] 1.3 `identity.CreatedAt`、`loadGraph` 读身份时间、`persistObject` 恢复节点行时带回；`nodeColumns` / `scanNode` / `Node.CreatedAt` 读出；1.2 转绿，现有 creativecanvas 测试全绿（无 `ErrGraphIntegrity`）
 - [ ] 1.4 OpenAPI `CreativeCanvasNode.created_at`（required，date-time）；`Node.MarshalJSON` 输出 UTC RFC 3339；`make generate` 更新 `api.gen.go`、`schema.d.ts`、`tool_schemas.gen.go`；前端 `outbox.ts`、`structuralPreview.ts` 本地投影节点补 `created_at`；`check-go PKG=./internal/creativecanvas/...` 与前端类型检查通过
