@@ -242,6 +242,45 @@ try {
     assert.equal(g.height, 260, `unknown dimensions keep the current height (got ${g.height})`)
   })
 
+  // 光标无需对准描边即可沿四边拉伸；缩小画布后仍然好抓。
+  await record('edge-hit', async () => {
+    await select('text')
+    at('invisible corner')
+    assert.equal(await handle('text').evaluate((el) => getComputedStyle(el).opacity), '0')
+    const zoomOut = page.getByRole('button', { name: '缩小', exact: true })
+    for (const zoomedOut of [false, true]) {
+      if (zoomedOut) {
+        const beforeZoom = await zoom()
+        await zoomOut.click()
+        await zoomOut.click()
+        await page.waitForFunction((before) => {
+          const transform = document.querySelector('.react-flow__viewport').style.transform
+          return Number(/scale\(([-\d.]+)\)/.exec(transform)[1]) < before * 0.8
+        }, beforeZoom)
+      }
+      for (const [side, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['top', 0, -1], ['bottom', 0, 1]]) {
+        at(`${side}, zoomedOut=${zoomedOut}`)
+        const before = await geometry('text')
+        const box = await node('text').locator('.cc-node').boundingBox()
+        const x = box.x + (dx < 0 ? 5 : dx > 0 ? box.width - 5 : box.width / 2)
+        const y = box.y + (dy < 0 ? 5 : dy > 0 ? box.height - 5 : box.height / 2)
+        await page.mouse.move(x, y)
+        const cursor = await page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)).cursor, [x, y])
+        assert.equal(cursor, dx ? 'ew-resize' : 'ns-resize')
+        await page.mouse.down()
+        await page.mouse.move(x + 10 * dx, y + 10 * dy, { steps: 4 })
+        await page.mouse.up()
+        const after = await geometry('text')
+        assert.ok(dx ? after.width > before.width : after.height > before.height, `${side} resizes the node`)
+      }
+      for (const name of ['添加上游参考', '添加下游节点']) {
+        at(`${name}, zoomedOut=${zoomedOut}`)
+        const port = node('text').getByRole('button', { name })
+        await port.click({ trial: true })
+      }
+    }
+  })
+
   assert.deepEqual(errors, [])
 } finally {
   console.log(JSON.stringify({ results }, null, 1))
@@ -249,4 +288,4 @@ try {
   await browser.close()
 }
 const failed = Object.entries(results).filter(([, r]) => r !== 'pass')
-if (failed.length || (!process.env.ONLY && Object.keys(results).length !== 5)) process.exitCode = 1
+if (failed.length || (!process.env.ONLY && Object.keys(results).length !== 6)) process.exitCode = 1

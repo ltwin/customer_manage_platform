@@ -962,13 +962,30 @@ button.cc-project-name:hover,
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
 }
+.cc-flow .react-flow__resize-control {
+  z-index: 6;
+}
 .cc-flow .react-flow__resize-control.handle {
-  border: 1px solid var(--primary);
-  background: var(--s2);
-  border-radius: 3px;
+  opacity: 0;
 }
 .cc-flow .react-flow__resize-control.line {
-  border-color: var(--line-3);
+  /* 抓取区按屏幕像素计算，小节点上也留出可拖动的主体。 */
+  --resize-hit: min(25%, calc(16px / var(--cc-zoom, 1)));
+  --resize-side-outset: min(6px, calc(4px / var(--cc-zoom, 1)));
+  border: 0;
+}
+.cc-flow .react-flow__resize-control.line:is(.top, .bottom) {
+  height: var(--resize-hit);
+}
+.cc-flow .react-flow__resize-control.line:is(.left, .right) {
+  width: var(--resize-hit);
+}
+/* 两侧的抓取区主要放在卡片内，留出外侧的连线按钮。 */
+.cc-flow .react-flow__resize-control.line.left {
+  transform: translateX(calc(-1 * var(--resize-side-outset)));
+}
+.cc-flow .react-flow__resize-control.line.right {
+  transform: translateX(calc(-100% + var(--resize-side-outset)));
 }
 @media (hover: none) {
   .cc-port-target button {
