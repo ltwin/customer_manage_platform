@@ -50,6 +50,10 @@ type toolTask struct {
 	Mode           string
 	State          string
 	Revision       int64
+	// RunGone is set by the finisher for a foreground task whose run may no
+	// longer write (stopped, past its deadline): its result is recorded,
+	// nothing is adopted on its behalf and nothing continues the run.
+	RunGone bool
 }
 
 const toolTaskColumns = "id,conversation_id,canvas_id,source_run_id,tool_step_id,tool_key,source_id,mode,state,revision"
@@ -74,6 +78,11 @@ type toolTaskOutcome struct {
 	// RecheckAt, when the tool is not done, is when to look again even
 	// without a source change (a source deadline). Zero waits for a trigger.
 	RecheckAt time.Time
+	// Conclude, when the tool is not done, is work that must run outside the
+	// finishing transaction because it takes its own locks (adopting a
+	// compression candidate). The finisher runs it after committing and
+	// finishes the task with its answer in a new pass.
+	Conclude func(ctx context.Context, scope store.AccountScope) (toolTaskOutcome, error)
 }
 
 // toolTaskSource finishes one kind of source. settle runs in the finisher's
@@ -143,7 +152,7 @@ func (s *Service) FinishDueToolTasks(ctx context.Context, db *store.Store, batch
 			return len(refs), errors.Join(append(errs, ctx.Err())...)
 		}
 		scope := db.ScopeFor(auth.AccountContext{AccountID: ref.AccountID})
-		if err := s.finishToolTask(ctx, scope, ref.ID); err != nil {
+		if err := s.finishToolTask(ctx, scope, ref.ID, nil); err != nil {
 			errs = append(errs, fmt.Errorf("tool task %s: %w", ref.ID, err))
 			if retryErr := deferToolTask(ctx, scope, ref.ID); retryErr != nil {
 				errs = append(errs, retryErr)
@@ -166,8 +175,9 @@ func deferToolTask(ctx context.Context, scope store.AccountScope, id string) err
 // (project → slot → run → source → task): the task is read unlocked to learn
 // what to lock, then locked last and rechecked, so two workers that picked
 // the same task serialize on the project and the second finds nothing due.
-func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, id string) error {
+func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, id string, fixed *toolTaskOutcome) error {
 	var sceneRefusal *runGateRefused
+	var conclude func(context.Context, store.AccountScope) (toolTaskOutcome, error)
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		peek, err := scanToolTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", id))
 		if errors.Is(err, store.ErrNoRows) {
@@ -191,6 +201,7 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 				// The run may no longer write: the task still records its
 				// result, nothing continues the run.
 				sceneRefusal = &runGateRefused{runID: peek.SourceRunID, cause: err}
+				peek.RunGone = true
 				if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
 					return err
 				}
@@ -204,13 +215,19 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 		}
 		// A worker that waited on these locks for another one finds the task
 		// already handled and does not settle the source a second time.
-		due, err := tx.Exists(ctx, "creative_agent_tool_tasks", "id=$2 AND next_check_at IS NOT NULL AND next_check_at<=clock_timestamp()", id)
-		if err != nil || !due {
-			return err
-		}
-		outcome, err := source.settle(ctx, tx, peek)
-		if err != nil {
-			return err
+		var outcome toolTaskOutcome
+		if fixed != nil {
+			// A conclusion that ran after an earlier pass: its answer stands
+			// as long as the task is still running.
+			outcome = *fixed
+		} else {
+			due, err := tx.Exists(ctx, "creative_agent_tool_tasks", "id=$2 AND next_check_at IS NOT NULL AND next_check_at<=clock_timestamp()", id)
+			if err != nil || !due {
+				return err
+			}
+			if outcome, err = source.settle(ctx, tx, peek); err != nil {
+				return err
+			}
 		}
 		task, err := scanToolTask(tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", id))
 		if err != nil {
@@ -226,6 +243,14 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 			return nil
 		}
 		if !outcome.Done {
+			if outcome.Conclude != nil {
+				// Should the conclusion never report back (a crash), the
+				// task comes due again after the retry delay.
+				conclude = outcome.Conclude
+				_, err = tx.Update(ctx, "creative_agent_tool_tasks",
+					fmt.Sprintf("next_check_at=clock_timestamp()+interval '%d seconds'", int(toolTaskRetryDelay.Seconds())), "id=$2", id)
+				return err
+			}
 			var recheck any
 			if !outcome.RecheckAt.IsZero() {
 				recheck = outcome.RecheckAt
@@ -241,12 +266,27 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 		}
 		return nil
 	})
-	if err != nil || sceneRefusal == nil {
+	if err != nil {
 		return err
 	}
-	// A waiting run that may no longer write is ended the way the scene sweep
-	// ends one, outside the finishing transaction.
-	return sceneWaiter{s: s}.Abort(ctx, scope, sceneRefusal.runID, sceneRefusal.cause)
+	if sceneRefusal != nil {
+		// A waiting run that may no longer write is ended the way the scene
+		// sweep ends one, outside the finishing transaction.
+		if err = (sceneWaiter{s: s}).Abort(ctx, scope, sceneRefusal.runID, sceneRefusal.cause); err != nil {
+			return err
+		}
+	}
+	if conclude == nil {
+		return nil
+	}
+	concluded, err := conclude(ctx, scope)
+	if err != nil {
+		return err
+	}
+	if !concluded.Done {
+		return fmt.Errorf("creative agent: tool task %s concluded without an answer", id)
+	}
+	return s.finishToolTask(ctx, scope, id, &concluded)
 }
 
 type runGateRefused struct {

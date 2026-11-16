@@ -73,16 +73,16 @@ CLI 的代价必须明确：官方 CLI 文档说明，多操作之间需要中�
 ### 5.3 Agent 压缩
 
 1. 用 `run_id + tool-step` 派生固定 create / apply / discard 操作 ID，创建固定源及参数的候选。请求哈希包含 `client_created_at`，因此重放先按操作 ID 查回执再决定是否提交；重放不重新读取节点当作新来源。
-2. 工具调用内部每 2 秒查询一次，只等同一候选；不让模型反复调用查询。等待上限建议 90 秒，同时受父 run / 工具 deadline 限制，渲染本身仍最多 60 秒。排队时间计入工具等待预算。
-3. ready 后复核 Agent 当前有效执行权，并调用同一同步 apply；只在收到已提交回执时报告「已更新」。不重新读取最新内容以绕过冲突。
-4. 等待超时且尚未发出 apply：报告「未应用」，停止自动采用并丢弃候选；清理失败可由过期扫描接管。取消 / 进程崩溃后没有后台自动采用者。
+2. 受理候选后登记一条助手工具任务（`creative_agent_tool_tasks`，来源为候选 ID），工具调用不再轮询等待：候选仍在排队或编码时，run 释放运行槽停靠在该任务上；候选状态变化由触发器标记任务待收尾，creative-worker 的收尾器在候选停止编码后接手（agent-tool-background，2026-11-15 起取代原 90 秒有界等待）。
+3. ready 后由收尾器在任务事务提交后调用同一同步 apply（apply 自带锁，不能嵌进收尾事务），再以固定结果写回任务并继续 run；只在收到已提交回执时报告「已更新」。不重新读取最新内容以绕过冲突。
+4. 发起调用的 run 被停止且尚未发出 apply：收尾器丢弃候选并报告「未应用」，任务记为 cancelled；清理失败可由过期扫描接管。候选在编码中过期按「未应用」结束。进程崩溃后收尾器按任务表恢复，同一操作 ID 保证只采用一次。
 5. apply 已发出而响应未知：查询原操作，显示「正在确认」，不能误报「未应用」或直接丢弃。已提交则回放；未提交且 run 资格已失效则拒绝新写。等待预算到期不等于提交失败。
 
 Agent 写入与现有 `edit_canvas` / `generate_node` 对齐：工具只在存活的 run 内执行，取消通过 context 生效，不单独增加事务内 run 资格钩子。取消与已发出写入之间的窗口是全部 Agent 画布写入共有的，需要收紧时单独立项统一处理。重放先按操作 ID 查回执（同 `applyOnce`），不持久化 CreatedAt，也不沿用其冲突后读取最新画布重建请求的做法。
 
 同一 render 被当前工具处理时只允许一个 apply 命令效果。重放先找回执，再看候选；超时丢弃的旧调用不能凭同一身份重新排队。真正重试是新的明确调用。
 
-**现有生成工具的修正范围**：仍保留 GenerateNode 的有界等待；返回 execution_state 与 apply_state。succeeded/pending 继续等到预算耗尽，conflicted/discarded/expired 明确「未采用」，只有 applied 可以表达当时已更新。查询 / 展示还需区分后来人工切换版本；不能把历史已应用说成现在仍选中。第 4 步已实现 apply_state 的返回与等待（2026-10-13）；「后来人工切换版本」的区分属于查询 / 展示侧，尚未处理。
+**现有生成工具的修正范围**：GenerateNode 的有界等待已由同一工具任务机制取代（agent-tool-background）；返回 execution_state 与 apply_state。succeeded/pending 继续等到预算耗尽，conflicted/discarded/expired 明确「未采用」，只有 applied 可以表达当时已更新。查询 / 展示还需区分后来人工切换版本；不能把历史已应用说成现在仍选中。第 4 步已实现 apply_state 的返回与等待（2026-10-13）；「后来人工切换版本」的区分属于查询 / 展示侧，尚未处理。
 
 ## 6. 候选表与状态
 
@@ -168,7 +168,7 @@ CLI 通过 `exec.CommandContext` 的独立参数调用，不经过 shell，不�
 - 每账号最多一个运行和一个排队候选，超出返回 429，提示稍后重试；实际存储配额不足仍明确报错。
 - 被取消的运行中候选标为 discarded，提交出口不会发布 ready；尽力停止其进程，停止不了也不能采用其结果。它占据的编码槽在工作退出前不提前释放。
 
-候选使用 2 分钟处理 deadline、ready 后 30 分钟 TTL；工具等待上限见 §5.3。关闭页面尽力 discard，断网时由 TTL 兜底。
+候选使用 2 分钟处理 deadline、ready 后 30 分钟 TTL；Agent 调用不再有等待上限，见 §5.3。关闭页面尽力 discard，断网时由 TTL 兜底。
 
 Linux 下在受控子进程 exec vips 之前设置其 `oom_score_adj=1000`，不得改 Go worker 自身评分；启动自检验证设置成功。可用固定 launcher 完成设置和 exec，不拼接 shell，也不在进程已大量分配后再补设置。[Linux 手册](https://man7.org/linux/man-pages/man5/proc_pid_oom_score_adj.5.html)说明它调整 OOM 选择倾向；[cgroup 文档](https://docs.kernel.org/6.18/admin-guide/cgroup-v2.html)说明 memory.oom.group 可能导致整组终止，因此这不是硬隔离。
 
