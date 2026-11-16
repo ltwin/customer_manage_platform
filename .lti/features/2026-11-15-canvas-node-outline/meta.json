@@ -1,12 +1,12 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 8,
+  "revision": 9,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T07:06:35.659Z",
+  "updatedAt": "2026-11-16T07:20:40.757Z",
   "risk": {
     "factors": [
       "data-migration"
@@ -53,6 +53,13 @@
     {
       "at": "2026-11-16T07:06:35.093Z",
       "summary": "挂载点：nodeKind.tsx 拆为 nodeKind.ts 与 KindIcon.tsx（fast-refresh 规则要求组件单独成文件）",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T07:20:40.201Z",
+      "summary": "实施细节：资产库任务期间不显示标签（保留原任务标题）；角色卡行用类型图标；画布与节点树重命名靠失焦自然收尾；新增 viewport.ts:nodeRect",
       "contentHash": "dc39462a0c25a5e0",
       "added": [],
       "removed": []

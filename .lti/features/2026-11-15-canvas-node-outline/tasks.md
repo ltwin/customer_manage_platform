@@ -15,11 +15,11 @@
 
 ## 3. 面板与节点树界面
 
-- [ ] 3.1 `LibraryDrawer` 标签化：`tab` / `onTab` / `outline` props，头部 `role="tablist"`，资产主体 `hidden` 保持挂载，资产库快捷键只在资产标签生效、画布标签下 Esc 只收起、宽模式只在资产标签；`library.css` 标签样式。无画布的独立资产库视图不显示标签。现有 `creative-library.e2e.mjs` 受影响用例通过
-- [ ] 3.2 `NodeOutline.tsx` + `outline.css`：搜索框、类型筛选菜单、树行（缩略图懒加载 / 类型图标、标题、生成中与失败标记）、折叠、底部计数、两种空态与「清除筛选」、`role="tree"` 键盘导航（方向键 / Enter / F2）；前端类型检查与 lint 通过
-- [ ] 3.3 `CanvasView` 新增 `revealRef`（世界坐标经 `worldPoint`，insets 读 `#creative-library` 与助手面板，未知 ID 静默返回）；`WorkspacePage` 接线：`panelTab` 状态、工具栏「节点树」按钮的开关 / 切换语义、资产库任务强制资产标签并禁用画布标签、`pendingIDs` 求差、单击选中 + 定位、Cmd/Ctrl 切换、Shift 按可见行区间、画布选中同步高亮 + 展开祖先 + 滚动到可见、双击重命名走 `update_metadata` 并关闭画布侧的重命名
+- [x] 3.1 `LibraryDrawer` 标签化：`tab` / `onTab` / `outline` props，头部 `role="tablist"`，资产主体 `hidden` 保持挂载，资产库快捷键只在资产标签生效、画布标签下 Esc 只收起、宽模式只在资产标签；`library.css` 标签样式。无画布的独立资产库视图不显示标签。现有 `creative-library.e2e.mjs` 受影响用例通过
+- [x] 3.2 `NodeOutline.tsx` + `outline.css`：搜索框、类型筛选菜单、树行（缩略图懒加载 / 类型图标、标题、生成中与失败标记）、折叠、底部计数、两种空态与「清除筛选」、`role="tree"` 键盘导航（方向键 / Enter / F2）；前端类型检查与 lint 通过
+- [x] 3.3 `CanvasView` 新增 `revealRef`（世界坐标经 `worldPoint`，insets 读 `#creative-library` 与助手面板，未知 ID 静默返回）；`WorkspacePage` 接线：`panelTab` 状态、工具栏「节点树」按钮的开关 / 切换语义、资产库任务强制资产标签并禁用画布标签、`pendingIDs` 求差、单击选中 + 定位、Cmd/Ctrl 切换、Shift 按可见行区间、画布选中同步高亮 + 展开祖先 + 滚动到可见、双击重命名走 `update_metadata` 并关闭画布侧的重命名
 
 ## 4. 验收
 
-- [ ] 4.1 新增 `creative-canvas-outline.e2e.mjs`（mock API，逐个用例跑、换端口）：点击定位不在视口内的节点、画布框选后树内高亮并滚动、Cmd 点击多选不移动视口、双击改名后 Cmd/Ctrl+Z 恢复、只读画布双击不进入编辑、标签切换与资产库任务切到资产标签、搜索 / 筛选 / 无命中清除、390px 宽无横向滚动；全部通过且无 `pageerror`
+- [x] 4.1 新增 `creative-canvas-outline.e2e.mjs`（mock API，逐个用例跑、换端口）：点击定位不在视口内的节点、画布框选后树内高亮并滚动、Cmd 点击多选不移动视口、双击改名后 Cmd/Ctrl+Z 恢复、只读画布双击不进入编辑、标签切换与资产库任务切到资产标签、搜索 / 筛选 / 无命中清除、390px 宽无横向滚动；全部通过且无 `pageerror`
 - [ ] 4.2 回归与门禁：`creative-canvas-viewport.e2e.mjs` 中涉及 `#creative-library` 的用例通过，`make check-frontend` 通过；对照 proposal 验收标准逐条勾核

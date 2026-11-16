@@ -102,7 +102,9 @@ import { prefetchVersions } from './versionCache.ts'
 import {
   fitViewport,
   nodeBounds,
+  nodeRect,
   panelInsets,
+  revealViewport,
   validViewport,
   zoomLimits,
 } from './viewport.ts'
@@ -821,6 +823,7 @@ export default function CanvasView({
   onLibraryFill,
   onPickReferences,
   centerRef,
+  revealRef,
   onPreview,
   onDraggingChange,
   onActions,
@@ -876,6 +879,8 @@ export default function CanvasView({
   onPickReferences: (id: string) => void
   /** 画布可见区域的世界坐标中心，供资产库放入时使用。 */
   centerRef: MutableRefObject<(() => { x: number; y: number }) | null>
+  /** 节点树点击：把视口带到该节点（放得下只平移居中）；节点不在画布上时不动。 */
+  revealRef?: MutableRefObject<((id: string) => void) | null>
   onPreview: (id: string, revision?: string) => void
   onDraggingChange: (dragging: boolean) => void
   onActions: (actions: GraphAction[]) => void
@@ -1062,6 +1067,28 @@ export default function CanvasView({
     },
     [flow],
   )
+  useEffect(() => {
+    if (!revealRef) return
+    revealRef.current = (id) => {
+      const stage = element.current?.getBoundingClientRect()
+      const rect = nodeRect(callbacks.current.canvasNodes, id)
+      if (!stage || !rect) return
+      const library = document.getElementById('creative-library')
+      const agent = document.querySelector('.cc-agent-panel')
+      const insets = panelInsets(
+        stage,
+        library && !library.hidden ? library.getBoundingClientRect() : null,
+        agent ? agent.getBoundingClientRect() : null,
+      )
+      void flow.setViewport(
+        revealViewport(rect, stage, insets, flow.getViewport()),
+        { duration: 240 },
+      )
+    }
+    return () => {
+      revealRef.current = null
+    }
+  }, [revealRef, flow])
   useEffect(() => {
     // 资产抽屉盖住左侧时，放入点往右让，落在看得见的地方。
     centerRef.current = () => {

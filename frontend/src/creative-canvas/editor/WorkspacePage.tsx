@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   LayoutGrid,
   Library,
+  ListTree,
   PencilLine,
   Plus,
   ChevronDown,
@@ -82,7 +83,11 @@ import StudioDialog from './StudioDialog.tsx'
 import { contentText, payload } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
-import LibraryDrawer, { type LibraryTask } from './LibraryDrawer.tsx'
+import LibraryDrawer, {
+  type LibraryTask,
+  type PanelTab,
+} from './LibraryDrawer.tsx'
+import NodeOutline from './NodeOutline.tsx'
 import AgentPanel from './AgentPanel.tsx'
 import { emptyCatalog, groupOptions } from './libraryState.ts'
 import Picker from './Picker.tsx'
@@ -139,8 +144,9 @@ function Workspace({ account }: { account: string }) {
     if (staleCatalog) refreshGenerationCatalog()
   }, [staleCatalog])
   const [libraryWidth, setLibraryWidth] = useState(344)
-  // v6：资产库默认收起，从工具轨打开。
+  // v6：资产库默认收起，从工具轨打开。左侧面板有「画布」（节点树）与「资产」两个标签。
   const [libraryOpen, setLibraryOpen] = useState(false)
+  const [panelTab, setPanelTab] = useState<PanelTab>('assets')
   const [projectMenu, setProjectMenu] = useState(false)
   const [maximized, setMaximized] = useState<{
     id: string
@@ -203,6 +209,7 @@ function Workspace({ account }: { account: string }) {
   const [characterViews, setCharacterViews] = useState<string[] | null>(null)
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
+  const revealNode = useRef<((id: string) => void) | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
@@ -283,6 +290,14 @@ function Workspace({ account }: { account: string }) {
       canvas && canvas.id === canvasID ? projectCanvas(canvas, outbox) : canvas,
     [canvas, canvasID, outbox],
   )
+  // 只在本地投影里、服务端快照还没有的节点：节点树把它们排在最前。
+  const pendingNodes = useMemo(() => {
+    if (!view || !canvas || view === canvas) return new Set<string>()
+    const confirmed = new Set(canvas.nodes.map((n) => n.id))
+    return new Set(
+      view.nodes.filter((n) => !confirmed.has(n.id)).map((n) => n.id),
+    )
+  }, [view, canvas])
   // 空媒体节点的比例标签跟随面板里尚未保存的选择（V6-021 AC-03）。
   const draftRatios = useMemo(() => {
     const prefix = `prompt:${view?.id ?? ''}:`
@@ -1012,6 +1027,18 @@ function Workspace({ account }: { account: string }) {
   }
   function openLibraryTask(task: LibraryTask) {
     setLibraryTask(task)
+    setPanelTab('assets')
+    setLibraryOpen(true)
+  }
+  // 工具轨的「节点树」「资产库」：没开就打开到该标签，开在该标签就收起，开在另一标签就切过去。
+  function togglePanel(tab: PanelTab) {
+    if (libraryOpen && (panelTab === tab || !canvasID)) {
+      closeLibrary()
+      return
+    }
+    // 节点树不能和资产库任务同时进行：切过去即取消任务。
+    if (tab === 'canvas') setLibraryTask(null)
+    setPanelTab(tab)
     setLibraryOpen(true)
   }
   function closeLibrary() {
@@ -1399,12 +1426,24 @@ function Workspace({ account }: { account: string }) {
           <Hand size={18} strokeWidth={1.6} />
         </button>
         <span className="cc-rail-line" />
+        {canvasID && (
+          <button
+            aria-label="节点树"
+            aria-pressed={libraryOpen && panelTab === 'canvas'}
+            aria-controls="creative-library"
+            title="节点树"
+            disabled={!view}
+            onClick={() => togglePanel('canvas')}
+          >
+            <ListTree size={18} strokeWidth={1.6} />
+          </button>
+        )}
         <button
           aria-label="资产库"
-          aria-pressed={libraryOpen}
+          aria-pressed={libraryOpen && (panelTab === 'assets' || !canvasID)}
           aria-controls="creative-library"
           title="资产库"
-          onClick={() => (libraryOpen ? closeLibrary() : setLibraryOpen(true))}
+          onClick={() => togglePanel('assets')}
         >
           <Library size={18} strokeWidth={1.6} />
         </button>
@@ -1516,6 +1555,36 @@ function Workspace({ account }: { account: string }) {
               pickReferences(libraryTask.nodeID, list)
           }}
           onClose={closeLibrary}
+          tab={canvasID ? panelTab : 'assets'}
+          onTab={setPanelTab}
+          outline={
+            canvasID && view ? (
+              <NodeOutline
+                key={canvasID}
+                nodes={view.nodes}
+                pending={pendingNodes}
+                selection={selection}
+                editable={editable}
+                active={libraryOpen && panelTab === 'canvas'}
+                onSelect={(ids, reveal) => {
+                  onSelection(ids)
+                  if (reveal) revealNode.current?.(reveal)
+                }}
+                onRename={(id, title) => {
+                  const n = view.nodes.find((v) => v.id === id)
+                  if (n)
+                    graphActions([
+                      {
+                        type: 'update_metadata',
+                        node_id: id,
+                        title,
+                        intent: n.metadata.intent,
+                      },
+                    ])
+                }}
+              />
+            ) : undefined
+          }
           onWidth={setLibraryWidth}
           onAssets={setAssets}
           onCatalog={setCatalog}
@@ -1656,6 +1725,7 @@ function Workspace({ account }: { account: string }) {
                   }}
                   onOpenLibrary={() => {
                     setLibraryTask(null)
+                    setPanelTab('assets')
                     setLibraryOpen(true)
                   }}
                   addRequest={addRequest}
@@ -1697,6 +1767,7 @@ function Workspace({ account }: { account: string }) {
                       })
                   }}
                   centerRef={viewCenter}
+                  revealRef={revealNode}
                   onDraggingChange={setNodeDragging}
                   onPreview={(nodeID, revision) =>
                     setPreview({ nodeID, revision })

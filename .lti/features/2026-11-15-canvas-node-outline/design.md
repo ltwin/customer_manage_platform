@@ -99,7 +99,7 @@ persistObject(kind=node, live):
 | 节点在当前倍率下能完整放进可见区（去掉 insets） | 倍率不变，平移使节点中心落在可见区中心 |
 | 放不下 | 倍率 = `min(可见宽/节点宽, 可见高/节点高)`，下限 `zoomLimits.min`，且不大于当前倍率；居中 |
 
-- 节点矩形：世界坐标用 `graph.ts:worldPoint`（分组内节点是相对坐标），上方加标签高度 28px（与 `nodeBounds` 一致）。
+- 节点矩形：`viewport.ts:nodeRect`，世界坐标用 `graph.ts:worldPoint`（分组内节点是相对坐标），上方加标签高度 28px（与 `nodeBounds` 一致）。
 - insets 沿用 `panelInsets`，读 `#creative-library`（外壳 id 不变）与助手面板，所以面板开着时节点不会被盖住。
 - Cmd/Ctrl/Shift 点击只改选中，不定位。节点 ID 不在画布上（刚被删除）时 `revealRef` 静默返回。
 
@@ -113,20 +113,20 @@ persistObject(kind=node, live):
 ### 重命名
 
 - 双击行标题且画布可编辑、节点 `capabilities.actions` 含 `rename` 时，行内换成 `InlineNodeTitle`（`InlineNodeEditor.tsx`），保存走 `update_metadata`（与 `CanvasView.tsx:saveTitle` 同一动作和撤销链），Esc / 失焦行为沿用该组件。
-- 同一节点在画布上也处于重命名时，以先进入者为准：节点树进入重命名前调用画布的 `rename(null)` 关闭画布编辑（经 `WorkspacePage` 传递），避免两处同时编辑。
+- 同一节点在画布上也处于重命名时，`InlineNodeTitle` 失焦即保存并关闭，所以焦点进入节点树的输入框时画布那一处自然结束，不需要额外协调。
 
 ### 面板与标签
 
 - `WorkspacePage` 新增 `panelTab: 'canvas' | 'assets'`，与现有 `libraryOpen` 组合：
   - 工具栏「节点树」：未开 → 打开并切 `canvas`；已开且在 `canvas` → 关闭；已开在 `assets` → 切 `canvas`。「资产库」按钮对称。
-  - 由节点操作唤起的资产库任务（`openLibrary(task)`：放置 / 填充 / 选参考）强制切 `assets`。任务进行中「画布」标签禁用，任务结束恢复。
+  - 由节点操作唤起的资产库任务（`openLibraryTask`：填充 / 选参考）强制切 `assets`。任务进行中页眉照旧只显示任务标题（如「选择图片」），不显示标签，因而不能切到节点树；任务结束恢复标签。工具轨点「节点树」会先取消任务再切过去。
   - 无画布（资产库独立视图，`is-library`）时不显示标签，行为同现状。
 - `LibraryDrawer`：头部原 `<h2>{title}</h2>` 处换成标签组（`role="tablist"`），`assets` 时其余头部按钮照旧；`canvas` 时只保留收起按钮、宽模式强制关闭。资产主体用 `hidden` 隐藏而非卸载，切回时筛选与滚动位置保留。根元素 `onKeyDown` 的资产库快捷键（Esc 清选、⌘A、数字评分）只在 `assets` 标签生效；`canvas` 标签下 Esc 只收起面板。
 - 打开节点树时焦点放到搜索框；方向键在行间移动焦点，Enter 等同单击，F2 等同双击（无障碍：`role="tree"` / `treeitem`、`aria-expanded`、`aria-selected`、`aria-level`）。
 
 ### 行内容
 
-- 缩略图：图片节点用 `MediaView.tsx:useMediaURL(revision, media, 'thumbnail', near)`，`near` 来自 `useNearViewport`；视频有海报渲染时同法取，没有则图标；角色卡用节点上角色卡视图的封面（`CanvasNode.character`），没有则图标；其余类型一律 `KindIcon`。取图失败退回图标，不显示错误。
+- 缩略图：图片节点用 `MediaView.tsx:useMediaURL(revision, media, 'thumbnail', near)`，`near` 来自 `useNearViewport`；视频有海报渲染时同法取，没有则图标；角色卡与其余类型一律 `KindIcon`（角色卡封面需要再读一次内容修订，每行一个请求不值得）。取图失败退回图标，不显示错误。
 - 状态标记：`labelMeta.ts:generationPhase` 非空 → 「生成中」圆点；`labelMeta.ts:generationFailure` 非空 → 「失败」标记。与画布卡片同一判定。
 - 空态：画布无节点「画布上还没有节点」；有条件无命中「没有匹配的节点」+「清除筛选」按钮（清空搜索与类型）。
 
@@ -162,6 +162,7 @@ persistObject(kind=node, live):
 | `frontend/src/creative-canvas/editor/KindIcon.tsx` | 新增 | 从 `CanvasView.tsx` 移出 `KindIcon`（组件单独成文件，满足 fast-refresh 规则） |
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 改为引用 `nodeKind.ts`、`KindIcon.tsx`；新增 `revealRef` prop |
 | `frontend/src/creative-canvas/editor/viewport.ts:revealViewport` | 新增 | 定位算法 |
+| `frontend/src/creative-canvas/editor/viewport.ts:nodeRect` | 新增 | 单个节点的世界坐标矩形（含标签） |
 | `frontend/src/creative-canvas/editor/LibraryDrawer.tsx` | 修改 | 标签头、`tab`/`onTab`/`outline` props、按标签分派键盘与主体 |
 | `frontend/src/creative-canvas/editor/library.css` | 修改 | 标签样式 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | `panelTab`、工具栏「节点树」按钮、连接选中/重命名/定位、`pendingIDs` |
