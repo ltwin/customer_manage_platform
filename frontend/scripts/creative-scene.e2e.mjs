@@ -7010,7 +7010,8 @@ await writeFile(
   hiddenFixture,
   `<html><body><script>window.__sceneTest = true</script><script type="module">
 import { renderShots } from '/src/creative-scene/host/exportShots.ts';
-import { loadModels, openShooter } from '/src/creative-scene/host/render.ts';
+import { loadModels } from '/src/creative-scene/host/loadModels.ts';
+import { openShooter } from '/src/creative-scene/host/render.ts';
 window.__kept = {};
 // keep: a name to keep the images under, for __differ.
 window.__export = async (doc, plan, keep) => {
@@ -8259,7 +8260,7 @@ window.__heartbeat = async (scene, kind, side) => {
 // An export's images as drawn (host/exportShots.ts renderShots): each one's encoding and size.
 window.__sizes = async (doc, plan) => {
   const { renderShots } = await import('/src/creative-scene/host/exportShots.ts');
-  const { loadModels } = await import('/src/creative-scene/host/render.ts');
+  const { loadModels } = await import('/src/creative-scene/host/loadModels.ts');
   const out = await renderShots({ read: async () => doc, loadModels: (d) => loadModels(d.scene, d.models), open: (d, look) => openShooter(d.scene, d.models, look) }, 'doc', plan);
   if (!out.ok) return out;
   return Promise.all(out.images.map(async (i) => {

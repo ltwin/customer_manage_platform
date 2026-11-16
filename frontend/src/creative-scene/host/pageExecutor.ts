@@ -6,7 +6,8 @@ import type { JobApi } from './jobs.ts'
 import type { PageRunner } from './launcher.ts'
 import { readScene } from '../api.ts'
 import { renderShots } from './exportShots.ts'
-import { loadModels, openShooter, renderView } from './render.ts'
+import { loadModels } from './loadModels.ts'
+import { openShooter, renderView } from './render.ts'
 import { backgroundTicker } from './ticker.ts'
 
 // The executor as a page runs it, loaded (with three.js) on the first job:
