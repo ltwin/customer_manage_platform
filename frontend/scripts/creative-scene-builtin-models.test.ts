@@ -83,7 +83,7 @@ test('the library lists the bodies by name or category, each with its thumbnail'
 })
 
 test('a body whose file cannot be read fails the picture only where the picture shows it (AC-12)', async () => {
-  const { loadModels } = await import('../src/creative-scene/host/render.ts')
+  const { loadModels } = await import('../src/creative-scene/host/loadModels.ts')
   const { modelCache } = await import('../src/creative-scene/models/cache.ts')
   let n = 0
   const body = newModelInstance({ builtin: female.id }, female.label, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, [], female.materials, () => `sobj_${String(++n).padStart(21, '0')}`)
