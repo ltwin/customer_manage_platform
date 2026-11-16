@@ -1,21 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildOutline, outlineTypes, type OutlineOptions } from '../src/creative-canvas/editor/outline.ts'
+import { buildOutline, outlineTypes, type OutlineNode, type OutlineOptions } from '../src/creative-canvas/editor/outline.ts'
 import type { CanvasNode } from '../src/creative-canvas/editor/api.ts'
+import { localCreatedAt } from '../src/creative-canvas/editor/structuralPreview.ts'
 import { nodeRect, revealViewport, zoomLimits } from '../src/creative-canvas/editor/viewport.ts'
 
+// 节点树只读 id、父节点、创建时间、类型和标题。
 const node = (
   id: string,
   type: string,
   created: string,
   extra: { parent?: string; title?: string } = {},
-) =>
-  ({
-    id,
-    parent_id: extra.parent ?? null,
-    created_at: created,
-    metadata: { type_key: type, type_version: 1, title: extra.title ?? id, intent: '', x: 0, y: 0, width: 100, height: 100, z_order: 0 },
-  }) as CanvasNode
+): OutlineNode => ({
+  id,
+  parent_id: extra.parent ?? null,
+  created_at: created,
+  metadata: { type_key: type, title: extra.title ?? id },
+})
 
 const none: OutlineOptions = { query: '', types: new Set(), collapsed: new Set(), pending: new Set() }
 const opts = (o: Partial<OutlineOptions>): OutlineOptions => ({ ...none, ...o })
@@ -43,20 +44,36 @@ test('groups nest, newest first at every level, groups count too', () => {
 })
 
 test('creation order ignores position and stacking; ties fall back to id', () => {
-  const moved = canvas.map((n) =>
-    n.id === 'a' ? ({ ...n, metadata: { ...n.metadata, x: -999, y: -999, z_order: 99 } } as CanvasNode) : n,
-  )
+  const placed = canvas.map((n) => ({ ...n, metadata: { ...n.metadata, x: 0, y: 0, z_order: 0 } }))
+  const moved = placed.map((n) => (n.id === 'a' ? { ...n, metadata: { ...n.metadata, x: -999, y: -999, z_order: 99 } } : n))
   assert.deepEqual(ids(buildOutline(moved, none)), ['c', 'b', 'g', '  t2', '  t1', 'a'])
   // 秒内的小数位不等长时按时间比较，不按字符串。
   const fraction = [node('x', 'core.text', '2026-11-01T10:00:00.9Z'), node('y', 'core.text', '2026-11-01T10:00:00.25Z')]
   assert.deepEqual(ids(buildOutline(fraction, none)), ['x', 'y'])
   const tie = [node('m', 'core.text', '2026-11-01T10:00:00Z'), node('k', 'core.text', '2026-11-01T10:00:00Z')]
   assert.deepEqual(ids(buildOutline(tie, none)), ['k', 'm'])
+  // 同一毫秒内的微秒差也分先后（Date.parse 只到毫秒）。
+  const micro = [node('early', 'core.text', '2026-11-01T10:00:00.123401Z'), node('late', 'core.text', '2026-11-01T10:00:00.123402Z')]
+  assert.deepEqual(ids(buildOutline(micro, none)), ['late', 'early'])
+  // 时区偏移按同一时刻比较；解析不了的排最后。
+  const zones = [node('utc', 'core.text', '2026-11-01T10:00:00Z'), node('east', 'core.text', '2026-11-01T18:00:01+08:00'), node('bad', 'core.text', 'later')]
+  assert.deepEqual(ids(buildOutline(zones, none)), ['east', 'utc', 'bad'])
 })
 
-test('unconfirmed nodes come first, latest local first, whatever their time says', () => {
-  const local = [...canvas, node('p1', 'core.text', '2020-01-01T00:00:00Z'), node('p2', 'core.text', '2020-01-01T00:00:00Z')]
-  assert.deepEqual(ids(buildOutline(local, opts({ pending: new Set(['p1', 'p2']) }))).slice(0, 3), ['p2', 'p1', 'c'])
+test('unconfirmed nodes come first; a batch keeps its order once confirmed', () => {
+  // 两次修改：先建 z、y 两个（同一批），再建 x。
+  const first = localCreatedAt({ stagedAt: '2026-11-16T10:00:00.000Z' })
+  const second = localCreatedAt({ stagedAt: '2026-11-16T10:00:05.000Z' })
+  const pending = new Set(['z', 'y', 'x'])
+  const local = [...canvas, node('z', 'core.text', first), node('y', 'core.text', first), node('x', 'core.text', second)]
+  const before = ids(buildOutline(local, opts({ pending }))).slice(0, 4)
+  assert.deepEqual(before, ['x', 'y', 'z', 'c'])
+  // 服务端给同一批同一时间（时钟与本机不同），确认后顺序不变。
+  const confirmed = [...canvas, node('z', 'core.text', '2026-11-16T09:59:58.418204Z'), node('y', 'core.text', '2026-11-16T09:59:58.418204Z'), node('x', 'core.text', '2026-11-16T10:00:03.1Z')]
+  assert.deepEqual(ids(buildOutline(confirmed, none)).slice(0, 4), before)
+  // 本机时间再旧，未确认的也排在已确认的前面。
+  const stale = [...canvas, node('p', 'core.text', localCreatedAt({}))]
+  assert.equal(buildOutline(stale, opts({ pending: new Set(['p']) })).rows[0]!.id, 'p')
 })
 
 test('collapsed groups hide children but still count them', () => {
@@ -150,11 +167,25 @@ test('reveal zooms out only as far as needed for a node too big, never in', () =
   assert.equal(revealViewport({ x: 0, y: 0, width: 10, height: 10 }, stage, insets, { x: 0, y: 0, zoom: 0.3 }).zoom, 0.3)
 })
 
+// 完整的画布节点：只覆盖本测试关心的字段。
+const canvasNode = (id: string, typeKey: string, parent: string | null, box: { x: number; y: number; width: number; height: number }): CanvasNode => ({
+  id,
+  parent_id: parent,
+  created_at: '2026-11-01T10:00:00Z',
+  metadata: { type_key: typeKey, type_version: 1, title: id, intent: '', z_order: 0, ...box },
+  prompt: null,
+  capabilities: { actions: [], prompt_mode: 'draft', disabled_reason: null },
+  status: { content_state: 'ready', generation_state: 'idle', active_execution_id: null, latest_execution_id: null, apply_state: null, error: null, status_revision: '1' },
+  placement_revision: '1',
+  data_revision: '1',
+  data: { schema_version: 1, config: {}, content_id: null, content_revision_id: null, selected_version_id: null, document_id: null },
+})
+
 test('node rect is in world space and includes the label', () => {
   const nodes = [
-    { ...node('g', 'core.group', '2026-11-01T10:00:00Z'), metadata: { ...node('g', 'core.group', '').metadata, x: 1000, y: 500 } },
-    { ...node('c', 'core.image', '2026-11-01T10:00:00Z', { parent: 'g' }), metadata: { ...node('c', 'core.image', '').metadata, x: 20, y: 60, width: 300, height: 200 } },
-  ] as CanvasNode[]
+    canvasNode('g', 'core.group', null, { x: 1000, y: 500, width: 600, height: 400 }),
+    canvasNode('c', 'core.image', 'g', { x: 20, y: 60, width: 300, height: 200 }),
+  ]
   assert.deepEqual(nodeRect(nodes, 'c'), { x: 1020, y: 532, width: 300, height: 228 })
   assert.equal(nodeRect(nodes, 'missing'), null)
 })

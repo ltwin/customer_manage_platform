@@ -1,12 +1,12 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 9,
+  "revision": 10,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T07:20:40.757Z",
+  "updatedAt": "2026-11-16T08:43:34.649Z",
   "risk": {
     "factors": [
       "data-migration"
@@ -60,6 +60,13 @@
     {
       "at": "2026-11-16T07:20:40.201Z",
       "summary": "实施细节：资产库任务期间不显示标签（保留原任务标题）；角色卡行用类型图标；画布与节点树重命名靠失焦自然收尾；新增 viewport.ts:nodeRect",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T08:43:34.094Z",
+      "summary": "代码审计修正：0040 前升级的种子身份行写入节点 created_at；助手 read_canvas 节点投影带 created_at（契约消费者描述同步）；排序改为微秒精度，本地意图记 stagedAt 使同批节点确认前后不跳位；角色卡行恢复封面（按 proposal，经内容修订缓存）；窄屏单击行先收起抽屉再定位；画布选中只在选中变化时展开祖先；Shift 锚点被隐藏时不定位；改名行被删除时结束改名；筛选菜单焦点修正；测试去掉 as 断言与忽略的错误",
       "contentHash": "dc39462a0c25a5e0",
       "added": [],
       "removed": []

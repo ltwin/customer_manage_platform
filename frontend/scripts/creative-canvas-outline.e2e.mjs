@@ -43,6 +43,10 @@ const fixture = ({ archived = false } = {}) => ({
     makeNode('far', 'core.text', 6000, 3000, '2026-11-01T10:04:00Z', {
       status: { ...idle, generation_state: 'failed', latest_execution_id: 'e-1', error: 'generation_failed' },
     }),
+    makeNode('hero', 'core.character', 1400, 700, '2026-10-29T10:00:00Z', {
+      character: { name: '主角', cover_revision_id: 'r-cover', view_count: 1 },
+      status: { ...idle, content_state: 'ready' },
+    }),
   ],
   edges: [], node_inputs: [], changes: [], object_states: [],
 })
@@ -75,6 +79,8 @@ async function fresh({ archived = false, width = 1600, height = 1000, offline = 
     if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
     if (path.endsWith('/media-access-tickets') || path.includes('/content-urls') || path.includes('/download-url') || path.includes('/media-url'))
       return json({ url: `data:image/svg+xml,${encodeURIComponent(art)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })
+    if (path.endsWith('/content-revisions/r-cover')) return json({ id: 'r-cover', content_id: 'c-cover', kind: 'image', revision_no: '1', title: '封面', payload: {}, truncated: false,
+      media: [{ role: 'original', blob_id: 'b2', mime: 'image/svg+xml', byte_size: 1, width: 300, height: 300, duration_ms: null }] })
     if (path.endsWith('/canvases/qa')) return json(canvas)
     if (path.endsWith('/commands')) return json({ error: { code: 'unavailable', message: 'offline fixture' } }, 503)
     if (path.endsWith('/library-settings')) return json({ revision: '1', view_mode: 'grid', sort: 'updated_desc', thumbnail_size: 'medium' })
@@ -126,20 +132,21 @@ try {
   await record('structure', async () => {
     at('newest first, groups nest, count includes groups')
     await openTree()
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'inner', 'photo', 'left', 'busy'])
-    assert.equal(await foot(), '共 6 节点')
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'inner', 'photo', 'left', 'busy', 'hero'])
+    assert.equal(await foot(), '共 7 节点')
     at('running and failed nodes are marked')
     await row('busy').locator('.cc-outline-status.is-running').waitFor()
     assert.equal((await row('far').locator('.cc-outline-status').innerText()).trim(), '失败')
     assert.equal(await row('g').locator('.cc-outline-status').count(), 0)
     assert.equal(await page.getByRole('tab', { name: '画布' }).getAttribute('aria-selected'), 'true')
-    at('image row shows a thumbnail, text row an icon')
+    at('image and character rows show a cover, text row an icon')
     await row('photo').locator('img').waitFor()
+    await row('hero').locator('img').waitFor()
     assert.equal(await row('left').locator('img').count(), 0)
     at('collapse hides children, count unchanged')
     await row('g').getByRole('button', { name: '折叠分组' }).click()
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy'])
-    assert.equal(await foot(), '共 6 节点')
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy', 'hero'])
+    assert.equal(await foot(), '共 7 节点')
   })
 
   await record('search', async () => {
@@ -148,24 +155,32 @@ try {
     at('search by title keeps hits only')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('晨光')
     assert.deepEqual(await rowIDs(), ['photo', 'left'])
-    assert.equal(await foot(), '2 / 共 6 节点')
+    assert.equal(await foot(), '2 / 共 7 节点')
     at('type filter keeps the group as an open path')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('')
     await page.getByRole('button', { name: '按类型筛选' }).click()
     await page.getByRole('menuitemcheckbox', { name: /图片/ }).click()
     await page.keyboard.press('Escape')
     assert.deepEqual(await rowIDs(), ['g', 'inner', 'photo', 'busy'])
-    assert.equal(await foot(), '3 / 共 6 节点')
+    assert.equal(await foot(), '3 / 共 7 节点')
     at('clearing the search restores the collapsed group')
     await page.getByRole('button', { name: /按类型筛选/ }).click()
     await page.getByRole('menuitem', { name: '显示全部类型' }).click()
     await page.keyboard.press('Escape')
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy'])
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy', 'hero'])
     at('no hits offer to clear')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('不存在')
     await page.getByText('没有匹配的节点').waitFor()
     await page.getByRole('button', { name: '清除筛选' }).click()
-    assert.equal((await rowIDs()).length, 5)
+    assert.equal((await rowIDs()).length, 6)
+    at('the filter menu keeps focus on the toggled item and hands it back on escape')
+    await page.getByRole('button', { name: '按类型筛选' }).click()
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Space')
+    assert.equal(await page.getByRole('menuitemcheckbox', { name: /视频/ }).getAttribute('aria-checked'), 'true')
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), '视频')
+    await page.keyboard.press('Escape')
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('title')), '按类型筛选')
   })
 
   await record('reveal', async () => {
@@ -216,6 +231,14 @@ try {
     assert.equal(await page.locator('[role="treeitem"][aria-selected="true"]').count(), 4)
     assert.equal(await page.locator('.react-flow__node.selected').count(), 4)
     assert.notDeepEqual(before, null)
+    at('shift click whose anchor is filtered out only selects the row, without moving')
+    await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('busy')
+    const v1 = await viewport()
+    await row('busy').click({ modifiers: ['Shift'] })
+    await settle()
+    assert.deepEqual(await viewport(), v1, 'shift click does not move')
+    assert.equal(await page.locator('.react-flow__node.selected').count(), 1)
+    assert.equal(await row('busy').getAttribute('aria-selected'), 'true')
   })
 
   await record('canvas-sync', async () => {
@@ -230,11 +253,17 @@ try {
     await row('inner').waitFor()
     assert.equal(await row('inner').getAttribute('aria-selected'), 'true')
     assert.equal(await row('g').getAttribute('aria-selected'), 'false')
+    at('the group opened for that selection can be collapsed again')
+    await row('g').getByRole('button', { name: '折叠分组' }).click()
+    await settle()
+    assert.equal(await row('inner').count(), 0)
+    assert.equal(await row('g').getAttribute('aria-expanded'), 'false')
     at('canvas select-all (top-level nodes) highlights exactly those rows')
+    await node('left').locator('.cc-node-header h3').click() // 焦点回到画布
     await page.keyboard.press('ControlOrMeta+a')
     await settle()
     const on = await page.locator('[role="treeitem"][aria-selected="true"]').evaluateAll((els) => els.map((e) => e.dataset.node))
-    assert.deepEqual(on, ['far', 'g', 'photo', 'left', 'busy'])
+    assert.deepEqual(on, ['far', 'g', 'photo', 'left', 'busy', 'hero'])
   })
 
   await record('rename', async () => {
@@ -291,6 +320,13 @@ try {
     await openTree()
     at('390px wide: no horizontal page scroll')
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow')
+    at('tapping a row puts the drawer away and shows the node')
+    await row('far').click()
+    await settle()
+    assert.equal(await page.locator('#creative-library').isVisible(), false)
+    const box = await node('far').boundingBox()
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844, `far node on screen: ${JSON.stringify(box)}`)
+    assert.equal(await node('far').getAttribute('class').then((c) => c.includes('selected')), true)
   }, { width: 390, height: 844, offline: false })
 
   assert.deepEqual(errors, [])

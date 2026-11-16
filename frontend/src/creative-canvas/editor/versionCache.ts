@@ -116,6 +116,28 @@ export function prefetchVersions(
   void loadVersions(canvasID, nodeID, key)
 }
 
+/**
+ * 读一个内容修订：不可变，按 id 缓存，同一修订的并发读取合并为一次。
+ * enabled 为 false 时只看缓存，不发请求；读取失败时为 undefined。
+ */
+export function useContentRevision(
+  id: string | null | undefined,
+  enabled: boolean,
+): api.Content | undefined {
+  const [, setLoaded] = useState(0)
+  useEffect(() => {
+    if (!id || !enabled || cachedContent(id)) return
+    let live = true
+    void readContent(id).then(() => {
+      if (live) setLoaded((n) => n + 1)
+    })
+    return () => {
+      live = false
+    }
+  }, [id, enabled])
+  return id ? cachedContent(id) : undefined
+}
+
 /** 版本条使用的数据：缓存命中立即返回，键变化时后台刷新并保留旧页。 */
 export function useNodeVersions(
   canvasID: string,

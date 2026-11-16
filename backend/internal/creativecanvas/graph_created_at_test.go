@@ -12,11 +12,7 @@ import (
 
 func createdAt(t *testing.T, scope store.AccountScope, canvas, id string) time.Time {
 	t.Helper()
-	c, err := creativecanvas.GetCanvas(t.Context(), scope, canvas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := findNode(t, c, id)
+	n := findNode(t, canvasNow(t, scope, canvas), id)
 	if n.CreatedAt.IsZero() {
 		t.Fatalf("node %s has no created_at", id)
 	}
@@ -35,6 +31,15 @@ func createdAt(t *testing.T, scope store.AccountScope, canvas, id string) time.T
 		t.Fatalf("created_at serialized as %v, want %v in UTC", view.CreatedAt, n.CreatedAt)
 	}
 	return n.CreatedAt
+}
+
+func canvasNow(t *testing.T, scope store.AccountScope, canvas string) creativecanvas.Canvas {
+	t.Helper()
+	c, err := creativecanvas.GetCanvas(t.Context(), scope, canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 func changeOf(t *testing.T, r []byte) creativecanvas.ChangeResult {
@@ -63,7 +68,7 @@ func TestNodeCreatedAtSurvivesEditsAndUndoRemove(t *testing.T) {
 
 	removed := graph(t, scope, p.CanvasID, creativecanvas.Action{Type: "remove_nodes", NodeIDs: []string{a}})
 	time.Sleep(5 * time.Millisecond) // a reset would land visibly later
-	deleted, _ := creativecanvas.GetCanvas(t.Context(), scope, p.CanvasID)
+	deleted := canvasNow(t, scope, p.CanvasID)
 	undo, err := creativecanvas.Undo(t.Context(), scope, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeID: removed.ChangeID, ReadSet: creativecanvas.ReadSetFor(deleted)}))
 	if err != nil {
 		t.Fatal(err)
@@ -72,12 +77,12 @@ func TestNodeCreatedAtSurvivesEditsAndUndoRemove(t *testing.T) {
 		t.Fatalf("undo remove reset created_at %v -> %v", born, got)
 	}
 
-	restored, _ := creativecanvas.GetCanvas(t.Context(), scope, p.CanvasID)
+	restored := canvasNow(t, scope, p.CanvasID)
 	redo, err := creativecanvas.Redo(t.Context(), scope, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeID: changeOf(t, undo.Outcome.Response).ChangeID, ReadSet: creativecanvas.ReadSetFor(restored)}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	deleted, _ = creativecanvas.GetCanvas(t.Context(), scope, p.CanvasID)
+	deleted = canvasNow(t, scope, p.CanvasID)
 	if _, err = creativecanvas.Undo(t.Context(), scope, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeID: changeOf(t, redo.Outcome.Response).ChangeID, ReadSet: creativecanvas.ReadSetFor(deleted)})); err != nil {
 		t.Fatal(err)
 	}

@@ -107,6 +107,7 @@ import {
   revealViewport,
   validViewport,
   zoomLimits,
+  type Insets,
 } from './viewport.ts'
 import { useGenerationCatalog } from './generationCatalog.ts'
 import {
@@ -792,6 +793,17 @@ const pointOf = (e: MouseEvent | TouchEvent): [number, number] => {
 }
 const nodeTypes = { content: Card },
   edgeTypes = { reference: ReferenceEdge }
+// 画布四周被资产库抽屉和助手面板挡住的边距（适应画布、定位节点共用）。
+function coveredInsets(stage: DOMRect): Insets {
+  const library = document.getElementById('creative-library')
+  const agent = document.querySelector('.cc-agent-panel')
+  return panelInsets(
+    stage,
+    library && !library.hidden ? library.getBoundingClientRect() : null,
+    agent ? agent.getBoundingClientRect() : null,
+  )
+}
+
 export default function CanvasView({
   canvas,
   selected,
@@ -1056,14 +1068,9 @@ export default function CanvasView({
         ids ? all.filter((n) => ids.includes(n.id)) : all,
       )
       if (!stage || !bounds) return
-      const library = document.getElementById('creative-library')
-      const agent = document.querySelector('.cc-agent-panel')
-      const insets = panelInsets(
-        stage,
-        library && !library.hidden ? library.getBoundingClientRect() : null,
-        agent ? agent.getBoundingClientRect() : null,
-      )
-      void flow.setViewport(fitViewport(bounds, stage, insets), { duration })
+      void flow.setViewport(fitViewport(bounds, stage, coveredInsets(stage)), {
+        duration,
+      })
     },
     [flow],
   )
@@ -1073,15 +1080,8 @@ export default function CanvasView({
       const stage = element.current?.getBoundingClientRect()
       const rect = nodeRect(callbacks.current.canvasNodes, id)
       if (!stage || !rect) return
-      const library = document.getElementById('creative-library')
-      const agent = document.querySelector('.cc-agent-panel')
-      const insets = panelInsets(
-        stage,
-        library && !library.hidden ? library.getBoundingClientRect() : null,
-        agent ? agent.getBoundingClientRect() : null,
-      )
       void flow.setViewport(
-        revealViewport(rect, stage, insets, flow.getViewport()),
+        revealViewport(rect, stage, coveredInsets(stage), flow.getViewport()),
         { duration: 240 },
       )
     }

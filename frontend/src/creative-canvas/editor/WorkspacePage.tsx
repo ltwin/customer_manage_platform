@@ -88,6 +88,7 @@ import LibraryDrawer, {
   type PanelTab,
 } from './LibraryDrawer.tsx'
 import NodeOutline from './NodeOutline.tsx'
+import { narrowLayout } from './viewport.ts'
 import AgentPanel from './AgentPanel.tsx'
 import { emptyCatalog, groupOptions } from './libraryState.ts'
 import Picker from './Picker.tsx'
@@ -1568,7 +1569,11 @@ function Workspace({ account }: { account: string }) {
                 active={libraryOpen && panelTab === 'canvas'}
                 onSelect={(ids, reveal) => {
                   onSelection(ids)
-                  if (reveal) revealNode.current?.(reveal)
+                  if (!reveal) return
+                  // 窄屏的抽屉从底部盖住大半个画布：点一行就收起抽屉再定位，
+                  // 搜索和筛选留着，再打开还在。
+                  if (window.matchMedia(narrowLayout).matches) closeLibrary()
+                  revealNode.current?.(reveal)
                 }}
                 onRename={(id, title) => {
                   const n = view.nodes.find((v) => v.id === id)

@@ -33,7 +33,7 @@ type OutlineRow = {
 type Outline = { rows: OutlineRow[]; total: number; matched: number | null } // matched=null 表示无搜索/筛选
 ```
 
-- **排序**：同一父级下，未确认节点（只在本地投影中、不在最近一次服务端快照中）在最前，按本地出现顺序倒序；其余按 `created_at` 倒序，同值按 `id` 升序。分组与普通节点混排，同规则。
+- **排序**：同一父级下，未确认节点（只在本地投影中、不在最近一次服务端快照中）在最前；未确认与已确认节点各自按 `created_at` 倒序（精确到微秒，不经 `Date.parse` 截到毫秒），同值按 `id` 升序。分组与普通节点混排，同规则。
 - **显示标题**：`metadata.title`，空时用画布同一兜底 `CanvasView.tsx:untitled(typeKey)`（「未命名图片」等）。搜索针对显示标题。
 - **搜索匹配**：查询与标题都做 `NFKC` 归一后转小写，再做子串包含；查询去首尾空白后为空视为未搜索。
 - **类型筛选**：可选值固定为 8 个已知类型（`core.image/video/audio/text/link/scene/character/group`），多选取并集；选了任意类型后，未知类型节点不显示。
@@ -87,8 +87,8 @@ persistObject(kind=node, live):
 ### 排序与未确认节点（前端）
 
 - `pendingIDs` = 当前视图节点 ID − 最近一次服务端确认快照的节点 ID，由 `WorkspacePage` 从已有的确认快照与本地投影求差（具体变量在任务 1 定位）。
-- 本地投影构造节点处（`outbox.ts`、`structuralPreview.ts`）给 `created_at` 填客户端当前 ISO 时间，只为满足生成类型；排序时 pending 节点不看它。
-- 确认后该节点离开 pending，按服务端时间排序；它通常是最新的，位置不变。若确认前另一处（助手 / 其他标签页）恰好新建了更晚的节点，确认后会排在其后——这是正确顺序，不视为跳动缺陷。
+- 本机意图入队时记 `stagedAt`（`queue.ts:stageIntent`）；本地投影构造节点处（`outbox.ts`、`structuralPreview.ts`）用 `localCreatedAt(intent)` 填 `created_at`，同一次修改建的节点共用一个时间（旧草稿没有 `stagedAt` 时取 1970 年）。服务端给同一次变更的节点同一时间，所以一批节点在确认前后都按 `id` 升序，不跳位；不同批之间新的在前。
+- 确认后该节点离开 pending，按服务端时间排序；它通常是最新的，位置不变。复制、编组的预览 ID 在收到回执后换成服务端 ID，同批内按新 ID 重排，这一次换序发生在回执时、属于已知限制。若确认前另一处（助手 / 其他标签页）恰好新建了更晚的节点，确认后会排在其后——这是正确顺序，不视为跳动缺陷。
 
 ### 视口定位
 
@@ -100,8 +100,9 @@ persistObject(kind=node, live):
 | 放不下 | 倍率 = `min(可见宽/节点宽, 可见高/节点高)`，下限 `zoomLimits.min`，且不大于当前倍率；居中 |
 
 - 节点矩形：`viewport.ts:nodeRect`，世界坐标用 `graph.ts:worldPoint`（分组内节点是相对坐标），上方加标签高度 28px（与 `nodeBounds` 一致）。
-- insets 沿用 `panelInsets`，读 `#creative-library`（外壳 id 不变）与助手面板，所以面板开着时节点不会被盖住。
-- Cmd/Ctrl/Shift 点击只改选中，不定位。节点 ID 不在画布上（刚被删除）时 `revealRef` 静默返回。
+- insets 沿用 `panelInsets`，读 `#creative-library`（外壳 id 不变）与助手面板，所以面板开着时节点不会被盖住；适应画布与定位共用 `CanvasView.tsx:coveredInsets` 的测量。
+- 窄屏（≤ 760px，`viewport.ts:narrowLayout`）的抽屉是盖住大半画布的底部浮层：单击一行先收起抽屉再定位；抽屉只隐藏不卸载，搜索与筛选保留。
+- Cmd/Ctrl/Shift 点击只改选中，不定位；Shift 的锚点被搜索或筛选隐藏时只选中这一行，同样不定位。节点 ID 不在画布上（刚被删除）时 `revealRef` 静默返回。
 
 ### 选择语义
 
@@ -126,7 +127,7 @@ persistObject(kind=node, live):
 
 ### 行内容
 
-- 缩略图：图片节点用 `MediaView.tsx:useMediaURL(revision, media, 'thumbnail', near)`，`near` 来自 `useNearViewport`；视频有海报渲染时同法取，没有则图标；角色卡与其余类型一律 `KindIcon`（角色卡封面需要再读一次内容修订，每行一个请求不值得）。取图失败退回图标，不显示错误。
+- 缩略图：图片节点用 `MediaView.tsx:useMediaURL(revision, media, 'thumbnail', near)`，`near` 来自 `useNearViewport`；视频有海报渲染时同法取，没有则图标；角色卡取 `node.character.cover_revision_id`（没有时取卡片第一张参考图）的内容修订作封面，经 `versionCache.ts:useContentRevision` 读取——不可变内容按 id 缓存、并发合并，滚到附近才读；其余类型 `KindIcon`。取图失败退回图标，不显示错误。
 - 状态标记：`labelMeta.ts:generationPhase` 非空 → 「生成中」圆点；`labelMeta.ts:generationFailure` 非空 → 「失败」标记。与画布卡片同一判定。
 - 空态：画布无节点「画布上还没有节点」；有条件无命中「没有匹配的节点」+「清除筛选」按钮（清空搜索与类型）。
 
@@ -142,6 +143,8 @@ persistObject(kind=node, live):
 | `backend/internal/platform/store/migrations/0084_creative_graph_identity_created_at.up.sql` | 新增 | 加列 + 回填 |
 | `backend/internal/platform/store/migrations/0084_creative_graph_identity_created_at.down.sql` | 新增 | 删列 |
 | `backend/internal/platform/store/` 迁移回退链测试 | 修改 | 回退链补上 0084（同 0082、0083 的做法） |
+| `backend/internal/platform/store/creative_graph_migration.go:seedCreativeGraphIdentities` | 修改 | 补建身份行时写入节点行的 `created_at` |
+| `backend/internal/creativeagent/context.go:canvasNodeContext` | 修改 | 助手 `read_canvas` 节点投影加 `created_at` |
 | `backend/internal/creativecanvas/graph_state.go:identity` | 修改 | 加 `CreatedAt` |
 | `backend/internal/creativecanvas/graph_state.go:loadGraph` | 修改 | 身份查询多读 `created_at` |
 | `backend/internal/creativecanvas/graph_state.go:persistObject` | 修改 | 恢复节点行时带回创建时间 |
@@ -153,8 +156,10 @@ persistObject(kind=node, live):
 | `api/openapi.yaml` | 修改 | `CreativeCanvasNode.created_at`（required） |
 | `backend/internal/platform/httpapi/api.gen.go` | 生成 | `make generate` |
 | `frontend/src/api/schema.d.ts` | 生成 | `make generate` |
-| `frontend/src/creative-canvas/editor/outbox.ts` | 修改 | 本地投影节点填 `created_at` |
-| `frontend/src/creative-canvas/editor/structuralPreview.ts` | 修改 | 同上 |
+| `frontend/src/creative-canvas/editor/outbox.ts` | 修改 | `Intent.stagedAt`；本地投影节点填 `created_at` |
+| `frontend/src/creative-canvas/editor/structuralPreview.ts` | 修改 | `localCreatedAt`；编组、复制预览节点填 `created_at` |
+| `frontend/src/creative-canvas/editor/queue.ts:stageIntent` | 修改 | 入队时记 `stagedAt` |
+| `frontend/src/creative-canvas/editor/versionCache.ts:useContentRevision` | 新增 | 按 id 缓存读取内容修订（角色卡封面） |
 | `frontend/src/creative-canvas/editor/outline.ts` | 新增 | `buildOutline` 纯函数 |
 | `frontend/src/creative-canvas/editor/NodeOutline.tsx` | 新增 | 节点树组件 |
 | `frontend/src/creative-canvas/editor/outline.css` | 新增 | 节点树样式 |
@@ -163,6 +168,7 @@ persistObject(kind=node, live):
 | `frontend/src/creative-canvas/editor/CanvasView.tsx` | 修改 | 改为引用 `nodeKind.ts`、`KindIcon.tsx`；新增 `revealRef` prop |
 | `frontend/src/creative-canvas/editor/viewport.ts:revealViewport` | 新增 | 定位算法 |
 | `frontend/src/creative-canvas/editor/viewport.ts:nodeRect` | 新增 | 单个节点的世界坐标矩形（含标签） |
+| `frontend/src/creative-canvas/editor/viewport.ts:narrowLayout` | 新增 | 窄屏断点常量，`panelInsets` 与窄屏收起抽屉共用 |
 | `frontend/src/creative-canvas/editor/LibraryDrawer.tsx` | 修改 | 标签头、`tab`/`onTab`/`outline` props、按标签分派键盘与主体 |
 | `frontend/src/creative-canvas/editor/library.css` | 修改 | 标签样式 |
 | `frontend/src/creative-canvas/editor/WorkspacePage.tsx` | 修改 | `panelTab`、工具栏「节点树」按钮、连接选中/重命名/定位、`pendingIDs` |

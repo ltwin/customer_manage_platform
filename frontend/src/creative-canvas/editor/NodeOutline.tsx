@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, ListFilter, Search, X } from 'lucide-react'
 import type { CanvasNode } from './api.ts'
+import { characterOf } from '../assets/character.ts'
 import { InlineNodeTitle } from './InlineNodeEditor.tsx'
 import { KindIcon } from './KindIcon.tsx'
 import { generationFailure, generationPhase } from './labelMeta.ts'
@@ -11,6 +12,7 @@ import {
   outlineTypes,
   type OutlineRow,
 } from './outline.ts'
+import { useContentRevision } from './versionCache.ts'
 import './outline.css'
 
 const typeNames: Record<(typeof outlineTypes)[number], string> = {
@@ -57,6 +59,9 @@ export default function NodeOutline({
   const anchor = useRef<string | null>(null)
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
+  const filterButton = useRef<HTMLButtonElement>(null)
+  // 画布选中后要滚到的行；所在分组刚被展开时，等它渲染出来再滚。
+  const scrollTarget = useRef<string | null>(null)
 
   const outline = useMemo(
     () => buildOutline(nodes, { query, types, collapsed, pending }),
@@ -64,39 +69,46 @@ export default function NodeOutline({
   )
   const filtering = outline.matched !== null
   const selected = useMemo(() => new Set(selection), [selection])
+  // 正在改名的行被删掉（如远端删除）时结束改名，键盘操作不再被拦住。
+  if (renaming !== null && !outline.rows.some((r) => r.id === renaming))
+    setRenaming(null)
 
   useEffect(() => {
     if (active) search.current?.focus({ preventScroll: true })
   }, [active])
 
   // 画布上选中的节点：在折叠分组里时展开其祖先，再滚动到可见。
+  // 只在选中变化（或节点树刚显示）时做一次；之后摄影师手动折叠不会被撑开。
   const first = selection[0]
   useEffect(() => {
-    if (!first || !active) return
-    if (!filtering && !outline.rows.some((r) => r.id === first)) {
-      const byID = new Map(nodes.map((n) => [n.id, n]))
-      const ancestors: string[] = []
-      for (
-        let p = byID.get(first)?.parent_id ?? null;
-        p && !ancestors.includes(p);
-        p = byID.get(p)?.parent_id ?? null
-      )
-        ancestors.push(p)
-      if (ancestors.some((id) => collapsed.has(id))) {
-        setCollapsed((old) => {
-          const next = new Set(old)
-          for (const id of ancestors) next.delete(id)
-          return next
-        })
-        return
-      }
-    }
-    list.current
-      ?.querySelector<HTMLElement>(`[data-node="${CSS.escape(first)}"]`)
-      ?.scrollIntoView({ block: 'nearest' })
-    // 只跟着选中变化走；行列表变化不该把滚动拽回来。
+    scrollTarget.current = first && active ? first : null
+    if (!first || !active || filtering) return
+    const byID = new Map(nodes.map((n) => [n.id, n]))
+    const ancestors: string[] = []
+    for (
+      let p = byID.get(first)?.parent_id ?? null;
+      p && !ancestors.includes(p);
+      p = byID.get(p)?.parent_id ?? null
+    )
+      ancestors.push(p)
+    setCollapsed((old) =>
+      ancestors.some((id) => old.has(id))
+        ? new Set([...old].filter((id) => !ancestors.includes(id)))
+        : old,
+    )
+    // 节点、筛选变化不算选中变化。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [first, active, collapsed])
+  }, [first, active])
+  useEffect(() => {
+    const id = scrollTarget.current
+    if (!id) return
+    const row = list.current?.querySelector<HTMLElement>(
+      `[data-node="${CSS.escape(id)}"]`,
+    )
+    if (!row) return
+    row.scrollIntoView({ block: 'nearest' })
+    scrollTarget.current = null
+  }, [outline])
 
   const visibleIDs = outline.rows.map((r) => r.id)
   const focusable =
@@ -112,6 +124,7 @@ export default function NodeOutline({
       return next
     })
   }
+  // 修饰键点击只改选中、不移动画布；Shift 的锚点被筛掉时只选这一行。
   function click(id: string, mods: { meta: boolean; shift: boolean }) {
     setFocusID(id)
     if (mods.shift) {
@@ -120,8 +133,11 @@ export default function NodeOutline({
       if (from >= 0 && to >= 0) {
         const [a, b] = from < to ? [from, to] : [to, from]
         onSelect(visibleIDs.slice(a, b + 1), null)
-        return
+      } else {
+        anchor.current = id
+        onSelect([id], null)
       }
+      return
     }
     anchor.current = id
     if (mods.meta)
@@ -188,6 +204,7 @@ export default function NodeOutline({
         </label>
         <div className="cc-outline-filter">
           <button
+            ref={filterButton}
             type="button"
             className={`cl-icon ${types.size ? 'is-on' : ''}`}
             aria-label={types.size ? `按类型筛选（已选 ${types.size} 类）` : '按类型筛选'}
@@ -202,7 +219,10 @@ export default function NodeOutline({
             <TypeMenu
               types={types}
               onChange={setTypes}
-              onClose={() => setFilterOpen(false)}
+              onClose={(restoreFocus) => {
+                setFilterOpen(false)
+                if (restoreFocus) filterButton.current?.focus()
+              }}
             />
           )}
         </div>
@@ -338,10 +358,19 @@ export default function NodeOutline({
   )
 }
 
-// 图片（视频有缩略图时）显示缩略图，滚到附近才取；其余类型、取不到时显示类型图标。
+// 图片、角色卡封面（视频有缩略图时）显示缩略图，滚到附近才取；
+// 其余类型、取不到时显示类型图标。角色卡封面的内容修订按 id 缓存，滚动不重读。
 function Thumb({ node }: { node: CanvasNode }) {
   const { ref, near } = useNearViewport<HTMLSpanElement>()
-  const content = node.content
+  const card = node.metadata.type_key === 'core.character'
+  const cover = useContentRevision(
+    card
+      ? (node.character?.cover_revision_id ??
+          characterOf(node.content)?.views[0]?.content_revision_id)
+      : null,
+    near,
+  )
+  const content = card ? cover : node.content
   const media = content?.media
   const hasThumb = !!media?.some((m) => m.role === 'thumbnail')
   const show =
@@ -389,17 +418,24 @@ function TypeMenu({
 }: {
   types: ReadonlySet<string>
   onChange: (types: ReadonlySet<string>) => void
-  onClose: () => void
+  /** restoreFocus：键盘关闭时把焦点还给筛选按钮；点到别处关闭时不抢焦点。 */
+  onClose: (restoreFocus: boolean) => void
 }) {
   const menu = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+  // 打开时聚焦第一项，只做一次；勾选后焦点留在原处。
   useEffect(() => {
     menu.current?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')?.focus()
     const away = (e: PointerEvent) => {
-      if (!menu.current?.parentElement?.contains(e.target as Node)) onClose()
+      if (!menu.current?.parentElement?.contains(e.target as Node))
+        close.current(false)
     }
     document.addEventListener('pointerdown', away)
     return () => document.removeEventListener('pointerdown', away)
-  }, [onClose])
+  }, [])
   return (
     <div
       ref={menu}
@@ -416,7 +452,7 @@ function TypeMenu({
         if (e.key === 'Escape') {
           e.preventDefault()
           e.stopPropagation()
-          onClose()
+          onClose(true)
         } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault()
           const next =
@@ -452,7 +488,13 @@ function TypeMenu({
         type="button"
         role="menuitem"
         disabled={!types.size}
-        onClick={() => onChange(new Set())}
+        onClick={() => {
+          onChange(new Set())
+          // 这一项随即变为禁用，焦点交给第一项，菜单仍能用键盘操作。
+          menu.current
+            ?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')
+            ?.focus()
+        }}
       >
         <span className="cc-outline-check" />
         显示全部类型

@@ -91,13 +91,18 @@ export function revealViewport(
   }
 }
 
+// 窄屏布局（与 library.css、workspace.css 的断点一致）：抽屉改为底部浮层。
+export const narrowWidth = 760
+export const narrowLayout = `(max-width: ${narrowWidth}px)`
+
 // 面板占位：资产库在左、助手在右，读实际 DOM 位置；窄屏用固定边距。
 export function panelInsets(
   stage: DOMRect,
   library: DOMRect | null,
   agent: DOMRect | null,
 ): Insets {
-  if (stage.width <= 760) return { left: 16, right: 16, top: 72, bottom: 80 }
+  if (stage.width <= narrowWidth)
+    return { left: 16, right: 16, top: 72, bottom: 80 }
   return {
     left: library ? Math.max(80, library.right - stage.left + 16) : 80,
     right: agent ? Math.max(40, stage.right - agent.left + 16) : 40,
