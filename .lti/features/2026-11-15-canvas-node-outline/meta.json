@@ -1,12 +1,12 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 4,
+  "revision": 5,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T06:40:21.385Z",
+  "updatedAt": "2026-11-16T06:47:04.815Z",
   "risk": {
     "factors": [
       "data-migration"
@@ -37,8 +37,19 @@
       "removed": []
     }
   ],
+  "baseline": {
+    "commit": "5544ee354107530c4d39b48857880abea8374fbf",
+    "at": "2026-11-16T06:47:03.932Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "eebd82a2b1d5fc48d717d4eba62a1bc6dc8bf5a4b4266e01c921d25f007199d2"
+    },
+    "preExisting": [
+      ".lti/snapshots/eebd82a2b1d5fc48d717d4eba62a1bc6dc8bf5a4b4266e01c921d25f007199d2.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }
