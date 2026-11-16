@@ -36,7 +36,7 @@ type latencyWaiter struct {
 	failed  map[string]string
 }
 
-func (w *latencyWaiter) Admit(context.Context, store.TxAccountScope, string) (creativescene.RunGate, error) {
+func (w *latencyWaiter) Admit(context.Context, store.TxAccountScope, creativescene.Job) (creativescene.RunGate, error) {
 	return struct{}{}, nil
 }
 

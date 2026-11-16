@@ -27,13 +27,13 @@ type fakeWaiter struct {
 	aborted []string
 }
 
-func (w *fakeWaiter) Admit(_ context.Context, _ store.TxAccountScope, runID string) (creativescene.RunGate, error) {
+func (w *fakeWaiter) Admit(_ context.Context, _ store.TxAccountScope, job creativescene.Job) (creativescene.RunGate, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.refuse != nil {
 		return nil, w.refuse
 	}
-	return runID, nil
+	return *job.RunID, nil
 }
 
 func (w *fakeWaiter) Settle(_ context.Context, _ store.TxAccountScope, gate creativescene.RunGate, job creativescene.Job, res creativescene.JobResult) error {

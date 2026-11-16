@@ -50,6 +50,10 @@ var (
 // tool index; framework call IDs are only used to locate that recorded plan.
 type runtimeHandler struct {
 	libraryEnabled bool
+	// legacyToolSchemas is set when the run resumes a checkpoint saved
+	// before the long-running tools offered run_in_background: it keeps the
+	// tool definitions that checkpoint was saved with (agent-tool-background).
+	legacyToolSchemas bool
 	*adk.BaseChatModelAgentMiddleware
 	service   *Service
 	scope     store.AccountScope

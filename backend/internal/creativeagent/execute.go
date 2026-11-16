@@ -16,7 +16,6 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
-	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -1089,7 +1088,7 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 	}
 	// An attempt can fail after a call parked; the run row is locked by the
 	// update above, so its client jobs come after it in the lock order.
-	if err := creativescene.CancelRunJobs(ctx, tx, runID); err != nil {
+	if err := cancelRunSceneJobsInTx(ctx, tx, runID); err != nil {
 		return false, err
 	}
 	// Checkpoint and context lifetimes share the run's terminal clock. Pending

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -89,7 +91,89 @@ func sceneTaskState(jobState string) string {
 	return taskFailed
 }
 
-// stepArgs reads the arguments a tool step was called with.
+const (
+	backgroundParamDesc = "true 时放到后台运行：立即返回 task_handle，不等结果，可以接着做别的；完成后结果会以系统通知送来，届时再如实告诉创作者。省略为 false：等到结果再返回"
+	backgroundToolNote  = "耗时较长、不需要马上看结果时，可以传 run_in_background:true 放到后台；放到后台后不要为了等结果重复调用或查询。"
+)
+
+// offerBackground adds run_in_background to a long-running tool's
+// definition (generate_node, compress_image, write_model, export_shots;
+// render_view is foreground only, review R9), unless the run keeps the definitions of an older checkpoint.
+func (h *runtimeHandler) offerBackground(desc string, params map[string]*schema.ParameterInfo, notes ...string) string {
+	// A definition read without a run (tests, catalogs) is the current one.
+	if h != nil && h.legacyToolSchemas {
+		return desc
+	}
+	params["run_in_background"] = &schema.ParameterInfo{Type: schema.Boolean, Desc: backgroundParamDesc}
+	return desc + backgroundToolNote + strings.Join(notes, "")
+}
+
+// splitBackground takes run_in_background off a call's arguments: it must be
+// a boolean when present. Arguments that are not a JSON object are left for
+// the tool's own parser to refuse.
+func splitBackground(raw string) (string, bool, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil || fields == nil {
+		return raw, false, nil
+	}
+	value, ok := fields["run_in_background"]
+	if !ok {
+		return raw, false, nil
+	}
+	var background bool
+	switch string(value) {
+	case "true":
+		background = true
+	case "false":
+	default:
+		return raw, false, errToolArguments
+	}
+	delete(fields, "run_in_background")
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return raw, false, err
+	}
+	return string(out), background, nil
+}
+
+// backgroundArgument is splitBackground for this run: a run on the old
+// definitions was never offered the field and refuses it like any unknown
+// argument.
+func (h *runtimeHandler) backgroundArgument(raw string) (string, bool, error) {
+	args, background, err := splitBackground(raw)
+	if err == nil && h.legacyToolSchemas && args != raw {
+		return raw, false, errToolArguments
+	}
+	return args, background, err
+}
+
+// acceptBackground records a background task behind the run's admission and
+// answers with its handle; the run goes on to its next model call. The task
+// is due at once, so a source that already moved is not missed.
+func (h *runtimeHandler) acceptBackground(ctx context.Context, task newToolTask) (any, error) {
+	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := h.service.admitRunInTx(ctx, tx, h.held); err != nil {
+			return err
+		}
+		return h.registerToolTaskInTx(ctx, tx, task)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return acceptedInBackground(task.StepID), nil
+}
+
+// acceptedInBackground is the answer of a call accepted in the background.
+// A replay of the call answers the same.
+func acceptedInBackground(step string) any {
+	return struct {
+		TaskHandle string `json:"task_handle"`
+		State      string `json:"state"`
+	}{toolTaskID(step), taskRunning}
+}
+
+// stepArgs reads the arguments a tool step was called with, without
+// run_in_background.
 func stepArgs(ctx context.Context, tx store.TxAccountScope, stepID string) (string, error) {
 	var input []byte
 	if err := tx.QueryRow(ctx, "creative_agent_steps", "input", "id=$2 AND kind='tool'", stepID).Scan(&input); err != nil {
@@ -101,7 +185,8 @@ func stepArgs(ctx context.Context, tx store.TxAccountScope, stepID string) (stri
 	if err := json.Unmarshal(input, &call); err != nil {
 		return "", err
 	}
-	return string(call.Arguments), nil
+	args, _, err := splitBackground(string(call.Arguments))
+	return args, err
 }
 
 // finishSceneTaskInTx ends the task behind a finished job with the tool

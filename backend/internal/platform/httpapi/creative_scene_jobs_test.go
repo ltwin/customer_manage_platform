@@ -21,7 +21,7 @@ import (
 // admitAll stands in for the agent runtime: every run may write, settling does nothing.
 type admitAll struct{}
 
-func (admitAll) Admit(context.Context, store.TxAccountScope, string) (creativescene.RunGate, error) {
+func (admitAll) Admit(context.Context, store.TxAccountScope, creativescene.Job) (creativescene.RunGate, error) {
 	return struct{}{}, nil
 }
 func (admitAll) Settle(context.Context, store.TxAccountScope, creativescene.RunGate, creativescene.Job, creativescene.JobResult) error {

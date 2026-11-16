@@ -195,7 +195,7 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 		}
 		var gate *sceneGate
 		if peek.Mode == modeForeground && peek.State == taskRunning {
-			g, err := sceneWaiter{s: s}.Admit(ctx, tx, peek.SourceRunID)
+			g, err := sceneWaiter{s: s}.admitRun(ctx, tx, peek.SourceRunID)
 			switch {
 			case errors.Is(err, creativescene.ErrRunGate):
 				// The run may no longer write: the task still records its
@@ -208,7 +208,7 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 			case err != nil:
 				return err
 			default:
-				gate = g.(*sceneGate)
+				gate = g
 			}
 		} else if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
 			return err

@@ -34,19 +34,24 @@ func (s *Service) SetImageCompressor(c ImageCompressor) {
 	s.compressor = c
 }
 
-func compressImageInfo() *schema.ToolInfo {
+func (h *runtimeHandler) compressImageInfo() *schema.ToolInfo {
+	params := map[string]*schema.ParameterInfo{
+		"node_id":             {Type: schema.String, Required: true, Desc: "要压缩的图片节点 ID"},
+		"quality":             {Type: schema.Integer, Desc: "输出质量，1 到 100 的整数；高质量 90、均衡 80、小文件 60；省略时为 80。质量值不是保留画质的百分比，也不是缩小比例"},
+		"content_revision_id": {Type: schema.String, Desc: "read_canvas 读到的该节点图片的内容修订 ID；给出时，图片在此之后被改动就拒绝，避免压错版本"},
+	}
 	return &schema.ToolInfo{
-		Name: compressImageTool,
-		Desc: "按输出质量压缩一张图片节点，像素尺寸不变，结果作为该节点的新版本并切换显示，原图保留在版本列表里，创作者可以撤销。只按质量压缩，不能保证压到指定大小；创作者要求目标大小时如实说明。JPEG 输出 JPEG；不透明 PNG 转 JPEG；透明 PNG 和 WebP 输出 WebP；输出不保留拍摄信息（EXIF/GPS）。不知道要压哪张图、或选中了多张图时先问清楚，不要自行挑选。调用会等待结果：state 为 applied 才表示节点已更新，并带实际的原始大小、输出大小和减少比例；not_reduced 表示文件没有变小、没有改动；not_applied 和 failed 表示没有改动，reason 说明原因；unconfirmed 表示采用已提交但结果未确认，不要重复调用，请读取画布核实。",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"node_id":             {Type: schema.String, Required: true, Desc: "要压缩的图片节点 ID"},
-			"quality":             {Type: schema.Integer, Desc: "输出质量，1 到 100 的整数；高质量 90、均衡 80、小文件 60；省略时为 80。质量值不是保留画质的百分比，也不是缩小比例"},
-			"content_revision_id": {Type: schema.String, Desc: "read_canvas 读到的该节点图片的内容修订 ID；给出时，图片在此之后被改动就拒绝，避免压错版本"},
-		}),
+		Name:        compressImageTool,
+		Desc:        h.offerBackground("按输出质量压缩一张图片节点，像素尺寸不变，结果作为该节点的新版本并切换显示，原图保留在版本列表里，创作者可以撤销。只按质量压缩，不能保证压到指定大小；创作者要求目标大小时如实说明。JPEG 输出 JPEG；不透明 PNG 转 JPEG；透明 PNG 和 WebP 输出 WebP；输出不保留拍摄信息（EXIF/GPS）。不知道要压哪张图、或选中了多张图时先问清楚，不要自行挑选。调用会等待结果：state 为 applied 才表示节点已更新，并带实际的原始大小、输出大小和减少比例；not_reduced 表示文件没有变小、没有改动；not_applied 和 failed 表示没有改动，reason 说明原因；unconfirmed 表示采用已提交但结果未确认，不要重复调用，请读取画布核实。", params),
+		ParamsOneOf: schema.NewParamsOneOfByParams(params),
 	}
 }
 
 func (h *runtimeHandler) compressImage(ctx context.Context, canvasID, seed, raw string) (any, error) {
+	raw, background, err := h.backgroundArgument(raw)
+	if err != nil {
+		return nil, err
+	}
 	in, err := compressInput(canvasID, seed, raw)
 	if err != nil {
 		return nil, err
@@ -57,6 +62,10 @@ func (h *runtimeHandler) compressImage(ctx context.Context, canvasID, seed, raw 
 	}
 	step := toolStepFrom(ctx)
 	task := newToolTask{StepID: step, ToolKey: compressImageTool, SourceID: render, Mode: modeForeground}
+	if background {
+		task.Mode, task.Due = modeBackground, true
+		return h.acceptBackground(ctx, task)
+	}
 	var pending bool
 	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := h.service.admitRunInTx(ctx, tx, h.held); err != nil {

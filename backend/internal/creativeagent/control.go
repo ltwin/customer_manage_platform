@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
-	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -257,7 +256,7 @@ func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope,
 		return err
 	}
 	// The run is locked, so its client jobs come after it in the lock order.
-	if err = creativescene.CancelRunJobs(ctx, tx, c.ID); err != nil {
+	if err = cancelRunSceneJobsInTx(ctx, tx, c.ID); err != nil {
 		return err
 	}
 	for _, table := range []string{"creative_agent_checkpoints", "creative_agent_context_items"} {

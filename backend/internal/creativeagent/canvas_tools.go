@@ -187,15 +187,16 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 			}),
 		}, nil
 	case compressImageTool:
-		return compressImageInfo(), nil
+		return t.handler.compressImageInfo(), nil
 	default:
+		params := map[string]*schema.ParameterInfo{
+			"node_id":        {Type: schema.String, Required: true, Desc: "要生成的节点 ID"},
+			"draft_revision": {Type: schema.Integer, Required: true, Desc: "set_node_prompt 返回或 read_canvas 读到的提示词版本；节点被别人改过时拒绝"},
+		}
 		return &schema.ToolInfo{
-			Name: generateNodeTool,
-			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗创作者的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉创作者；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。多个节点要生成时，在同一次回复里一起调用：互不相连的节点会同时生成，连在一起的按先后顺序生成。",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"node_id":        {Type: schema.String, Required: true, Desc: "要生成的节点 ID"},
-				"draft_revision": {Type: schema.Integer, Required: true, Desc: "set_node_prompt 返回或 read_canvas 读到的提示词版本；节点被别人改过时拒绝"},
-			}),
+			Name:        generateNodeTool,
+			Desc:        t.handler.offerBackground("按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗创作者的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉创作者；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。多个节点要生成时，在同一次回复里一起调用：互不相连的节点会同时生成，连在一起的按先后顺序生成。", params),
+			ParamsOneOf: schema.NewParamsOneOfByParams(params),
 		}, nil
 	}
 }
@@ -583,11 +584,18 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 		NodeID        string `json:"node_id"`
 		DraftRevision int64  `json:"draft_revision"`
 	}
+	raw, background, err := h.backgroundArgument(raw)
+	if err != nil {
+		return nil, err
+	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
 	}
 	step := toolStepFrom(ctx)
 	task := newToolTask{StepID: step, ToolKey: generateNodeTool, Mode: modeForeground}
+	if background {
+		task.Mode, task.Due = modeBackground, true
+	}
 	execution, err := h.service.generator.SubmitAgentGeneration(ctx, h.scope, creativegeneration.AgentGeneration{Seed: seed, CanvasID: canvasID, NodeID: args.NodeID, DraftRevision: args.DraftRevision,
 		// A stop that commits first keeps the generation from being accepted;
 		// one that commits after finds it and withdraws it while it is queued.
@@ -603,6 +611,9 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 		return nil, err
 	}
 	task.SourceID = execution
+	if background {
+		return h.acceptBackground(ctx, task)
+	}
 	// A generation that already has its answer (a replay after it ended)
 	// answers at once; otherwise the call parks on its task and the finisher
 	// writes the answer when the execution moves (agent-tool-background 1.4).
