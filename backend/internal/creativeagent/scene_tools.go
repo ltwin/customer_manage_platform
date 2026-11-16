@@ -528,7 +528,7 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 			return err
 		}
 		if !creativescene.Terminal(job.State) {
-			return nil
+			return h.registerSceneTaskInTx(ctx, tx, job)
 		}
 		res, err := creativescene.ResultOf(job)
 		if err != nil {
@@ -542,6 +542,20 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 		return answer, err
 	}
 	return nil, errParked{jobID: job.ID}
+}
+
+// registerSceneTaskInTx records the task behind a parked call's job, in the
+// transaction that created or replayed it. A job's completion finishes the
+// task in its own transaction (sceneWaiter.Settle).
+func (h *runtimeHandler) registerSceneTaskInTx(ctx context.Context, tx store.TxAccountScope, job creativescene.Job) error {
+	if job.ToolCallID == nil {
+		return nil
+	}
+	tool, err := sceneToolKey(job.Kind)
+	if err != nil {
+		return err
+	}
+	return h.registerToolTaskInTx(ctx, tx, newToolTask{StepID: *job.ToolCallID, ToolKey: tool, SourceID: job.ID, Mode: modeForeground})
 }
 
 // bakeSucceeded is write_model's answer for a written model.

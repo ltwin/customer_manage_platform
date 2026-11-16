@@ -239,7 +239,8 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if err := validateToolDefinitions(agentToolDefinitions()); err != nil {
 		return nil, err
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{}}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{},
+		toolSources: map[string]toolTaskSource{"write_model": sceneTaskSource{}, "render_view": sceneTaskSource{}, "export_shots": sceneTaskSource{}}}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

@@ -100,9 +100,18 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 	if job.ToolCallID == nil {
 		return nil
 	}
+	var result string
+	var failed bool
 	if err := w.s.publishParkedStepWithInTx(ctx, tx, g, *job.ToolCallID, func(args string) (string, bool, error) {
-		return sceneToolResult(ctx, tx, job, res, args)
+		var err error
+		result, failed, err = sceneToolResult(ctx, tx, job, res, args)
+		return result, failed, err
 	}); err != nil {
+		return err
+	}
+	// The task ends with the call, in the same transaction: a foreground
+	// scene task does not wait for the finisher (design C6).
+	if err := finishSceneTaskInTx(ctx, tx, job, res, result, failed); err != nil {
 		return err
 	}
 	if g.c.State != RunWaitingClient {
