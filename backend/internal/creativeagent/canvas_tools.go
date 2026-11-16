@@ -33,10 +33,6 @@ const (
 	generateNodeTool  = "generate_node"
 )
 
-// generationWait is how long one generate_node call waits for its result. A
-// generation that outlasts it keeps going on the canvas.
-const generationWait = 150 * time.Second
-
 // conflictRetries re-reads the canvas when someone else moved it between the
 // assistant's read and its write. The intent is absolute, so it is reapplied.
 const conflictRetries = 3
@@ -47,7 +43,12 @@ const conflictRetries = 3
 type Generator interface {
 	Models() []creativegeneration.Model
 	DraftParameters(modelKey, nodeType string, given map[string]any) (json.RawMessage, error)
-	GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error)
+	// SubmitAgentGeneration accepts a generation and returns its execution;
+	// a replay finds the one it already submitted.
+	SubmitAgentGeneration(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (string, error)
+	// AgentGenerationInTx reads and locks a generation in the caller's
+	// transaction; done says generation and adoption both have an answer.
+	AgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, executionID string) (creativegeneration.AgentGenerationResult, bool, error)
 	// StopAgentGeneration ends the generation a call with this seed submitted,
 	// if the gateway has not sent it yet. Sent ones cannot be stopped.
 	StopAgentGeneration(ctx context.Context, scope store.AccountScope, canvasID, seed string) (bool, error)
@@ -585,19 +586,96 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
 	}
-	// The wait never outlives the run: the answer still has to be written.
-	wait := min(h.service.generationWait, time.Until(h.held.Deadline)-45*time.Second)
-	result, err := h.service.generator.GenerateNode(ctx, h.scope, creativegeneration.AgentGeneration{Seed: seed, CanvasID: canvasID, NodeID: args.NodeID, DraftRevision: args.DraftRevision, Wait: wait,
+	step := toolStepFrom(ctx)
+	task := newToolTask{StepID: step, ToolKey: generateNodeTool, Mode: modeForeground}
+	execution, err := h.service.generator.SubmitAgentGeneration(ctx, h.scope, creativegeneration.AgentGeneration{Seed: seed, CanvasID: canvasID, NodeID: args.NodeID, DraftRevision: args.DraftRevision,
 		// A stop that commits first keeps the generation from being accepted;
 		// one that commits after finds it and withdraws it while it is queued.
+		// The task is recorded with the execution it follows.
 		Admit: func(ctx context.Context, tx store.TxAccountScope) error {
-			return h.service.admitRunInTx(ctx, tx, h.held)
+			if err := h.service.admitRunInTx(ctx, tx, h.held); err != nil {
+				return err
+			}
+			task.SourceID = creativegeneration.AgentExecutionID(tx.AccountID(), seed)
+			return h.registerToolTaskInTx(ctx, tx, task)
 		}})
 	if err != nil {
 		return nil, err
 	}
-	return struct {
+	task.SourceID = execution
+	// A generation that already has its answer (a replay after it ended)
+	// answers at once; otherwise the call parks on its task and the finisher
+	// writes the answer when the execution moves (agent-tool-background 1.4).
+	var answer any
+	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := h.service.admitRunInTx(ctx, tx, h.held); err != nil {
+			return err
+		}
+		// A call accepted before tool tasks existed has no row yet.
+		if err := h.registerToolTaskInTx(ctx, tx, task); err != nil {
+			return err
+		}
+		result, done, err := h.service.generator.AgentGenerationInTx(ctx, tx, canvasID, args.NodeID, execution)
+		if err != nil || !done {
+			return err
+		}
+		outcome, err := generationOutcome(result)
+		if err != nil {
+			return err
+		}
+		row, err := scanToolTask(tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", toolTaskColumns, "tool_step_id=$2", step))
+		if err != nil {
+			return err
+		}
+		answer = json.RawMessage(outcome.Result)
+		return finishTaskRow(ctx, tx, row, outcome)
+	})
+	if err != nil || answer != nil {
+		return answer, err
+	}
+	return nil, errParked{jobID: toolTaskID(step)}
+}
+
+// generationOutcome is the tool answer and task state for a generation that
+// has its answer.
+func generationOutcome(result creativegeneration.AgentGenerationResult) (toolTaskOutcome, error) {
+	raw, err := json.Marshal(struct {
 		Success bool `json:"success"`
 		creativegeneration.AgentGenerationResult
-	}{result.Adopted(), result}, nil
+	}{result.Adopted(), result})
+	if err != nil {
+		return toolTaskOutcome{}, err
+	}
+	state := taskSucceeded
+	switch result.State {
+	case "failed":
+		state = taskFailed
+	case "cancelled":
+		state = taskCancelled
+	}
+	return toolTaskOutcome{Done: true, State: state, Result: string(raw)}, nil
+}
+
+// generationTaskSource finishes generate_node tasks from their execution.
+type generationTaskSource struct{ s *Service }
+
+func (g generationTaskSource) settle(ctx context.Context, tx store.TxAccountScope, task toolTask) (toolTaskOutcome, error) {
+	if g.s.generator == nil {
+		return toolTaskOutcome{}, errors.New("creative agent: generation is not bound")
+	}
+	raw, err := stepArgs(ctx, tx, task.ToolStepID)
+	if err != nil {
+		return toolTaskOutcome{}, err
+	}
+	var args struct {
+		NodeID string `json:"node_id"`
+	}
+	if err = json.Unmarshal([]byte(raw), &args); err != nil {
+		return toolTaskOutcome{}, err
+	}
+	result, done, err := g.s.generator.AgentGenerationInTx(ctx, tx, task.CanvasID, args.NodeID, task.SourceID)
+	if err != nil || !done {
+		return toolTaskOutcome{}, err
+	}
+	return generationOutcome(result)
 }

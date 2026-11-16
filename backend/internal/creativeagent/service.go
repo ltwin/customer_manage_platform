@@ -199,8 +199,7 @@ type ImageReader interface {
 type Service struct {
 	images ImageReader
 	// generator is nil until composition binds node generation.
-	generator      Generator
-	generationWait time.Duration
+	generator Generator
 	// compressor is nil while image editing is switched off.
 	compressor   ImageCompressor
 	compressWait time.Duration
@@ -239,8 +238,10 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if err := validateToolDefinitions(agentToolDefinitions()); err != nil {
 		return nil, err
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{},
-		toolSources: map[string]toolTaskSource{"write_model": sceneTaskSource{}, "render_view": sceneTaskSource{}, "export_shots": sceneTaskSource{}}}, nil
+	s := &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{},
+		toolSources: map[string]toolTaskSource{"write_model": sceneTaskSource{}, "render_view": sceneTaskSource{}, "export_shots": sceneTaskSource{}}}
+	s.toolSources[generateNodeTool] = generationTaskSource{s: s}
+	return s, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

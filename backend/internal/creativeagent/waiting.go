@@ -42,11 +42,15 @@ func (s *Service) waitForInput(ctx context.Context, tx store.TxAccountScope, c c
 const (
 	waitClientJob = "client_job"
 	waitSlotBusy  = "slot_busy"
+	// waitToolTask is a run whose calls wait on long-running tool tasks
+	// (generation, compression) rather than on a page.
+	waitToolTask = "tool_task"
 )
 
 // errParked is what a tool returns once it has handed its work to a page as a
-// client job. callTool turns it into an interrupt; the step stays prepared and
-// the job's completion writes its result.
+// client job, or to a long-running tool task (jobID is then the task handle).
+// callTool turns it into an interrupt; the step stays prepared and the job's
+// or task's completion writes its result.
 type errParked struct{ jobID string }
 
 func (e errParked) Error() string { return "creative agent: call parked on client job " + e.jobID }
@@ -76,13 +80,35 @@ func (p *parkedRun) Unwrap() error { return errRunInterrupted }
 // the run straight back in the queue with its slot; otherwise it waits. The
 // run is locked, so its jobs come after it in the lock order.
 func (s *Service) parkOnClient(ctx context.Context, tx store.TxAccountScope, c controlledRun, jobIDs []string, now time.Time) error {
-	jobs, err := creativescene.LockJobs(ctx, tx, jobIDs)
+	var sceneJobs, tasks []string
+	for _, id := range jobIDs {
+		if strings.HasPrefix(id, "cctask_") {
+			tasks = append(tasks, id)
+		} else {
+			sceneJobs = append(sceneJobs, id)
+		}
+	}
+	jobs, err := creativescene.LockJobs(ctx, tx, sceneJobs)
 	if err != nil {
 		return err
 	}
 	for _, job := range jobs {
 		if !creativescene.Terminal(job.State) {
-			return s.waitForClient(ctx, tx, c, now)
+			return s.waitForClient(ctx, tx, c, waitClientJob, now)
+		}
+	}
+	slices.Sort(tasks)
+	for _, id := range slices.Compact(tasks) {
+		var state string
+		err := tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", "state", "id=$2 AND mode='foreground'", id).Scan(&state)
+		if errors.Is(err, store.ErrNoRows) {
+			continue // detached since: the call already has its answer
+		}
+		if err != nil {
+			return err
+		}
+		if state == taskRunning {
+			return s.waitForClient(ctx, tx, c, waitToolTask, now)
 		}
 	}
 	pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND state='prepared'", c.ID)
@@ -90,7 +116,7 @@ func (s *Service) parkOnClient(ctx context.Context, tx store.TxAccountScope, c c
 		return err
 	}
 	if pending > 0 {
-		return s.waitForClient(ctx, tx, c, now)
+		return s.waitForClient(ctx, tx, c, waitClientJob, now)
 	}
 	return s.enqueueControlledRun(ctx, tx, c, now)
 }
@@ -98,12 +124,12 @@ func (s *Service) parkOnClient(ctx context.Context, tx store.TxAccountScope, c c
 // waitForClient parks a run on its client jobs: a new waiting token, the
 // reason, waiting_client and the slot released, in one transaction. The jobs
 // resume it (see resumeClientWait); a photographer's message cannot.
-func (s *Service) waitForClient(ctx context.Context, tx store.TxAccountScope, c controlledRun, now time.Time) error {
+func (s *Service) waitForClient(ctx context.Context, tx store.TxAccountScope, c controlledRun, reason string, now time.Time) error {
 	token, err := randomClaimToken()
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Update(ctx, "creative_agent_runs", "waiting_token=$3,wait_reason=$4", "id=$2", c.ID, token, waitClientJob); err != nil {
+	if _, err = tx.Update(ctx, "creative_agent_runs", "waiting_token=$3,wait_reason=$4", "id=$2", c.ID, token, reason); err != nil {
 		return err
 	}
 	if err = s.moveControlledRun(ctx, tx, c, RunWaitingClient, "", now); err != nil {
