@@ -83,7 +83,10 @@ type NodeResult struct {
 	ContentRevisionID      *string              `json:"content_revision_id"`
 }
 type Node struct {
-	ReadOnly          bool                 `json:"-"`
+	ReadOnly bool `json:"-"`
+	// CreatedAt is when the node first appeared on the canvas; undoing its
+	// removal keeps it (see persistObject). Output by MarshalJSON only.
+	CreatedAt         time.Time            `json:"-"`
 	Status            NodeStatus           `json:"-"`
 	Prompt            *NodePrompt          `json:"-"`
 	ParentID          *string              `json:"parent_id"`

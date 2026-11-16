@@ -2,8 +2,8 @@
 
 ## api: ADD 画布节点的创建时间
 
-- 用途 / 消费者：让客户端按节点创建先后排列画布节点（节点树）。消费者：画布编辑器节点树；助手 `read_canvas` 与外部助手只读工具随 OpenAPI 生成的输出 schema 一并看到该字段，不依赖它。
-- 位置：`CreativeCanvasNode.created_at`。凡返回 `CreativeCanvasNode` 的接口都带它：`GET /creative/canvases/{id}`（快照）、画布事件与命令结果中的节点对象、`read_canvas` 工具输出。
+- 用途 / 消费者：让客户端按节点创建先后排列画布节点（节点树）。消费者：画布编辑器节点树；内置助手与外部助手的 `read_canvas` 在各自的节点投影里同样带出该字段（`created_at`，RFC 3339 UTC），供回答「最近新建了哪些节点」一类问题，不依赖它做写入。
+- 位置：`CreativeCanvasNode.created_at`。凡返回 `CreativeCanvasNode` 的接口都带它：`GET /creative/canvases/{id}`（快照）、画布事件与命令结果中的节点对象、画布只读工具接口的 `read_canvas` 输出；助手 `read_canvas` 的精简节点投影另加同名字段。
 - 鉴权与资源权限：不变，沿用所在接口。
 
 | 字段 | 类型 | 必返 | null | 说明 |
@@ -23,12 +23,12 @@
 }
 ```
 
-- 兼容性：只增字段，不破坏现有调用方；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端本地投影的节点（离线 / 保存中）以客户端当前时间填该字段，仅供类型完整，排序不以它为准（见 design「排序」）。
+- 兼容性：只增字段；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端未确认节点排在同级已确认节点之前，彼此按本地入队时间倒序、同值按 ID 升序；确认后以服务端创建时间为准（见 design「排序」）。
 
 ## data: ADD 画布对象的创建时间
 
 - 用途：记录画布对象（节点、连线、输入、版本）第一次出现的时间，使节点被删除后再经撤销恢复时能还原创建时间。本次只有节点使用它。
 - 存储：`creative_graph_identities` 新增列 `created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()`。身份行在对象删除后保留（`is_live = false`），所以它比 `creative_nodes` 行活得久，是对象创建时间的权威来源。
-- 派生：`creative_nodes.created_at`（已存在列）改为由应用保证与身份行一致：节点行在身份已存在时（撤销恢复）以身份行的 `created_at` 插入；首次创建时两者都取默认值，相差在同一事务内的微秒级，不影响排序。读接口取 `creative_nodes.created_at`。
-- 迁移：`0084_creative_graph_identity_created_at`。加列（带默认值，PostgreSQL 11+ 不重写表）后回填：`UPDATE creative_graph_identities i SET created_at = n.created_at FROM creative_nodes n WHERE n.account_id = i.account_id AND n.id = i.id`。已删除节点的身份行没有可回填的来源，保留迁移时刻；它们若在迁移后被撤销恢复，会排到最前（一次性、仅限上线前已删除且仍在撤销窗口内的节点）。`down` 删除该列。
+- 派生：`creative_nodes.created_at`（已存在列）改为由应用保证与身份行一致：节点行插入时一律写入身份行的 `created_at`：首次创建时同一次变更新建的对象共用一次 `clock_timestamp()`，节点行与身份行取同一值；撤销恢复时沿用身份行原值。读接口取 `creative_nodes.created_at`。
+- 迁移：`0084_creative_graph_identity_created_at`。加列（默认值 `clock_timestamp()` 是易变函数，加列时整表重写一次，同 0060、0072 的做法）后回填：`UPDATE creative_graph_identities i SET created_at = n.created_at FROM creative_nodes n WHERE n.account_id = i.account_id AND n.id = i.id`。从 0040 之前直接升级的库，节点在迁移结束后才由 `seedCreativeGraphIdentities` 补建身份行，补建时写入节点行的 `created_at`。已删除节点的身份行没有可回填的来源，保留迁移时刻；它们若在迁移后被撤销恢复，会排到最前（一次性、仅限上线前已删除且仍在撤销窗口内的节点）。`down` 删除该列。
 - 一致性：业务不变量「恢复的节点保持原创建时间」由 `persistObject` 保证；数据库只保证非空与默认值。

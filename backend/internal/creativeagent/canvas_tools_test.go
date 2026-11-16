@@ -156,7 +156,8 @@ func TestAssistantEditsTheCanvasThenGenerates(t *testing.T) {
 	if len(generator.calls) != 1 || generator.calls[0].NodeID != created["img"] || generator.calls[0].DraftRevision != 1 || generator.calls[0].CanvasID != f.canvasID || !strings.HasPrefix(generator.calls[0].Seed, run.ID+"/ccst_") {
 		t.Fatalf("generated %+v", generator.calls)
 	}
-	if !strings.Contains(canvas, `"model":"gpt-image-2"`) || !strings.Contains(canvas, `"text":"金色逆光"`) || !strings.Contains(canvas, `"draft_revision":1`) {
+	if !strings.Contains(canvas, `"model":"gpt-image-2"`) || !strings.Contains(canvas, `"text":"金色逆光"`) || !strings.Contains(canvas, `"draft_revision":1`) ||
+		!strings.Contains(canvas, `"created_at":"`) {
 		t.Fatalf("read_canvas %s", canvas)
 	}
 

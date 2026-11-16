@@ -38,8 +38,6 @@ import type {
   ConnectionLineComponentProps,
 } from '@xyflow/react'
 import {
-  Type,
-  Link2,
   Pencil,
   Maximize2,
   FileText,
@@ -49,7 +47,6 @@ import {
   Ellipsis,
   SquareDashedMousePointer,
   Map as MapIcon,
-  Folder,
   Box as BoxIcon,
   FolderPlus,
   FolderMinus,
@@ -78,6 +75,8 @@ import {
   useLocalMediaVersion,
   type LocalMedia,
 } from './localMedia.ts'
+import { KindIcon } from './KindIcon.tsx'
+import { kindLabel, nodeKind, untitled } from './nodeKind.ts'
 import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind, type MediaKind } from './media.ts'
@@ -103,9 +102,12 @@ import { prefetchVersions } from './versionCache.ts'
 import {
   fitViewport,
   nodeBounds,
+  nodeRect,
   panelInsets,
+  revealViewport,
   validViewport,
   zoomLimits,
+  type Insets,
 } from './viewport.ts'
 import { useGenerationCatalog } from './generationCatalog.ts'
 import {
@@ -183,8 +185,6 @@ const NODE_W = defaultNodeSize('core.text').width,
   NODE_H = defaultNodeSize('core.text').height
 // 复制偏移（PRD CV-A0）。
 const COPY_OFFSET = 40
-export const nodeKind = (typeKey: string): string =>
-  typeKey.startsWith('core.') ? typeKey.slice(5) : typeKey
 const connectableTypes = [
   'core.text',
   'core.link',
@@ -193,20 +193,6 @@ const connectableTypes = [
   'core.audio',
   'core.character',
 ]
-const kindLabel: Record<string, string> = {
-  text: '文字',
-  link: '文字',
-  image: '图片',
-  video: '视频',
-  audio: '音频',
-  character: '角色卡',
-  group: '布局分组',
-  scene: '场景',
-}
-export const untitled = (typeKey: string) =>
-  typeKey === 'core.group'
-    ? '未命名分组'
-    : `未命名${kindLabel[nodeKind(typeKey)] ?? '节点'}`
 // 空媒体节点显示草稿里的比例；未选时与默认画幅一致。
 function emptyRatio(ratio: string) {
   if (ratio === 'auto') return '自动'
@@ -235,29 +221,6 @@ function SceneCard({ node }: { node: CanvasNode }) {
   )
 }
 
-function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
-  switch (typeKey) {
-    case 'core.group':
-      return <Folder size={size} />
-    case 'internal.document':
-      return <FileText size={size} />
-    case 'core.scene':
-      return <BoxIcon size={size} />
-    case 'core.text':
-    case 'core.link':
-      return <Type size={size} />
-    case 'core.character':
-      return <Contact size={size} />
-    case 'core.image':
-      return <ImageIcon size={size} />
-    case 'core.video':
-      return <Film size={size} />
-    case 'core.audio':
-      return <AudioLines size={size} />
-    default:
-      return <Link2 size={size} />
-  }
-}
 // 本机文件预览：上传中变暗加转圈和进度；服务器内容到达后叠在下面等它加载完。
 function LocalPreview({ local, done = false }: { local: LocalMedia; done?: boolean }) {
   const percent = Math.round((local.progress ?? 0) * 100)
@@ -830,6 +793,17 @@ const pointOf = (e: MouseEvent | TouchEvent): [number, number] => {
 }
 const nodeTypes = { content: Card },
   edgeTypes = { reference: ReferenceEdge }
+// 画布四周被资产库抽屉和助手面板挡住的边距（适应画布、定位节点共用）。
+function coveredInsets(stage: DOMRect): Insets {
+  const library = document.getElementById('creative-library')
+  const agent = document.querySelector('.cc-agent-panel')
+  return panelInsets(
+    stage,
+    library && !library.hidden ? library.getBoundingClientRect() : null,
+    agent ? agent.getBoundingClientRect() : null,
+  )
+}
+
 export default function CanvasView({
   canvas,
   selected,
@@ -861,6 +835,7 @@ export default function CanvasView({
   onLibraryFill,
   onPickReferences,
   centerRef,
+  revealRef,
   onPreview,
   onDraggingChange,
   onActions,
@@ -916,6 +891,8 @@ export default function CanvasView({
   onPickReferences: (id: string) => void
   /** 画布可见区域的世界坐标中心，供资产库放入时使用。 */
   centerRef: MutableRefObject<(() => { x: number; y: number }) | null>
+  /** 节点树点击：把视口带到该节点（放得下只平移居中）；节点不在画布上时不动。 */
+  revealRef?: MutableRefObject<((id: string) => void) | null>
   onPreview: (id: string, revision?: string) => void
   onDraggingChange: (dragging: boolean) => void
   onActions: (actions: GraphAction[]) => void
@@ -1091,17 +1068,27 @@ export default function CanvasView({
         ids ? all.filter((n) => ids.includes(n.id)) : all,
       )
       if (!stage || !bounds) return
-      const library = document.getElementById('creative-library')
-      const agent = document.querySelector('.cc-agent-panel')
-      const insets = panelInsets(
-        stage,
-        library && !library.hidden ? library.getBoundingClientRect() : null,
-        agent ? agent.getBoundingClientRect() : null,
-      )
-      void flow.setViewport(fitViewport(bounds, stage, insets), { duration })
+      void flow.setViewport(fitViewport(bounds, stage, coveredInsets(stage)), {
+        duration,
+      })
     },
     [flow],
   )
+  useEffect(() => {
+    if (!revealRef) return
+    revealRef.current = (id) => {
+      const stage = element.current?.getBoundingClientRect()
+      const rect = nodeRect(callbacks.current.canvasNodes, id)
+      if (!stage || !rect) return
+      void flow.setViewport(
+        revealViewport(rect, stage, coveredInsets(stage), flow.getViewport()),
+        { duration: 240 },
+      )
+    }
+    return () => {
+      revealRef.current = null
+    }
+  }, [revealRef, flow])
   useEffect(() => {
     // 资产抽屉盖住左侧时，放入点往右让，落在看得见的地方。
     centerRef.current = () => {

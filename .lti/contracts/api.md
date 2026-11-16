@@ -2496,3 +2496,28 @@ Content-Type: application/json
 ### 兼容性
 
 **BREAKING**：两个载荷删除了原来的 `egress_consent_id`，带这个字段的请求按 `additionalProperties: false` 返回 400。消费者只有本仓库前端，同一版本改完。
+
+## 画布节点的创建时间
+
+- 用途 / 消费者：让客户端按节点创建先后排列画布节点（节点树）。消费者：画布编辑器节点树；内置助手与外部助手的 `read_canvas` 在各自的节点投影里同样带出该字段（`created_at`，RFC 3339 UTC），供回答「最近新建了哪些节点」一类问题，不依赖它做写入。
+- 位置：`CreativeCanvasNode.created_at`。凡返回 `CreativeCanvasNode` 的接口都带它：`GET /creative/canvases/{id}`（快照）、画布事件与命令结果中的节点对象、画布只读工具接口的 `read_canvas` 输出；助手 `read_canvas` 的精简节点投影另加同名字段。
+- 鉴权与资源权限：不变，沿用所在接口。
+
+| 字段 | 类型 | 必返 | null | 说明 |
+|---|---|---|---|---|
+| `created_at` | string（RFC 3339，`date-time`，UTC） | 是 | 否 | 节点这个对象第一次出现在画布上的时间。只读；移动、改名、换内容、换分组不变；删除后被撤销恢复保持原值；复制、粘贴、复制画布产生的新节点是新对象，取新时间。客户端不能在命令里传入或修改。 |
+
+- 精度：微秒（PostgreSQL `timestamptz`）。客户端排序时同值按 `id` 字典序兜底，保证顺序稳定。
+- 错误码：无新增。
+- 示例（快照中的一个节点，其余字段省略号表示与现状相同，非契约内容）：
+
+```json
+{
+  "id": "cwnode_6f0f3c3e-2a51-4a4f-9a51-0f2c8c1c1a10",
+  "parent_id": null,
+  "created_at": "2026-11-15T09:12:33.418204Z",
+  "metadata": { "type_key": "core.image", "type_version": 1, "title": "晨光人像", "intent": "", "x": 120, "y": 80, "width": 300, "height": 300, "z_order": 3 }
+}
+```
+
+- 兼容性：只增字段；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端未确认节点排在同级已确认节点之前，彼此按本地入队时间倒序、同值按 ID 升序；确认后以服务端创建时间为准（见 design「排序」）。

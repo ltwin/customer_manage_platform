@@ -2,6 +2,7 @@ package creativecanvas
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
@@ -81,6 +82,7 @@ func (n Node) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		ID                string                    `json:"id"`
 		ParentID          *string                   `json:"parent_id"`
+		CreatedAt         time.Time                 `json:"created_at"`
 		Metadata          NodeMetadata              `json:"metadata"`
 		Data              NodeData                  `json:"data"`
 		Status            NodeStatus                `json:"status"`
@@ -94,7 +96,7 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		DocumentTrashed   *bool                     `json:"document_trashed,omitempty"`
 		Character         *CharacterNodeView        `json:"character,omitempty"`
 		BasedOnState      string                    `json:"based_on_state,omitempty"`
-	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content, VersionSummary: n.Versions, Character: n.Character, DocumentSummary: summary, DocumentTrashed: n.DocumentTrashed, BasedOnState: n.BasedOnState})
+	}{ID: n.ID, ParentID: n.ParentID, CreatedAt: n.CreatedAt.UTC(), Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content, VersionSummary: n.Versions, Character: n.Character, DocumentSummary: summary, DocumentTrashed: n.DocumentTrashed, BasedOnState: n.BasedOnState})
 }
 
 // The persistence projection is deliberately independent from the public DTO.

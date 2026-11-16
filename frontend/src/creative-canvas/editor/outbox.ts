@@ -7,7 +7,7 @@ import type {
   GraphRead,
 } from './api.ts'
 import type { Draft } from './journal.ts'
-import { structuralPreview } from './structuralPreview.ts'
+import { localCreatedAt, structuralPreview } from './structuralPreview.ts'
 import { canvasHistory, graphActionReadSet, parentFirst } from './graph.ts'
 
 // An intent is one local edit: pending in the outbox, sent as the immutable
@@ -42,6 +42,8 @@ export type Intent = {
   /** 撤销单节点填充时立刻在本机清空的节点。 */
   empties?: string[]
   state: 'pending' | 'sent' | 'confirmed'
+  /** 本机记下这次修改的时间（RFC 3339）；本次新建的节点在确认前都用它作创建时间。 */
+  stagedAt?: string
   // Undo/redo target resolved when the request was built.
   changeID?: string
   receipt?: Receipt
@@ -354,6 +356,7 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
             {
               id: action.node_id,
               parent_id: action.parent_id ?? null,
+              created_at: localCreatedAt(intent),
               metadata: {
                 type_key: action.type_key,
                 type_version: 1,

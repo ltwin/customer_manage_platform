@@ -30,19 +30,20 @@ func seedCreativeGraphIdentities(url string) error {
 	if completed {
 		return tx.Commit()
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT n.account_id,n.id,n.canvas_id,n.placement_revision,n.data_revision,to_jsonb(n) FROM creative_nodes n LEFT JOIN creative_graph_identities i ON i.account_id=n.account_id AND i.id=n.id WHERE i.id IS NULL ORDER BY n.account_id,n.id`)
+	rows, err := tx.QueryContext(ctx, `SELECT n.account_id,n.id,n.canvas_id,n.placement_revision,n.data_revision,n.created_at,to_jsonb(n) FROM creative_nodes n LEFT JOIN creative_graph_identities i ON i.account_id=n.account_id AND i.id=n.id WHERE i.id IS NULL ORDER BY n.account_id,n.id`)
 	if err != nil {
 		return err
 	}
 	type entry struct {
 		account, id, canvas string
 		p, d                int64
+		created             time.Time
 		raw                 json.RawMessage
 	}
 	var entries []entry
 	for rows.Next() {
 		var e entry
-		if err = rows.Scan(&e.account, &e.id, &e.canvas, &e.p, &e.d, &e.raw); err != nil {
+		if err = rows.Scan(&e.account, &e.id, &e.canvas, &e.p, &e.d, &e.created, &e.raw); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -61,7 +62,9 @@ func seedCreativeGraphIdentities(url string) error {
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO creative_graph_identities(account_id,id,canvas_id,kind,is_live,placement_revision,data_revision,effect_heads) VALUES($1,$2,$3,'node',true,$4,$5,$6)`, e.account, e.id, e.canvas, e.p, e.d, raw); err != nil {
+		// The identity carries the node's creation time so undoing a later
+		// removal restores it (0084).
+		if _, err = tx.ExecContext(ctx, `INSERT INTO creative_graph_identities(account_id,id,canvas_id,kind,is_live,placement_revision,data_revision,effect_heads,created_at) VALUES($1,$2,$3,'node',true,$4,$5,$6,$7)`, e.account, e.id, e.canvas, e.p, e.d, raw, e.created); err != nil {
 			return err
 		}
 	}
