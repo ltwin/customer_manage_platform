@@ -5871,7 +5871,10 @@ type CreativeCanvasNode struct {
 	Capabilities CreativeNodeCapabilities        `json:"capabilities"`
 	Character    *CreativeCharacterNodeView      `json:"character,omitempty"`
 	Content      *CreativeContentRevision        `json:"content,omitempty"`
-	Data         CreativeNodeData                `json:"data"`
+
+	// CreatedAt 只读：节点第一次出现在画布上的时间（UTC）。移动、改名、换内容、换分组不变；删除后被撤销恢复保持原值；复制产生的新节点取新时间。
+	CreatedAt *time.Time       `json:"created_at,omitempty"`
+	Data      CreativeNodeData `json:"data"`
 
 	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	DataRevision CreativeRevision `json:"data_revision"`

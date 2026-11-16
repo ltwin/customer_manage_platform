@@ -354,6 +354,8 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
             {
               id: action.node_id,
               parent_id: action.parent_id ?? null,
+              // 只为类型完整；未确认节点在节点树里不按它排序。
+              created_at: new Date().toISOString(),
               metadata: {
                 type_key: action.type_key,
                 type_version: 1,

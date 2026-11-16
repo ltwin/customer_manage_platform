@@ -124,6 +124,7 @@ export function structuralPreview(
       ...base,
       id,
       parent_id: parent,
+      created_at: new Date().toISOString(),
       content: undefined,
       prompt: null,
       metadata: {
@@ -216,6 +217,7 @@ export function structuralPreview(
       .map((n): CanvasNode => ({
         ...n,
         id: idFor(n.id),
+        created_at: new Date().toISOString(),
         parent_id:
           n.parent_id && closure.has(n.parent_id)
             ? idFor(n.parent_id)

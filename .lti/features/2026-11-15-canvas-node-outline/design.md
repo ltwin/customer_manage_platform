@@ -74,14 +74,13 @@ type Outline = { rows: OutlineRow[]; total: number; matched: number | null } // 
 ```
 loadGraph:   身份行多读 created_at → identity.CreatedAt
 persistObject(kind=node, live):
-  if 节点行不存在:
-     if 身份已存在 (i.CreatedAt 非零):  INSERT … created_at = i.CreatedAt   // 撤销恢复 / 重做新建
-     else:                               INSERT …（created_at 用默认值）     // 首次创建
+  if 节点行不存在:  INSERT … created_at = i.CreatedAt      // 首次创建、撤销恢复、重做新建都走这里
   UPDATE …（不触碰 created_at）
-新身份行 INSERT：created_at 用默认值
+新身份：同一次变更里第一次需要时取一次 tx.CreativeNow()（数据库 clock_timestamp），
+        该变更新建的所有对象共用；身份行 INSERT 显式写入同一值
 ```
 
-- `persistObject` 在同一事务里先写节点行、后写身份行（`graph_state.go` 约 427–440 行）；首次创建时两者都取 `clock_timestamp()`，相差微秒。
+- `persistObject` 在同一事务里先写节点行、后写身份行；两者若各取默认值会相差约 1–2 ms，撤销恢复后的时间就和最初读到的不相等（实施时测试抓到），所以显式共用一个时间。
 - 重做「新建节点」= 身份已存在、节点行不存在，同样取身份时间——重做后仍是原来的创建时间，符合「一个 ID 一个创建时间」。
 - `scanNode` 被画布各处共用；多读一列只影响 `Node` 结构，`nodeStateJSON` 显式列字段、不含 `created_at`，撤销链字段头与哈希不变。
 

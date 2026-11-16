@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
@@ -20,6 +21,8 @@ type identity struct {
 	Live     bool
 	P, D     creativeops.Revision
 	Heads    map[string]creativegraph.Head
+	// CreatedAt is when the object first appeared on the canvas.
+	CreatedAt time.Time
 }
 type graphState struct {
 	Versions map[string]NodeVersion
@@ -101,7 +104,7 @@ func loadGraph(ctx context.Context, tx canvasReader, id string) (graphState, map
 	for _, i := range inputs {
 		g.Inputs[i.ID] = i
 	}
-	rows, err = tx.QueryPage(ctx, "creative_graph_identities", "id,kind,is_live,placement_revision,data_revision,effect_heads", "canvas_id=$2", []store.OrderBy{{Column: "id"}}, 100000, 0, id)
+	rows, err = tx.QueryPage(ctx, "creative_graph_identities", "id,kind,is_live,placement_revision,data_revision,effect_heads,created_at", "canvas_id=$2", []store.OrderBy{{Column: "id"}}, 100000, 0, id)
 	if err != nil {
 		return g, nil, err
 	}
@@ -109,7 +112,7 @@ func loadGraph(ctx context.Context, tx canvasReader, id string) (graphState, map
 		var i identity
 		var p, d int64
 		var raw json.RawMessage
-		if err = rows.Scan(&i.ID, &i.Kind, &i.Live, &p, &d, &raw); err != nil {
+		if err = rows.Scan(&i.ID, &i.Kind, &i.Live, &p, &d, &raw, &i.CreatedAt); err != nil {
 			rows.Close()
 			return g, nil, err
 		}
@@ -387,11 +390,21 @@ func persistGraph(ctx context.Context, tx store.TxAccountScope, c Canvas, before
 			return result, err
 		}
 	}
+	// One database time for every object this change creates, so a node row
+	// and its identity agree on when the node appeared.
+	var created time.Time
 	for _, id := range ordered {
 		fields := touched[id]
 		ident, known := ids[id]
 		if !known {
-			ident = identity{ID: id, Kind: kindOf(after, id), Heads: map[string]creativegraph.Head{}}
+			if created.IsZero() {
+				now, err := tx.CreativeNow(ctx)
+				if err != nil {
+					return result, err
+				}
+				created = now
+			}
+			ident = identity{ID: id, Kind: kindOf(after, id), Heads: map[string]creativegraph.Head{}, CreatedAt: created}
 			for _, key := range []string{"existence", "data"} {
 				ident.Heads[key] = creativegraph.NewHead(fieldValue(nil, key))
 			}
@@ -434,7 +447,7 @@ func persistGraph(ctx context.Context, tx store.TxAccountScope, c Canvas, before
 				return result, err
 			}
 		} else {
-			if err := tx.Insert(ctx, "creative_graph_identities", []string{"id", "canvas_id", "kind", "is_live", "placement_revision", "data_revision", "effect_heads"}, id, c.ID, ident.Kind, ident.Live, int64(ident.P), int64(ident.D), raw); err != nil {
+			if err := tx.Insert(ctx, "creative_graph_identities", []string{"id", "canvas_id", "kind", "is_live", "placement_revision", "data_revision", "effect_heads", "created_at"}, id, c.ID, ident.Kind, ident.Live, int64(ident.P), int64(ident.D), raw, ident.CreatedAt); err != nil {
 				return result, err
 			}
 		}
@@ -498,7 +511,9 @@ func persistObject(ctx context.Context, tx store.TxAccountScope, canvas, id stri
 			return err
 		}
 		if !exists {
-			if err = tx.Insert(ctx, table, []string{"id", "canvas_id", "type_key", "x", "y"}, id, canvas, n.TypeKey, n.X, n.Y); err != nil {
+			// The identity carries when the node first appeared, so a node coming
+			// back (undo of a removal, redo of an add) keeps that time.
+			if err = tx.Insert(ctx, table, []string{"id", "canvas_id", "type_key", "x", "y", "created_at"}, id, canvas, n.TypeKey, n.X, n.Y, i.CreatedAt); err != nil {
 				return err
 			}
 		}
