@@ -58,11 +58,13 @@ Skills directory: /Users/samson/.claude/skills
 
 **门禁按影响面选，不按习惯选。** `make check-merge` 是合回 `develop` 的门禁，`make check` 是发布前的门禁，都不是每次编辑的默认动作。改一行 CSS 就跑全量，浪费的不只是时间——等待中人会倾向于跳过验证，那才是真代价。
 
+日常本机验证先读[项目记忆里的测试范围与资源约束](.lti/memory/attention.md#测试)，再按下表选择检查类型。表中命令包含全量测试时，日常开发只运行受影响的用例。
+
 ### 判定表
 
 | 改动落在哪 | 跑什么 | 实测耗时 |
 |---|---|---|
-| 前端 CSS / 组件 / 页面 | `make check-frontend` | 4s |
+| 前端 CSS / 组件 / 页面 | 受影响的前端测试或浏览器场景；按改动需要做 lint 或构建 | 视场景而定 |
 | 前端且引用了生成的 `schema.d.ts` | 上面 + `make generate-check` | +1s |
 | 单个 Go 包内部逻辑 | `make check-go PKG=./internal/xxx/...` | 2~60s，取决于包 |
 | Go 跨包改动 / 接口签名 / 迁移 | `make check-go`（PKG 默认 `./...`） | ~55s |
