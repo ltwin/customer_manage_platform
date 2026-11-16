@@ -1,12 +1,26 @@
 {
   "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
-  "revision": 14,
+  "revision": 15,
   "id": "canvas-node-outline",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-16T04:07:29.766Z",
-  "updatedAt": "2026-11-16T09:49:24.162Z",
+  "updatedAt": "2026-11-16T10:04:18.964Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-16T10:04:18.738Z",
+    "summary": "经 Samson Lee 授权，画布节点树已合入 develop。make check-merge 通过，包含构建、lint、生成物校验、前端 1133 项测试和全量 Go 测试。保留源分支合并祖先。",
+    "method": "manual",
+    "limitations": "项目未配置 LTI checks。合并门禁在与 develop 合并提交内容一致的独立工作树执行，前端全量测试采用串行和测试完成后退出选项，Go 测试并发为 2。",
+    "sourceCommit": "24610355149d1fedd4443ad125a8aed2ce289d49",
+    "targetCommit": "8560a22c7b135b047eaa58470e5713f624a9b536",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "d1ab58970c934fa88eb316a9672b47cfb23dd623e468836fe186d9778ab3d208"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "data-migration"
