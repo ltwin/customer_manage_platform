@@ -47,8 +47,10 @@ type Props = {
   highlighted?: ReadonlySet<string>
   /** Models the assistant is adding, as translucent blocks where they will appear. */
   placeholders?: readonly Placeholder[]
-  /** Light and camera icons; a screenshot leaves them out. */
+  /** Viewport-only markers, outlines and placeholders. */
   helpers?: boolean
+  /** The interactive viewport warms new lights before drawing them. */
+  warmLights?: boolean
   /** The camera the viewport looks through; its own frustum would be in the way. */
   through?: string | null
   /** The viewport's shading; a screenshot is solid. */
@@ -83,7 +85,7 @@ function grouped<T>(items: readonly T[], key: (item: T) => string | null): Map<s
   return out
 }
 
-export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, through = null, display = 'solid' }: Props) {
+export function SceneObjects({ scene, models, selected, active, highlighted = none, placeholders = noPlaceholders, helpers = true, warmLights = false, through = null, display = 'solid' }: Props) {
   const childrenOf = useMemo(() => {
     const byParent = grouped(scene.objects, (o) => o.parent_id)
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order)
@@ -92,10 +94,10 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
   const placeholdersOf = useMemo(() => {
     // One whose parent went away waits at the top level.
     const ids = new Set(scene.objects.map((o) => o.id))
-    return grouped(placeholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
-  }, [placeholders, scene.objects])
+    return grouped(helpers ? placeholders : noPlaceholders, (p) => (p.parentID && ids.has(p.parentID) ? p.parentID : null))
+  }, [helpers, placeholders, scene.objects])
   const shadows = useMemo(() => selectShadowCasters(scene), [scene])
-  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered', shadows }
+  const tree: Tree = { scene, childrenOf, placeholdersOf, models, selected, active, highlighted, helpers, warmLights, through, wire: display === 'wireframe', lit: display === 'rendered', materials: display === 'preview' || display === 'rendered', shadows }
   // A texture's image arrives after its material draws with the placeholder (materials/images.ts): draw again.
   const invalidate = useThree((s) => s.invalidate)
   useEffect(() => onImageShown(invalidate), [invalidate])
@@ -103,7 +105,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
   const volumesCast = scene.objects.some((o) => o.kind === 'volume' && (o.volume?.cast_shadow ?? volumeDefaults.cast_shadow))
   return (
     <>
-      {tree.lit && volumesCast && <VolumesCastLight warm={helpers} />}
+      {tree.lit && volumesCast && <VolumesCastLight warm={warmLights} />}
       {(childrenOf.get('') ?? []).map((o) => (
         <ObjectNode key={o.id} object={o} tree={tree} />
       ))}
@@ -117,7 +119,7 @@ export function SceneObjects({ scene, models, selected, active, highlighted = no
 function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
   const { models, selected, active, highlighted, helpers } = tree
   const t = useMemo(() => transformToView(o.transform), [o.transform])
-  const edge = o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : highlighted.has(o.id) ? agentEdge : null
+  const edge = helpers ? (o.id === active ? activeEdge : selected.has(o.id) ? selectedEdge : highlighted.has(o.id) ? agentEdge : null) : null
   return (
     <group name={o.id} userData={{ objectID: o.id }} position={t.position} quaternion={t.rotation} scale={t.scale}>
       {o.kind === 'group' && (helpers && !tree.childrenOf.get(o.id)?.length ? <EmptyMarker edge={edge} /> : edge && <GroupMarker />)}
@@ -128,8 +130,7 @@ function ObjectNode({ object: o, tree }: { object: SceneObject; tree: Tree }) {
         {o.kind === 'model_instance' && modelKey(o.model) && (
           <ModelMesh revision={modelKey(o.model)!} summary={summaryOf(models, o.model)} edge={edge} objectId={o.id} wire={tree.wire} slots={tree.materials ? (o.material_slots ?? {}) : null} />
         )}
-        {/* The viewport, the one place with helpers, warms new lights; a shot compiles before shooting. */}
-        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={helpers} casts={tree.shadows.get(o.id) === 'on'} />}
+        {tree.lit && o.kind === 'light' && o.light && <SceneLight light={o.light} warm={tree.warmLights} casts={tree.shadows.get(o.id) === 'on'} />}
         {helpers && o.kind === 'light' && <LightIcon light={o.light} edge={edge} />}
         {helpers && o.kind === 'camera' && o.camera && o.id !== tree.through && <CameraFrustum scene={tree.scene} object={o} edge={edge} />}
         {/* Registered in every look and shot; the lit looks draw its medium (render/volumes/). */}

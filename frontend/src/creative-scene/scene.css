@@ -1,7 +1,7 @@
 /* 场景编辑视图：沿用 .cc-maximized-document 的覆盖层定位。
    左侧工具栏与侧栏（物件列表 + 属性），中间视口与状态栏，右侧可选历史版本。 */
 .cc-scene-editor { outline: none; }
-.cc-scene-editor > header { padding: 8px 12px; gap: 8px; }
+.cc-scene-editor > header { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
 .cc-scene-screenshot .cc-editor-dialog { width: min(840px, calc(100vw - 32px)); max-width: 840px; }
 .cc-scene-screenshot-preview { height: min(52dvh, 480px); min-height: 160px; display: grid; place-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
 .cc-scene-screenshot-preview img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
@@ -21,7 +21,9 @@
 .cc-scene-shading .btn { border-radius: 0; padding: 4px 10px; font-size: 12px; }
 .cc-scene-shading .btn:first-child { border-radius: 6px 0 0 6px; }
 .cc-scene-shading .btn:last-child { border-radius: 0 6px 6px 0; }
-.cc-scene-shading .btn[aria-pressed="true"] { background: #f28c2840; }
+.cc-scene-overlays.btn { padding-inline: 10px; }
+.cc-scene-shading .btn[aria-pressed="true"],
+.cc-scene-overlays[aria-pressed="true"] { background: #f28c2840; }
 
 .cc-scene-toolbar { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--border); }
 .cc-scene-toolbar button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--fg); cursor: pointer; }
@@ -198,7 +200,6 @@
 .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: calc(min(380px, 100vw - 16px) + 24px); }
 @media (max-width: 760px) {
   .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 12px; }
-  .cc-scene-editor > header { flex-wrap: wrap; }
   .cc-scene-menubar { flex: 1 0 auto; }
   .cc-scene-editor > header > .btn { flex-shrink: 0; }
 }

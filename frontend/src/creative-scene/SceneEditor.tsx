@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Box, Camera, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
+import { Blend, Box, Camera, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount, read } from '../creative-canvas/editor/api.ts'
@@ -1385,6 +1385,16 @@ export default function SceneEditor({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className="btn cc-scene-overlays"
+          aria-label="显示叠加层"
+          aria-pressed={u.showOverlays}
+          title={u.showOverlays ? '隐藏叠加层' : '显示叠加层'}
+          onClick={() => ui.setState((s) => ({ showOverlays: !s.showOverlays }))}
+        >
+          <Blend size={16} />
+        </button>
         <button className="btn" disabled={!shown || !renderable || !!u.modal} onClick={() => setScreenshotOpen(true)} title="截取当前视口，可下载或导出到画布">
           <Camera size={16} />
           视口截图

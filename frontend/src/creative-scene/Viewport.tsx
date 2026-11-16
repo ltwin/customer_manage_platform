@@ -179,6 +179,7 @@ export function Viewport(props: ViewportProps) {
   const ortho = useStore(props.ui, (s) => s.ortho)
   const modal = useStore(props.ui, (s) => s.modal)
   const faceEdit = useStore(props.ui, (s) => s.faceEdit)
+  const showOverlays = useStore(props.ui, (s) => s.showOverlays)
   const selected = useMemo(() => new Set(selection.selected), [selection.selected])
   const wrap = useRef<HTMLDivElement>(null)
   const r = box && wrap.current ? wrap.current.getBoundingClientRect() : null
@@ -296,25 +297,36 @@ export function Viewport(props: ViewportProps) {
           camera={{ position: positionToView([10, 8, 12]), up: [0, 0, 1], fov: 45, near: 0.05, far: 5000 }}
         >
           <Lighting environment={props.scene.environment} display={display} engine={effectiveEngine(engineOf(props.scene.render), display, !ortho)} />
-          <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />
+          {showOverlays && <InfiniteGrid ref={grid} position={[0, 0, 0.002]} rotation={[Math.PI / 2, 0, 0]} cellSize={1} sectionSize={5} cellColor="#9a968e" sectionColor="#77736c" fadeDistance={80} />}
           {/* Face edit draws its own lines and tint instead of the object's outline. */}
-          <SceneObjects scene={props.scene} models={props.models} selected={faceEdit ? noneSelected : selected} active={faceEdit ? null : selection.active} highlighted={props.highlighted} placeholders={props.placeholders} through={cameraView} display={display} />
-          {props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
-          {drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
+          <SceneObjects
+            scene={props.scene}
+            models={props.models}
+            selected={faceEdit ? noneSelected : selected}
+            active={faceEdit ? null : selection.active}
+            highlighted={props.highlighted}
+            placeholders={props.placeholders}
+            helpers={showOverlays}
+            warmLights
+            through={cameraView}
+            display={display}
+          />
+          {showOverlays && props.ghost && <GhostModel revision={props.ghost.revision} position={props.ghost.position} summary={props.models[props.ghost.revision]} />}
+          {showOverlays && drag && dragAt && <GhostModel revision={drag.revision} position={dragAt.position} rotation={dragAt.rotation} summary={drag.summary} outline />}
           <OrthoSwitch ortho={ortho} />
           <CameraControls makeDefault />
           <ViewKeeper initial={props.camera} onChange={props.onCamera} />
           <CameraViewRig scene={props.scene} ui={props.ui} />
-          {faceEdit && props.faceMeshes && <FaceOverlay objectID={faceEdit.objectID} meshes={props.faceMeshes} selected={faceEdit.selected} />}
-          {!props.readOnly && !modal && !faceEdit && ['move', 'rotate', 'scale'].includes(tool) && (
+          {showOverlays && faceEdit && props.faceMeshes && <FaceOverlay objectID={faceEdit.objectID} meshes={props.faceMeshes} selected={faceEdit.selected} />}
+          {showOverlays && !props.readOnly && !modal && !faceEdit && ['move', 'rotate', 'scale'].includes(tool) && (
             <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
           )}
-          <AxisGizmo />
+          {showOverlays && <AxisGizmo />}
           <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} capture={props.capture} />
           <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
         </Canvas>
       )}
-      {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} />}
+      {cameraView && <CameraFrame scene={props.scene} ui={props.ui} id={cameraView} size={size} showOverlays={showOverlays} />}
       {ortho && engineOf(props.scene.render) === 'realtime_gi' && display === 'rendered' && (
         <div className="cc-scene-viewbadge" role="status">
           正交视图按工作台显示
@@ -773,7 +785,8 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
         if (e.button === 2) finish(false)
         return
       }
-      if (e.button === 0) {
+      const p = latest.current
+      if (e.button === 0 && p.ui.getState().showOverlays) {
         const r = rect()
         const q = camera.quaternion
         const head = axisHeadAt(
@@ -785,11 +798,10 @@ function Controller(props: ViewportProps & { setBox(b: Rect | null): void; tool:
           // A press on the axis widget turns the view; it is not a selection click.
           e.preventDefault()
           e.stopImmediatePropagation()
-          latest.current.handle.current?.setView(head)
+          p.handle.current?.setView(head)
           return
         }
       }
-      const p = latest.current
       if (e.button === 0 && !e.altKey) {
         if (gizmo.current?.axis) return
         if (p.readOnly) return
@@ -1328,10 +1340,7 @@ let probeViewOf: { key: string; view: import('./render/trace/checks.ts').ProbeVi
  * named with its lens; composition guides inside it; and for a camera with
  * depth of field, the 景深预览 switch.
  */
-function CameraFrame({ scene, ui, id, size }: { scene: Scene; ui: EditorStore; id: string; size: Size }) {
-  const chosen = useStore(ui, (s) => s.guides)
-  const preview = useStore(ui, (s) => s.dofPreview)
-  const [menu, setMenu] = useState(false)
+function CameraFrame({ scene, ui, id, size, showOverlays }: { scene: Scene; ui: EditorStore; id: string; size: Size; showOverlays: boolean }) {
   const object = scene.objects.find((o) => o.id === id)
   const camera = { ...cameraDefaults, ...object?.camera }
   const { left, top, width, height } = frameBox(size, aspectOf(camera.aspect))
@@ -1339,12 +1348,23 @@ function CameraFrame({ scene, ui, id, size }: { scene: Scene; ui: EditorStore; i
   const lens = `${object.name || '摄像机'} · ${camera.focal_mm} mm${camera.depth_of_field ? ` · f/${camera.f_stop}` : ''}`
   return (
     <div className="cc-scene-camframe" style={{ left, top, width, height }}>
+      {showOverlays && <CameraFrameOverlays ui={ui} lens={lens} depthOfField={camera.depth_of_field} />}
+    </div>
+  )
+}
+
+function CameraFrameOverlays({ ui, lens, depthOfField }: { ui: EditorStore; lens: string; depthOfField: boolean }) {
+  const chosen = useStore(ui, (s) => s.guides)
+  const preview = useStore(ui, (s) => s.dofPreview)
+  const [menu, setMenu] = useState(false)
+  return (
+    <>
       <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
         {chosen.flatMap((g) => guideLines[g].map(([x1, y1, x2, y2], i) => <line key={`${g}${i}`} x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" />))}
       </svg>
       <span className="cc-scene-camframe-label">{lens}</span>
       <div className="cc-scene-camframe-tools">
-        {camera.depth_of_field && (
+        {depthOfField && (
           <button className="btn" aria-pressed={preview} title={preview ? '关闭景深预览' : '打开景深预览'} onClick={() => ui.setState({ dofPreview: !preview })}>
             <Aperture size={14} />
             景深预览
@@ -1372,6 +1392,6 @@ function CameraFrame({ scene, ui, id, size }: { scene: Scene; ui: EditorStore; i
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }

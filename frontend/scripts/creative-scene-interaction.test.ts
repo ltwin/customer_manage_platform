@@ -519,12 +519,14 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     history: true,
     lastCamera: 'sobj_cam',
     guides: ['thirds', 'diagonals'],
+    showOverlays: false,
     display: 'rendered',
     wireBack: 'preview',
   }
   assert.deepEqual(parseView(JSON.parse(JSON.stringify(view))), view)
-  const { lastCamera: _l, guides: _g, display: _d, wireBack: _w, sidebarTab: _t, ...before } = view
-  assert.deepEqual(parseView(before), { ...before, sidebarTab: 'outliner', lastCamera: null, guides: [], display: null, wireBack: 'solid' }, 'a view saved before cameras and the asset panel comes back without them')
+  const { lastCamera: _l, guides: _g, display: _d, wireBack: _w, sidebarTab: _t, showOverlays: _o, ...before } = view
+  assert.deepEqual(parseView(before), { ...before, sidebarTab: 'outliner', lastCamera: null, guides: [], showOverlays: true, display: null, wireBack: 'solid' }, 'older views use the defaults for newer controls')
+  assert.equal(parseView({ ...view, showOverlays: 'false' })?.showOverlays, true)
   assert.equal(parseView({ ...view, display: 'xray' })?.display, null, 'an unknown shading leaves it to the scene')
   assert.deepEqual(parseView({ ...view, guides: ['thirds', 'spiral'] })?.guides, ['thirds'], 'unknown guides are dropped')
   assert.deepEqual(parseView({ ...view, camera: null }), { ...view, camera: null })
@@ -538,7 +540,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
   assert.equal(readView(storage, 'k'), null)
   const saver = new ViewSaver(storage, 'k', view)
   saver.camera({ position: [0, -5, 2], target: [0, 0, 0], ortho: false, zoom: 1 })
-  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, sidebarTab: 'outliner', history: false, lastCamera: null, guides: ['center'], display: 'wireframe', wireBack: 'rendered' })
+  saver.ui({ selection: { selected: [], active: null }, tool: 'box', toolbar: true, sidebar: false, sidebarTab: 'outliner', history: false, lastCamera: null, guides: ['center'], showOverlays: true, display: 'wireframe', wireBack: 'rendered' })
   assert.equal(storage.getItem('k'), '{broken', 'writes wait a moment')
   saver.flush()
   assert.deepEqual(readView(storage, 'k'), {
@@ -551,6 +553,7 @@ test('the view is kept per account and scene and only a well-formed one comes ba
     history: false,
     lastCamera: null,
     guides: ['center'],
+    showOverlays: true,
     display: 'wireframe',
     wireBack: 'rendered',
   })
