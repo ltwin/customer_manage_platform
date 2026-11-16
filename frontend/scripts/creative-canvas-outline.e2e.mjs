@@ -37,7 +37,12 @@ const fixture = ({ archived = false } = {}) => ({
     }),
     makeNode('g', 'core.group', 1000, 60, '2026-11-01T10:02:00Z', { metadata: { type_key: 'core.group', type_version: 1, title: '布景', intent: '', x: 1000, y: 60, width: 700, height: 400, z_order: 0 } }),
     makeNode('inner', 'core.image', 24, 52, '2026-11-01T10:03:00Z', { parent_id: 'g' }),
-    makeNode('far', 'core.text', 6000, 3000, '2026-11-01T10:04:00Z'),
+    makeNode('busy', 'core.image', 1000, 700, '2026-10-30T10:00:00Z', {
+      status: { ...idle, generation_state: 'running', active_execution_id: 'e-2', latest_execution_id: 'e-2' },
+    }),
+    makeNode('far', 'core.text', 6000, 3000, '2026-11-01T10:04:00Z', {
+      status: { ...idle, generation_state: 'failed', latest_execution_id: 'e-1', error: 'generation_failed' },
+    }),
   ],
   edges: [], node_inputs: [], changes: [], object_states: [],
 })
@@ -121,16 +126,20 @@ try {
   await record('structure', async () => {
     at('newest first, groups nest, count includes groups')
     await openTree()
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'inner', 'photo', 'left'])
-    assert.equal(await foot(), '共 5 节点')
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'inner', 'photo', 'left', 'busy'])
+    assert.equal(await foot(), '共 6 节点')
+    at('running and failed nodes are marked')
+    await row('busy').locator('.cc-outline-status.is-running').waitFor()
+    assert.equal((await row('far').locator('.cc-outline-status').innerText()).trim(), '失败')
+    assert.equal(await row('g').locator('.cc-outline-status').count(), 0)
     assert.equal(await page.getByRole('tab', { name: '画布' }).getAttribute('aria-selected'), 'true')
     at('image row shows a thumbnail, text row an icon')
     await row('photo').locator('img').waitFor()
     assert.equal(await row('left').locator('img').count(), 0)
     at('collapse hides children, count unchanged')
     await row('g').getByRole('button', { name: '折叠分组' }).click()
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left'])
-    assert.equal(await foot(), '共 5 节点')
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy'])
+    assert.equal(await foot(), '共 6 节点')
   })
 
   await record('search', async () => {
@@ -139,24 +148,24 @@ try {
     at('search by title keeps hits only')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('晨光')
     assert.deepEqual(await rowIDs(), ['photo', 'left'])
-    assert.equal(await foot(), '2 / 共 5 节点')
+    assert.equal(await foot(), '2 / 共 6 节点')
     at('type filter keeps the group as an open path')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('')
     await page.getByRole('button', { name: '按类型筛选' }).click()
     await page.getByRole('menuitemcheckbox', { name: /图片/ }).click()
     await page.keyboard.press('Escape')
-    assert.deepEqual(await rowIDs(), ['g', 'inner', 'photo'])
-    assert.equal(await foot(), '2 / 共 5 节点')
+    assert.deepEqual(await rowIDs(), ['g', 'inner', 'photo', 'busy'])
+    assert.equal(await foot(), '3 / 共 6 节点')
     at('clearing the search restores the collapsed group')
     await page.getByRole('button', { name: /按类型筛选/ }).click()
     await page.getByRole('menuitem', { name: '显示全部类型' }).click()
     await page.keyboard.press('Escape')
-    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left'])
+    assert.deepEqual(await rowIDs(), ['far', 'g', 'photo', 'left', 'busy'])
     at('no hits offer to clear')
     await page.getByRole('searchbox', { name: '搜索节点名称' }).fill('不存在')
     await page.getByText('没有匹配的节点').waitFor()
     await page.getByRole('button', { name: '清除筛选' }).click()
-    assert.equal((await rowIDs()).length, 4)
+    assert.equal((await rowIDs()).length, 5)
   })
 
   await record('reveal', async () => {
@@ -225,7 +234,7 @@ try {
     await page.keyboard.press('ControlOrMeta+a')
     await settle()
     const on = await page.locator('[role="treeitem"][aria-selected="true"]').evaluateAll((els) => els.map((e) => e.dataset.node))
-    assert.deepEqual(on, ['far', 'g', 'photo', 'left'])
+    assert.deepEqual(on, ['far', 'g', 'photo', 'left', 'busy'])
   })
 
   await record('rename', async () => {

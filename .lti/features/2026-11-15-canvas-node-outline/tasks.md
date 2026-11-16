@@ -22,4 +22,4 @@
 ## 4. 验收
 
 - [x] 4.1 新增 `creative-canvas-outline.e2e.mjs`（mock API，逐个用例跑、换端口）：点击定位不在视口内的节点、画布框选后树内高亮并滚动、Cmd 点击多选不移动视口、双击改名后 Cmd/Ctrl+Z 恢复、只读画布双击不进入编辑、标签切换与资产库任务切到资产标签、搜索 / 筛选 / 无命中清除、390px 宽无横向滚动；全部通过且无 `pageerror`
-- [ ] 4.2 回归与门禁：`creative-canvas-viewport.e2e.mjs` 中涉及 `#creative-library` 的用例通过，`make check-frontend` 通过；对照 proposal 验收标准逐条勾核
+- [x] 4.2 回归与门禁：`creative-canvas-viewport.e2e.mjs` 中涉及 `#creative-library` 的用例通过，`make check-frontend` 通过；对照 proposal 验收标准逐条勾核
