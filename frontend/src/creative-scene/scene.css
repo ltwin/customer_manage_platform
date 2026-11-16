@@ -2,6 +2,13 @@
    左侧工具栏与侧栏（物件列表 + 属性），中间视口与状态栏，右侧可选历史版本。 */
 .cc-scene-editor { outline: none; }
 .cc-scene-editor > header { padding: 8px 12px; gap: 8px; }
+.cc-scene-screenshot .cc-editor-dialog { width: min(840px, calc(100vw - 32px)); max-width: 840px; }
+.cc-scene-screenshot-preview { height: min(52dvh, 480px); min-height: 160px; display: grid; place-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.cc-scene-screenshot-preview img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.cc-scene-screenshot-caption { color: var(--fg-2); font-size: 12px; }
+.cc-scene-screenshot footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.cc-scene-screenshot footer .btn { display: inline-flex; align-items: center; gap: 6px; }
+.cc-scene-screenshot [role="alert"] { color: var(--danger); }
 .cc-scene-editor h2 { font-size: 16px; flex: 0 1 auto; max-width: 28%; }
 .cc-scene-body { position: relative; flex: 1; min-height: 0; display: flex; }
 .cc-scene-message { margin: auto; padding: 24px; text-align: center; color: var(--muted); }
@@ -191,6 +198,9 @@
 .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: calc(min(380px, 100vw - 16px) + 24px); }
 @media (max-width: 760px) {
   .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 12px; }
+  .cc-scene-editor > header { flex-wrap: wrap; }
+  .cc-scene-menubar { flex: 1 0 auto; }
+  .cc-scene-editor > header > .btn { flex-shrink: 0; }
 }
 @media (max-width: 620px) {
   .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 8px; }

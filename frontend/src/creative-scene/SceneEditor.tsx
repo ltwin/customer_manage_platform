@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Box, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
+import { Box, Camera, CircleHelp, History, ImageDown, Minimize2 } from 'lucide-react'
 import { useStore } from 'zustand'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { currentAccount, read } from '../creative-canvas/editor/api.ts'
@@ -15,6 +15,8 @@ import { cameraFraming } from './host/framing.ts'
 import { loadModels } from './host/loadModels.ts'
 import { openShooter } from './host/render.ts'
 import { ExportDialog, type UnkeyedChoice } from './panels/ExportDialog.tsx'
+import { ScreenshotDialog } from './panels/ScreenshotDialog.tsx'
+import type { CaptureViewport } from './screenshot.ts'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
 import { readPreference, viewDirections, writePreference, type DevicePreference } from './input/navigation.ts'
 import { boxSelect, click, emptySelection, invertSelection, listClick, prune, selectAll, topmost } from './input/selection.ts'
@@ -170,6 +172,7 @@ export default function SceneEditor({
   canvasID,
   sceneNodeID,
   onSaveModel,
+  onPlaceScreenshot,
   libraryTick = 0,
 }: {
   documentID: string
@@ -179,6 +182,8 @@ export default function SceneEditor({
   sceneNodeID?: string
   /** Opens the canvas page's 「存入资产库」 dialog; without it the entries are hidden. */
   onSaveModel?: (request: SaveRequest) => void
+  /** Uses the owning canvas's image import, including its upload tray and undo. */
+  onPlaceScreenshot?: (file: File) => void
   /** Changes when the page wrote to the asset library; the asset panel reads it again. */
   libraryTick?: number
 }) {
@@ -216,6 +221,12 @@ export default function SceneEditor({
   const s = useStore(session.store)
   const u = useStore(ui)
   const handle = useRef<ViewportHandle | null>(null)
+  const capture = useRef<CaptureViewport | null>(null)
+  const [screenshotOpen, setScreenshotOpen] = useState(false)
+  const captureViewport = useCallback((signal?: AbortSignal) => {
+    if (!capture.current) return Promise.reject(new Error('视口尚未就绪，请稍后重试'))
+    return capture.current(signal)
+  }, [])
   const root = useRef<HTMLElement>(null)
   const [confirmRestore, setConfirmRestore] = useState(false)
   // The asset panel: the model being dragged out of it, the models last placed, and asks to focus its search.
@@ -1195,6 +1206,7 @@ export default function SceneEditor({
   }
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
+    if (screenshotOpen) return
     // Keys never reach the canvas behind the editor, matched or not.
     e.stopPropagation()
     if (typing(e.nativeEvent)) return
@@ -1210,6 +1222,7 @@ export default function SceneEditor({
     handleKey(native, context, mac, run)
   }
   const onKeyUp = (e: ReactKeyboardEvent) => {
+    if (screenshotOpen) return
     e.stopPropagation()
     if (modifierKeys.has(e.nativeEvent.code)) handle.current?.modifiers(e.nativeEvent)
   }
@@ -1372,6 +1385,10 @@ export default function SceneEditor({
             </button>
           ))}
         </div>
+        <button className="btn" disabled={!shown || !renderable || !!u.modal} onClick={() => setScreenshotOpen(true)} title="截取当前视口，可下载或导出到画布">
+          <Camera size={16} />
+          视口截图
+        </button>
         {canvasID && sceneNodeID && (
           <button className="btn" disabled={readOnly} onClick={() => ui.setState({ exporting: true })} title="导出分镜到画布">
             <ImageDown size={16} />
@@ -1596,6 +1613,7 @@ export default function SceneEditor({
               )}
               <ConflictPrompt groups={s.conflicts} trashed={s.trashed} onReapply={(id) => session.reapply(id)} onDiscard={(id) => session.discard(id)} />
               <Viewport
+                capture={capture}
                 scene={drawn ?? shown}
                 models={models}
                 ghost={u.preview ? null : baking.ghost}
@@ -1737,6 +1755,18 @@ export default function SceneEditor({
         />
       )}
       {u.sheet && <ShortcutSheet mac={mac} onClose={() => ui.setState({ sheet: false })} />}
+      {screenshotOpen && (
+        <ScreenshotDialog
+          capture={captureViewport}
+          title={s.view?.title ?? s.base?.title ?? '3D 场景'}
+          onClose={() => setScreenshotOpen(false)}
+          onPlace={!readOnly && onPlaceScreenshot ? (file) => {
+            onPlaceScreenshot(file)
+            setScreenshotOpen(false)
+            close()
+          } : undefined}
+        />
+      )}
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}

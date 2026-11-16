@@ -58,7 +58,7 @@ import DocumentView from './DocumentView.tsx'
 import SaveModelDialog from './SaveModelDialog.tsx'
 import type { SaveRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveRequest) => void; libraryTick?: number }
+type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveRequest) => void; onPlaceScreenshot?: (file: File) => void; libraryTick?: number }
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -791,6 +791,29 @@ function Workspace({ account }: { account: string }) {
       group,
       ids,
     )
+  }
+  function placeScreenshot(file: File) {
+    if (!view || view.id !== canvasID || !editable || !uploads.capabilities)
+      throw new Error('画布暂不可编辑，请稍后重试；也可以先下载截图')
+    const classified = classifyFile(file, uploads.capabilities, 'image')
+    if ('error' in classified) throw new Error(classified.error)
+    const source = view.nodes.find((n) => n.id === maximized?.nodeID)
+    if (!source) throw new Error('原场景节点已不在画布中，请先下载截图')
+    // Import makes a root node; a scene inside a group needs its world position.
+    let x = source.metadata.x + source.metadata.width + 40
+    let y = source.metadata.y
+    let parent = source.parent_id
+    const visited = new Set<string>([source.id])
+    while (parent && !visited.has(parent)) {
+      visited.add(parent)
+      const node = view.nodes.find((n) => n.id === parent)
+      if (!node) break
+      x += node.metadata.x
+      y += node.metadata.y
+      parent = node.parent_id
+    }
+    const size = defaultNodeSize('core.image')
+    dropFiles([file], x + size.width / 2, y + size.height / 2)
   }
   // Filling one empty node takes the same path: local preview now, a fill
   // edit once staged. It is its own undo group; undo cancels the upload.
@@ -1885,6 +1908,7 @@ function Workspace({ account }: { account: string }) {
             sceneNodeID={maximized.nodeID}
             host={sceneHost.launcher}
             onSaveModel={setSavingModel}
+            onPlaceScreenshot={placeScreenshot}
             libraryTick={sceneLibraryTick}
             onClose={() => {
               setSavingModel(null)

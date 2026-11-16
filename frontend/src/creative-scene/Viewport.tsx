@@ -73,6 +73,7 @@ import { cameraDefaults } from './state/apply.ts'
 import { SceneAreaLight } from './render/lightModel/lights.ts'
 import { FaceOverlay } from './faceEdit/FaceOverlay.tsx'
 import { boxTriangles, meshWorld, pickTriangle, type EditMesh } from './faceEdit/meshes.ts'
+import { FrameCapture, type CaptureViewport } from './screenshot.ts'
 
 export type ModalAction =
   | 'axis-x' | 'axis-y' | 'axis-z'
@@ -132,6 +133,7 @@ export type ViewportProps = {
   ui: EditorStore
   mac: boolean
   handle: MutableRefObject<ViewportHandle | null>
+  capture?: MutableRefObject<CaptureViewport | null>
   /** Where the camera was left last time, or null for the default view. */
   camera: CameraView | null
   onCamera(camera: CameraView): void
@@ -308,7 +310,7 @@ export function Viewport(props: ViewportProps) {
             <Gizmo tool={tool} scene={props.scene} ids={topmost(selection.selected, props.scene.objects)} mac={props.mac} onCommit={onCommit} onDragging={props.onDragging} />
           )}
           <AxisGizmo />
-          <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} />
+          <LookView scene={props.scene} ui={props.ui} grid={grid} display={display} capture={props.capture} />
           <Controller {...props} onCommit={onCommit} setBox={setBox} tool={tool} />
         </Canvas>
       )}
@@ -1157,11 +1159,22 @@ function frameBox(size: Size, aspect: number) {
  * the gizmo is drawn on top, sharp. In wireframe there are no surfaces to
  * shade: the scene is drawn as it is.
  */
-function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; display: DisplayMode }) {
+function LookView({ scene, ui, grid, display, capture }: { scene: Scene; ui: EditorStore; grid: RefObject<Object3D | null>; display: DisplayMode; capture?: MutableRefObject<CaptureViewport | null> }) {
   const wire = display === 'wireframe'
   const ortho = useStore(ui, (s) => s.ortho)
   const engine = effectiveEngine(engineOf(scene.render), display, !ortho)
   const { gl, scene: three, camera, invalidate } = useThree()
+  const screenshot = useRef<FrameCapture | null>(null)
+  useEffect(() => {
+    const next = new FrameCapture(invalidate)
+    screenshot.current = next
+    if (capture) capture.current = next.request
+    return () => {
+      next.cancel()
+      screenshot.current = null
+      if (capture) capture.current = null
+    }
+  }, [capture, invalidate])
   const id = useStore(ui, (s) => s.cameraView)
   const preview = useStore(ui, (s) => s.dofPreview)
   // The camera view at the camera's own exposure whether or not the depth of field is previewed (framing below is only then).
@@ -1233,7 +1246,7 @@ function LookView({ scene, ui, grid, display }: { scene: Scene; ui: EditorStore;
       engine,
       quality: 'interactive',
     }
-    r.render(state.camera, frame)
+    if (r.render(state.camera, frame)) screenshot.current?.afterFrame(state.gl.domElement)
     // The layer ready, its probes warming in the background: the render panel still says it prepares.
     const warming = engine === 'realtime_gi' && r.probeStats !== null && !r.probeStats.drawn
     if (warming !== ui.getState().probesWarming) ui.setState({ probesWarming: warming })
