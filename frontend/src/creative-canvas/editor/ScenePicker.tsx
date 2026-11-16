@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { readScene } from '../../creative-scene/api.ts'
 import { listClick, type Selection } from '../../creative-scene/input/selection.ts'
@@ -7,6 +7,7 @@ import {
   dragSelection,
   edgeScroll,
   pickedObjects,
+  pickerObjectLabel,
   pickerRows,
   type PickerObject,
 } from './scenePickerModel.ts'
@@ -67,6 +68,8 @@ export function ScenePicker({
   const [failed, setFailed] = useState('')
   const [attempt, setAttempt] = useState(0)
   const [query, setQuery] = useState('')
+  const [keyboardRow, setKeyboardRow] = useState<string | null | undefined>(undefined)
+  const listID = useId()
   const [selection, setSelection] = useState<Selection>({
     selected: initial,
     active: initial.at(-1) ?? null,
@@ -108,19 +111,61 @@ export function ScenePicker({
     ...missing,
     ...rows.filter((row) => row.matched).map((row) => row.object.id),
   ]
+  // undefined: no keyboard highlight; null: the whole-scene row.
+  // Search navigation starts at a matching object and skips its disabled parents.
+  const keyboardOrder = query.trim() ? (order.length ? order : [null]) : [null, ...order]
+  const activeRow = keyboardRow !== undefined && keyboardOrder.includes(keyboardRow)
+    ? keyboardRow : undefined
+  const rowID = (id: string | null) => id === null ? `${listID}-whole` : `${listID}-object-${id}`
   const count = selection.selected.length
 
-  function confirm() {
-    if (!scene || count > maxObjects) return
-    const picked = pickedObjects(selection, scene.objects)
-    const gone = missing.filter((id) => selection.selected.includes(id))
+  function confirm(selected = selection) {
+    if (!scene || selected.selected.length > maxObjects) return
+    const picked = pickedObjects(selected, scene.objects)
+    const gone = missing.filter((id) => selected.selected.includes(id))
     onConfirm({
       documentID,
       title: scene.title || title,
       objectIDs: [...picked.map((o) => o.id), ...gone],
-      names: [...picked.map((o) => o.name), ...gone.map(() => '')],
+      names: [...picked.map(pickerObjectLabel), ...gone.map(() => '')],
     })
   }
+  function onSearchKey(e: KeyboardEvent<HTMLInputElement>) {
+    e.stopPropagation()
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    } else if (e.key === 'ArrowLeft' && !query && onBack) {
+      e.preventDefault()
+      onBack()
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!scene) return
+      const current = activeRow === undefined ? -1 : keyboardOrder.indexOf(activeRow)
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      const next = current < 0
+        ? (step === 1 ? 0 : keyboardOrder.length - 1)
+        : (current + step + keyboardOrder.length) % keyboardOrder.length
+      const id = keyboardOrder[next]!
+      setKeyboardRow(id)
+      document.getElementById(rowID(id))?.scrollIntoView({ block: 'nearest' })
+    } else if ((e.ctrlKey || e.metaKey) && e.key === ' ' && activeRow !== undefined) {
+      e.preventDefault()
+      const id = activeRow
+      setSelection((old) => id === null
+        ? { selected: [], active: null }
+        : listClick(old, id, order, { mod: true, shift: false }))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const target = activeRow === undefined && query.trim() && count === 0 ? order[0] : activeRow
+      if (target === undefined && query.trim() && count === 0) return
+      if (target === null) confirm({ selected: [], active: null })
+      else if (target === undefined || selection.selected.includes(target)) confirm()
+      else confirm({ selected: [target], active: target })
+    }
+  }
+
   function rowAt(x: number, y: number): string | null {
     const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-object]')
     return el && list.current?.contains(el) && el.dataset.matched === 'true'
@@ -152,6 +197,7 @@ export function ScenePicker({
     if (e.button !== 0 || e.shiftKey) return
     const id = rowAt(e.clientX, e.clientY)
     if (!id) return
+    setKeyboardRow(undefined)
     const additive = e.metaKey || e.ctrlKey
     drag.current = {
       anchor: id,
@@ -178,6 +224,7 @@ export function ScenePicker({
     if (d?.moved) return
     const id = rowAt(e.clientX, e.clientY)
     if (!id) return
+    setKeyboardRow(undefined)
     setSelection((old) =>
       listClick(old, id, order, { mod: e.metaKey || e.ctrlKey, shift: e.shiftKey }),
     )
@@ -200,21 +247,13 @@ export function ScenePicker({
         placeholder="搜索物件"
         value={query}
         autoFocus
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          e.stopPropagation()
-          if (e.nativeEvent.isComposing) return
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            confirm()
-          } else if (e.key === 'Escape') {
-            e.preventDefault()
-            onCancel()
-          } else if (e.key === 'ArrowLeft' && !query && onBack) {
-            e.preventDefault()
-            onBack()
-          }
+        aria-controls={scene ? listID : undefined}
+        aria-activedescendant={scene && activeRow !== undefined ? rowID(activeRow) : undefined}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setKeyboardRow(undefined)
         }}
+        onKeyDown={onSearchKey}
       />
       {failed ? (
         <p role="alert">
@@ -228,6 +267,7 @@ export function ScenePicker({
       ) : (
         <div
           ref={list}
+          id={listID}
           className="cc-scene-picker-list"
           role="listbox"
           aria-label="场景里的物件"
@@ -244,8 +284,13 @@ export function ScenePicker({
             type="button"
             role="option"
             className="cc-scene-picker-whole"
+            id={rowID(null)}
+            data-keyboard-active={activeRow === null || undefined}
             aria-selected={count === 0}
-            onClick={() => setSelection({ selected: [], active: null })}
+            onClick={() => {
+              setKeyboardRow(undefined)
+              setSelection({ selected: [], active: null })
+            }}
           >
             整个场景
           </button>
@@ -253,6 +298,8 @@ export function ScenePicker({
             <div
               key={id}
               role="option"
+              id={rowID(id)}
+              data-keyboard-active={activeRow === id || undefined}
               data-object={id}
               data-matched="true"
               data-missing="true"
@@ -268,6 +315,8 @@ export function ScenePicker({
             <div
               key={object.id}
               role="option"
+              id={rowID(object.id)}
+              data-keyboard-active={activeRow === object.id || undefined}
               data-object={object.id}
               data-matched={matched}
               aria-selected={selection.selected.includes(object.id)}
@@ -275,7 +324,7 @@ export function ScenePicker({
               style={{ paddingLeft: 8 + depth * 14 }}
             >
               <span className="cc-mention-icon">{kindIcon[object.kind] ?? '▣'}</span>
-              <span>{object.name || '未命名'}</span>
+              <span>{pickerObjectLabel(object)}</span>
             </div>
           ))}
           {!rows.length && <p>没有匹配的物件</p>}
@@ -292,7 +341,7 @@ export function ScenePicker({
         <button
           type="button"
           disabled={!scene || count > maxObjects}
-          onClick={confirm}
+          onClick={() => confirm()}
         >
           插入
         </button>

@@ -664,17 +664,27 @@ type sceneInput struct {
 // edited with its selection, then what others changed in it, in the scenes the
 // message references and in the scenes this conversation wrote last since the
 // conversation's runs last wrote them.
-func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, scene *SceneContext, referenced []string) ([]sceneInput, error) {
+func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, scene *SceneContext, referenced []creativescene.ReferenceContext) ([]sceneInput, error) {
 	var out []sceneInput
 	var docs []string
+	snapshots := make(map[string]creativescene.ReferenceContext, len(referenced))
+	for _, snapshot := range referenced {
+		snapshots[snapshot.DocumentID] = snapshot
+	}
 	if scene != nil {
-		editor, err := creativescene.EditorContextInTx(ctx, tx, scene.DocumentID, scene.SelectedObjectIDs)
-		if errors.Is(err, creativedocument.ErrNotFound) {
-			return nil, ErrNotFound
+		snapshot, ok := snapshots[scene.DocumentID]
+		if !ok {
+			var err error
+			snapshot, err = creativescene.ReferenceContextInTx(ctx, tx, scene.DocumentID)
+			if errors.Is(err, creativedocument.ErrNotFound) {
+				return nil, ErrNotFound
+			}
+			if err != nil {
+				return nil, err
+			}
+			snapshots[scene.DocumentID] = snapshot
 		}
-		if err != nil {
-			return nil, err
-		}
+		editor := snapshot.EditorContext(scene.SelectedObjectIDs)
 		line := sceneInput{Text: editor.Prompt, Snapshot: map[string]any{"kind": "scene_context",
 			"document_id": editor.DocumentID, "revision": editor.Revision, "selected_object_ids": editor.Selected}}
 		if len(editor.Objects) > 0 {
@@ -686,9 +696,9 @@ func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationI
 		out = append(out, line)
 		docs = append(docs, scene.DocumentID)
 	}
-	for _, id := range referenced {
-		if !slices.Contains(docs, id) {
-			docs = append(docs, id)
+	for _, snapshot := range referenced {
+		if !slices.Contains(docs, snapshot.DocumentID) {
+			docs = append(docs, snapshot.DocumentID)
 		}
 	}
 	runs, err := conversationRunsInTx(ctx, tx, conversationID)
@@ -706,7 +716,13 @@ func sceneInputsInTx(ctx context.Context, tx store.TxAccountScope, conversationI
 		}
 	}
 	for _, id := range docs {
-		summary, err := creativescene.ChangesSinceInTx(ctx, tx, id, runs)
+		var summary *creativescene.ChangeSummary
+		var err error
+		if snapshot, ok := snapshots[id]; ok {
+			summary, err = snapshot.ChangesSinceInTx(ctx, tx, runs)
+		} else {
+			summary, err = creativescene.ChangesSinceInTx(ctx, tx, id, runs)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -758,7 +774,7 @@ func conversationRunsInTx(ctx context.Context, tx store.TxAccountScope, conversa
 	return out, rows.Err()
 }
 
-func bodyMessage(body Body, role string) *schema.Message {
+func bodyMessage(body Body, role string, withSceneRefs bool) *schema.Message {
 	m := &schema.Message{Role: schema.RoleType(role), ToolCallID: body.ToolCallID, ToolName: body.ToolName}
 	var parts []string
 	for _, b := range body.Blocks {
@@ -768,11 +784,8 @@ func bodyMessage(body Body, role string) *schema.Message {
 		if b.Type == "content_ref" && role != "tool" {
 			parts = append(parts, referenceLabel(b.RefID))
 		}
-		if b.Type == "scene_selection" && b.Scene != nil {
-			parts = append(parts, b.Scene.historyLine())
-		}
-		if b.Type == "scene_ref" && b.Scene != nil {
-			parts = append(parts, sceneRefWording(b.Scene, "", false))
+		if line := historySceneLine(b, withSceneRefs); line != "" {
+			parts = append(parts, line)
 		}
 	}
 	m.Content = strings.Join(parts, "\n")

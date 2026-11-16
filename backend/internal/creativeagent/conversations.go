@@ -155,6 +155,22 @@ func sceneRefWording(s *BlockScene, editing string, live bool) string {
 	return b.String()
 }
 
+// historySceneLine renders the stored snapshot without consulting the live scene.
+func historySceneLine(block Block, withSceneRefs bool) string {
+	if block.Scene == nil {
+		return ""
+	}
+	switch block.Type {
+	case "scene_selection":
+		return block.Scene.historyLine()
+	case "scene_ref":
+		if withSceneRefs {
+			return sceneRefWording(block.Scene, "", false)
+		}
+	}
+	return ""
+}
+
 // historyLine words the selection for a later run reading this message, so
 // "this" in an earlier turn still names something.
 func (s *BlockScene) historyLine() string {

@@ -1,16 +1,28 @@
+import type { components } from '../../api/schema'
 import type { Selection } from '../../creative-scene/input/selection.ts'
 import { outlineRows } from '../../creative-scene/outlineRows.ts'
 
 // 助手 @ 菜单里场景的物件列表：按层级列出，可点选、修饰键增减、Shift 范围、
 // 在列表里拖过连续多行。不依赖 three，画布页也能用。
 
-export type PickerObject = {
-  id: string
-  name: string
-  kind: string
-  parent_id?: string | null
-  order: number
+export type PickerObject = Pick<
+  components['schemas']['CreativeSceneObject'],
+  'id' | 'name' | 'kind' | 'parent_id' | 'order'
+>
+
+const objectKinds: Record<string, string> = {
+  primitive: '基础体',
+  model_instance: '模型',
+  light: '灯光',
+  camera: '摄像机',
+  group: '分组',
+  volume: '体积',
 }
+
+export function pickerObjectLabel(object: PickerObject): string {
+  return object.name || objectKinds[object.kind] || '未命名物件'
+}
+
 // matched 为 false 的行是搜索命中项的上级：留着显示层级，但置灰、不能选。
 export type PickerRow = { object: PickerObject; depth: number; matched: boolean }
 
@@ -25,7 +37,7 @@ export function pickerRows(
   const byID = new Map(objects.map((o) => [o.id, o]))
   const matched = new Set(
     objects
-      .filter((o) => (o.name || '未命名').toLowerCase().includes(needle))
+      .filter((o) => pickerObjectLabel(o).toLowerCase().includes(needle))
       .map((o) => o.id),
   )
   const kept = new Set(matched)

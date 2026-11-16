@@ -34,17 +34,21 @@ func TestLiveSceneReferencesAreActedOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.queue()
+	f.accountConsent(f.alice, false)
 
 	// run sends one message in a fresh conversation and returns the scene
-	// tools it called, by name, with the documents they named.
-	run := func(t *testing.T, segments ...InstructionSegment) []string {
+	// writes and the assistant's reply.
+	run := func(t *testing.T, editingScene string, segments ...InstructionSegment) ([]string, string) {
 		t.Helper()
 		c := f.conversation(f.alice, f.canvasID)
-		consent := f.sceneConsent(c.ID)
-		receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
-			"conversation_id": c.ID, "model_key": model, "egress_consent_id": consent.ID,
+		payload := map[string]any{
+			"conversation_id": c.ID, "model_key": model,
 			"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": segments},
-		}))
+		}
+		if editingScene != "" {
+			payload["scene_context"] = SceneContext{DocumentID: editingScene, SelectedObjectIDs: []string{}}
+		}
+		receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, payload))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,27 +67,46 @@ func TestLiveSceneReferencesAreActedOn(t *testing.T) {
 			t.Fatal(err)
 		}
 		var calls []string
+		var reply []string
 		for _, m := range page.Items {
+			if m.RunID != started.ID || m.Role != "assistant" {
+				continue
+			}
 			for _, call := range m.Body.ToolCalls {
-				if m.RunID == started.ID && sceneWriteTool(call.Name) {
+				if sceneWriteTool(call.Name) {
 					calls = append(calls, call.Name+":"+stringArgument(call.Arguments, "document_id"))
+				}
+			}
+			for _, block := range m.Body.Blocks {
+				if block.Type == "text" {
+					reply = append(reply, block.Text)
 				}
 			}
 		}
 		t.Logf("scene writes %v", calls)
-		return calls
+		return calls, strings.Join(reply, "\n")
 	}
-	names := func(t *testing.T, doc string) map[string]string {
+	read := func(t *testing.T, doc string) creativescene.SceneRead {
 		t.Helper()
-		var ref creativescene.ReferenceContext
+		var scene creativescene.SceneRead
 		if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
 			var err error
-			ref, err = creativescene.ReferenceContextInTx(t.Context(), tx, doc)
+			scene, err = creativescene.AgentReadInTx(t.Context(), tx, creativescene.ReadInput{DocumentID: doc})
 			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
-		return ref.Names
+		return scene
+	}
+	mainMaterial := func(t *testing.T, scene creativescene.SceneRead, objectID string) creativescene.MaterialSlot {
+		t.Helper()
+		for _, object := range scene.Objects {
+			if object.ID == objectID {
+				return object.MaterialSlots["main"]
+			}
+		}
+		t.Fatalf("scene %s is missing object %s", scene.DocumentID, objectID)
+		return creativescene.MaterialSlot{}
 	}
 	words := func(s string) InstructionSegment { return InstructionSegment{Type: "text", Text: s} }
 
@@ -92,15 +115,17 @@ func TestLiveSceneReferencesAreActedOn(t *testing.T) {
 		lampA, lampB := sceneObjectID("lampA"), sceneObjectID("lampB")
 		f.addNamedObjects(nave, map[string]string{lampA: "台灯"})
 		f.addNamedObjects(aisle, map[string]string{lampB: "台灯"})
-		calls := run(t, words("直接动手，不用再问我：把"), sceneRef(aisle, lampB), words("改名为「红台灯」。"))
+		before := read(t, nave).Revision
+		calls, _ := run(t, "", words("直接动手：把"), sceneRef(aisle, lampB),
+			words("的材质改成正红色（#ff0000）。只提交材质修改，无需截图或导出。"))
 		if len(calls) == 0 || slices.ContainsFunc(calls, func(c string) bool { return !strings.HasSuffix(c, ":"+aisle) }) {
 			t.Fatalf("scene writes %v must all name %s", calls, aisle)
 		}
-		if got := names(t, aisle)[lampB]; got != "红台灯" {
-			t.Fatalf("referenced lamp named %q", got)
+		if got := mainMaterial(t, read(t, aisle), lampB).Params["color"]; got != "#ff0000" {
+			t.Fatalf("referenced lamp color = %v, want #ff0000", got)
 		}
-		if got := names(t, nave)[lampA]; got != "台灯" {
-			t.Fatalf("the other scene's lamp was renamed to %q", got)
+		if got := read(t, nave).Revision; got != before {
+			t.Fatalf("the other scene's revision changed from %d to %d", before, got)
 		}
 	})
 
@@ -108,13 +133,17 @@ func TestLiveSceneReferencesAreActedOn(t *testing.T) {
 		doc := f.sceneDocument()
 		lamp, key, sofa, table := sceneObjectID("lamp"), sceneObjectID("key"), sceneObjectID("sofa"), sceneObjectID("table")
 		f.addNamedObjects(doc, map[string]string{lamp: "台灯", key: "主光", sofa: "沙发", table: "茶几"})
-		run(t, words("直接动手，不用再问我：把"), sceneRef(doc, lamp, key), words("改名，在原名前加「金属-」；把"),
-			sceneRef(doc, sofa, table), words("改名，在原名前加「胡桃木-」。"))
-		got := names(t, doc)
-		want := map[string]string{lamp: "金属-台灯", key: "金属-主光", sofa: "胡桃木-沙发", table: "胡桃木-茶几"}
-		for id, name := range want {
-			if got[id] != name {
-				t.Fatalf("names %v, want %v", got, want)
+		run(t, doc, words("直接动手：把"), sceneRef(doc, lamp, key), words("改成做旧金属材质（metal@1）。把"),
+			sceneRef(doc, sofa, table), words("改成胡桃木材质（wood@1，色调 #5c4033）。只提交材质修改，无需截图或导出。"))
+		scene := read(t, doc)
+		for _, id := range []string{lamp, key} {
+			if got := mainMaterial(t, scene, id).Preset; got != "metal@1" {
+				t.Fatalf("object %s has preset %q, want metal@1", id, got)
+			}
+		}
+		for _, id := range []string{sofa, table} {
+			if got := mainMaterial(t, scene, id); got.Preset != "wood@1" || got.Params["color"] != "#5c4033" {
+				t.Fatalf("object %s has material %+v, want wood@1 with color #5c4033", id, got)
 			}
 		}
 	})
@@ -123,9 +152,14 @@ func TestLiveSceneReferencesAreActedOn(t *testing.T) {
 		doc := f.sceneDocument()
 		lamp := sceneObjectID("lamp")
 		f.addNamedObjects(doc, map[string]string{lamp: "台灯"})
-		calls := run(t, words("把"), sceneRef(doc, lamp, sceneObjectID("gone")), words("这两个物件都改成红色。"))
+		calls, reply := run(t, "", words("把"), sceneRef(doc, lamp, sceneObjectID("gone")), words("这两个物件都改成红色。"))
 		if len(calls) != 0 {
 			t.Fatalf("a reference to a deleted object must be asked about before any write, got %v", calls)
 		}
+		if strings.TrimSpace(reply) == "" {
+			t.Fatal("the assistant did not reply about the deleted object")
+		}
+		// Check the reply during live acceptance since the question's phrasing can vary.
+		t.Logf("reply for manual confirmation check: %s", reply)
 	})
 }

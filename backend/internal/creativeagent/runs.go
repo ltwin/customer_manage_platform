@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -509,8 +510,8 @@ func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccoun
 // inputs are one read. It returns the distinct scenes referenced. An object
 // no longer in its scene is kept and marked, never dropped: it was part of
 // what the photographer asked about.
-func fillSceneRefsInTx(ctx context.Context, tx store.TxAccountScope, body Body) ([]string, error) {
-	var docs []string
+func fillSceneRefsInTx(ctx context.Context, tx store.TxAccountScope, body Body) ([]creativescene.ReferenceContext, error) {
+	var snapshots []creativescene.ReferenceContext
 	read := map[string]creativescene.ReferenceContext{}
 	for _, block := range body.Blocks {
 		if block.Type != "scene_ref" || block.Scene == nil {
@@ -527,7 +528,7 @@ func fillSceneRefsInTx(ctx context.Context, tx store.TxAccountScope, body Body) 
 				return nil, err
 			}
 			read[block.Scene.DocumentID] = ref
-			docs = append(docs, block.Scene.DocumentID)
+			snapshots = append(snapshots, ref)
 		}
 		block.Scene.Title, block.Scene.Revision = ref.Title, ref.Revision
 		for i := range block.Scene.Objects {
@@ -535,7 +536,7 @@ func fillSceneRefsInTx(ctx context.Context, tx store.TxAccountScope, body Body) 
 			block.Scene.Objects[i].Name, block.Scene.Objects[i].Missing = name, !ok
 		}
 	}
-	return docs, nil
+	return snapshots, nil
 }
 
 // skillInstructionBytes is what the chosen skill will cost in every request. It

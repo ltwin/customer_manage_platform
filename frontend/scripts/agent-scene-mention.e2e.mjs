@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 const fixture = new URL('../.agent-scene-mention-qa.html', import.meta.url)
 // The canvas: two scenes, an image, a text, a video; ?many=1 adds 200 texts.
 await writeFile(
@@ -19,11 +19,11 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
+import '/src/creative-canvas/editor/generation.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {sceneContext} from '/src/creative-scene/context.ts';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
 const node = (id, type, title, data, content) => ({id, metadata:{title, type_key:type}, data, ...(content ? {content} : {})});
 const nodes = [
   node('n-living', 'core.scene', '客厅', {document_id:'cwdoc_living'}),
@@ -37,10 +37,10 @@ if (location.search.includes('many=1'))
     nodes.push(node('n-t' + i, 'core.text', '文本节点' + i, {content_revision_id:'ccrv_t' + i}, {id:'ccrv_t' + i, kind:'text', payload:{body:'内容' + i}, media:[], truncated:false}));
 function App() {
   const [focus, setFocus] = React.useState(null);
-  const [editing, setEditing] = React.useState(false);
+  const [editing, setEditing] = React.useState(null);
   window.__select = setFocus;
   window.__editing = setEditing;
-  return React.createElement(AgentPanel, {account:'qa-account', canvasID:'canvas', canvas:{nodes, edges:[], node_inputs:[]}, defaultOpen:true, canvasFocus:focus, editingScene:editing});
+  return React.createElement(AgentPanel, {account:'qa-account', canvasID:'canvas', canvas:{nodes, edges:[], node_inputs:[]}, defaultOpen:true, canvasFocus:focus, editingSceneID:editing});
 }
 window.__scene = (value) => sceneContext.setState(value, true);
 createRoot(document.getElementById('root')).render(React.createElement(App));
@@ -63,26 +63,43 @@ const scenes = {
       object('table', '茶几', 'primitive', null, 3),
     ] },
   },
-  cwdoc_bed: { id: 'cwdoc_bed', title: '卧室', type_key: 'scene', scene: { objects: [object('bed', '床', 'primitive', null, 1)] } },
+  cwdoc_bed: { id: 'cwdoc_bed', title: '卧室', type_key: 'scene', scene: { objects: [object('bed', '', 'primitive', null, 1)] } },
 }
 
-async function open(query = '', imageInput = true) {
+async function open(query = '', imageInput = true, queued = null) {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const runs = []
+  if (queued) await page.addInitScript((item) => {
+    sessionStorage.setItem('creative-agent-queue:qa-account:conversation', JSON.stringify({ items: [item], paused: false }))
+  }, queued)
+  const finished = {
+    id: 'previous', conversation_id: 'conversation', model_key: 'model', state: 'succeeded',
+    settlement_state: 'settled', trigger_message_id: 'trigger', revision: '1', last_event_seq: '0',
+    pruned_through_seq: '0', snapshot_seq: '0', blocks: [],
+  }
   await page.route('**/api/v1/creative/**', async (route) => {
     const req = route.request()
     const path = new URL(req.url()).pathname
     const json = (body) => route.fulfill({ json: body })
+    if (req.method() === 'GET' && path.endsWith('/egress-consent'))
+      return json({
+        policy_version: noticeVersion, effective: true, revision: '1',
+        consent: { id: 'ccec_qa', policy_version: noticeVersion, library_access: false, granted_at: '2026-11-13T00:00:00Z' },
+      })
     if (req.method() === 'POST') {
       if (path.endsWith('/canvases/canvas/conversations')) return json({ id: 'conversation', title: '新对话' })
-      if (path.endsWith('/egress-consents')) return json({ id: 'consent', approved_revisions: 0 })
       if (path.endsWith('/runs')) {
         runs.push(req.postDataJSON().payload)
+        if (queued && runs.at(-1).instruction.instruction_segments.some((s) => s.document_id === 'cwdoc_gone'))
+          return route.fulfill({ status: 404, json: { error: { code: 'not_found', message: '场景已删除' } } })
         return route.fulfill({ status: 422, json: { error: { code: 'creative_model_unavailable', message: '测试：不真的运行' } } })
       }
     }
+    if (queued && path.endsWith('/canvases/canvas/conversations')) return json({ items: [{ id: 'conversation', title: '测试对话' }] })
+    if (queued && path.endsWith('/conversations/conversation/runs')) return json({ items: [finished] })
+    if (queued && path.endsWith('/agent-runs/previous')) return json(finished)
     const doc = /\/documents\/([^/]+)$/.exec(path)
     if (doc) return json(scenes[decodeURIComponent(doc[1])])
     if (path.endsWith('/agent/catalog'))
@@ -116,7 +133,125 @@ async function pickFromMenu(t, query) {
   await t.page.locator('.cc-prompt-picker').waitFor()
 }
 
+async function enterScene(t, selected = [], documentID = 'cwdoc_living') {
+  await t.page.evaluate(async ({ documentID, selected }) => {
+    window.__editing(documentID)
+    window.__scene(null)
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    window.__scene({ documentID, selected })
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  }, { documentID, selected })
+}
+
 const checks = {
+  async 'keyboard navigation scrolls options into view and inserts the searched object'() {
+    const t = await open('?many=1')
+    await pickFromMenu(t, '')
+    const menu = t.page.locator('.cc-prompt-options')
+    await t.editor.press('ArrowUp')
+    const last = menu.locator('[aria-selected=true]')
+    assert.ok(await menu.evaluate((el) => el.scrollTop > 0))
+    const bounds = await menu.boundingBox()
+    const active = await last.boundingBox()
+    assert.ok(active.y >= bounds.y && active.y + active.height <= bounds.y + bounds.height + 1)
+    await t.editor.press('Escape')
+    await t.editor.fill('')
+    await pickFromMenu(t, '客')
+    await t.editor.press('ArrowRight')
+    const search = t.page.getByRole('searchbox', { name: '搜索物件' })
+    await search.fill('台灯')
+    await search.press('ArrowDown')
+    assert.equal(await t.page.locator('[data-keyboard-active=true]').getAttribute('data-object'), 'lamp')
+    await search.press('Enter')
+    await chips(t.page).first().waitFor()
+    assert.deepEqual((await sent(t)).filter((s) => s.type === 'scene_ref'), [
+      { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['lamp'] },
+    ])
+    return t
+  },
+  async 'two chips for the same scene edit their own object selections'() {
+    const t = await open()
+    const row = (id) => t.page.locator(`.cc-scene-picker [data-object="${id}"]`)
+    const insert = t.page.getByRole('button', { name: '插入', exact: true })
+    for (const id of ['lamp', 'sofa']) {
+      await pickFromMenu(t, '客')
+      await t.page.getByRole('button', { name: '选择「客厅」里的物件' }).click()
+      await row(id).click()
+      await insert.click()
+      await insert.waitFor({ state: 'hidden' })
+      await t.page.keyboard.type(' ')
+    }
+    await chips(t.page).filter({ hasText: '台灯' }).click()
+    assert.equal(await row('lamp').getAttribute('aria-selected'), 'true')
+    await chips(t.page).filter({ hasText: '沙发' }).click()
+    assert.equal(await row('sofa').getAttribute('aria-selected'), 'true')
+    assert.equal(await row('lamp').getAttribute('aria-selected'), 'false')
+    await insert.click()
+    assert.deepEqual((await sent(t)).filter((s) => s.type === 'scene_ref'), [
+      { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['lamp'] },
+      { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['sofa'] },
+    ])
+    return t
+  },
+  async 'a restored selection and a reordered set do not place pending references'() {
+    const t = await open()
+    await enterScene(t, ['lamp', 'key'])
+    assert.equal(await pending(t.page).count(), 0)
+    await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: ['key', 'lamp'] }))
+    await t.page.waitForTimeout(80)
+    assert.equal(await pending(t.page).count(), 0)
+    await t.editor.fill('改成蓝色')
+    assert.deepEqual(await sent(t), [{ type: 'text', text: '改成蓝色' }])
+    await blur(t.page)
+    await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: ['sofa'] }))
+    await pending(t.page).waitFor()
+    await enterScene(t, ['bed'], 'cwdoc_bed')
+    assert.equal(await pending(t.page).count(), 0, 'entering another scene just sets its baseline')
+    return t
+  },
+  async 'a missing queued scene can be replaced without overwriting another draft'() {
+    const t = await open('', true, {
+      id: 'queued', parts: [{ kind: 'text', text: '修改 ' }, { kind: 'chip', title: '已删除场景' }, { kind: 'text', text: ' 为蓝色' }],
+      draft: { conversation: 'conversation', model: 'model', skill: '', text: '修改 @[sref_gone] 为蓝色', scenes: {
+        sref_gone: { documentID: 'cwdoc_gone', title: '已删除场景', objectIDs: ['gone'], names: ['旧台灯'] },
+      } },
+      send: { model: 'model', segments: [{ type: 'text', text: '修改 ' }, { type: 'scene_ref', document_id: 'cwdoc_gone', object_ids: ['gone'] }, { type: 'text', text: ' 为蓝色' }], scene: null },
+      steer: null, hasImage: false,
+    })
+    const restore = t.page.getByRole('button', { name: '重新选择引用' })
+    await restore.waitFor()
+    assert.equal(t.runs.length, 1)
+    assert.equal(await t.page.getByRole('button', { name: '继续发送' }).count(), 0)
+    await t.editor.fill('现在正在写的内容')
+    assert.equal(await restore.getAttribute('aria-disabled'), 'true')
+    await t.editor.fill('')
+    await restore.click()
+    await restore.waitFor({ state: 'hidden' })
+    await chips(t.page).first().waitFor()
+    assert.match(await t.editor.textContent(), /修改 .*旧台灯.* 为蓝色/)
+    await t.editor.evaluate((el) => {
+      el.focus()
+      const range = document.createRange()
+      range.selectNode(el.querySelector('[data-ref]'))
+      getSelection().removeAllRanges()
+      getSelection().addRange(range)
+    })
+    await t.editor.press('Backspace')
+    await t.page.keyboard.type('@')
+    await t.page.locator('.cc-prompt-picker').waitFor()
+    await t.page.getByRole('button', { name: '选择「客厅」里的物件' }).click()
+    const search = t.page.getByRole('searchbox', { name: '搜索物件' })
+    await search.fill('台灯')
+    await search.press('ArrowDown')
+    await search.press('Enter')
+    await chips(t.page).filter({ hasText: '客厅' }).waitFor()
+    const sentAgain = await sent(t, 1)
+    assert.deepEqual(sentAgain.filter((s) => s.type === 'scene_ref'), [
+      { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['lamp'] },
+    ])
+    assert.match(sentAgain.map((s) => s.text ?? '').join(' '), /修改\s+为蓝色/)
+    return t
+  },
   async 'a canvas pick becomes a grey pending reference, is replaced, and turns real on focus'() {
     const t = await open()
     await t.editor.click()
@@ -242,6 +377,70 @@ const checks = {
     assert.deepEqual(segments.find((s) => s.type === 'scene_ref'), { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: ['lamp', 'key', 'table'] })
     return t
   },
+  async 'the insert button and selected scene rows get brighter on hover'() {
+    const t = await open()
+    await pickFromMenu(t, '客')
+    await t.page.getByRole('button', { name: '选择「客厅」里的物件' }).click()
+    const picker = t.page.locator('.cc-scene-picker')
+    const search = picker.getByRole('searchbox', { name: '搜索物件' })
+    const insert = picker.getByRole('button', { name: '插入' })
+    const whole = picker.getByRole('option', { name: '整个场景' })
+    const lamp = picker.locator('[data-object="lamp"]')
+    await lamp.waitFor()
+
+    const colors = (locator) => locator.evaluate((element) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 1
+      const ctx = canvas.getContext('2d')
+      const luminance = () => {
+        const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].map((byte) => {
+          const channel = byte / 255
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      const style = getComputedStyle(element)
+      for (const color of [getComputedStyle(element.closest('.cc-prompt-picker')).backgroundColor, style.backgroundColor]) {
+        ctx.fillStyle = color
+        ctx.fillRect(0, 0, 1, 1)
+      }
+      const background = luminance()
+      ctx.fillStyle = style.color
+      ctx.fillRect(0, 0, 1, 1)
+      const foreground = luminance()
+      return { background, fill: style.backgroundColor, contrast: (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05) }
+    })
+
+    async function assertBrighterOnHover(locator, name) {
+      await search.hover()
+      const rest = await colors(locator)
+      await locator.hover()
+      const hovered = await colors(locator)
+      assert.ok(hovered.background > rest.background, `${name} hover should be brighter (${rest.fill} → ${hovered.fill})`)
+      assert.ok(hovered.contrast >= 4.5, `${name} hover contrast: ${hovered.contrast.toFixed(2)}:1`)
+    }
+
+    await assertBrighterOnHover(insert, 'Insert button')
+    await assertBrighterOnHover(whole, 'Whole scene')
+    await lamp.click()
+    assert.equal(await lamp.getAttribute('aria-selected'), 'true')
+    await assertBrighterOnHover(lamp, 'Selected object')
+    return t
+  },
+  async 'an unnamed object can be found and referenced by its type label'() {
+    const t = await open()
+    await pickFromMenu(t, '卧')
+    await t.page.getByRole('button', { name: '选择「卧室」里的物件' }).click()
+    await t.page.locator('.cc-scene-picker .cc-prompt-search').fill('基础体')
+    const row = t.page.locator('.cc-scene-picker-list [data-object="bed"]')
+    await row.getByText('基础体', { exact: true }).click()
+    await t.page.getByRole('button', { name: '插入' }).click()
+    assert.equal(await chips(t.page).first().textContent(), '◫卧室 · 基础体')
+    assert.deepEqual((await sent(t)).filter((segment) => segment.type !== 'text'), [
+      { type: 'scene_ref', document_id: 'cwdoc_bed', object_ids: ['bed'] },
+    ])
+    return t
+  },
   async 'cut and paste, delete and undo keep the scene reference'() {
     const t = await open()
     await pickFromMenu(t, '卧')
@@ -351,7 +550,7 @@ const checks = {
   },
   async 'more than 50 objects selected in the editor says so and places nothing'() {
     const t = await open()
-    await t.page.evaluate(() => window.__editing(true))
+    await enterScene(t)
     await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: Array.from({ length: 50 }, (_, i) => 'o' + i), names: {} }))
     await pending(t.page).waitFor()
     await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: Array.from({ length: 51 }, (_, i) => 'o' + i), names: {} }))
@@ -361,7 +560,7 @@ const checks = {
   },
   async 'the scene editor selection is referenced in batches, in order'() {
     const t = await open()
-    await t.page.evaluate(() => window.__editing(true))
+    await enterScene(t)
     await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: ['lamp', 'key'], names: { lamp: '台灯', key: '主光' } }))
     await pending(t.page).waitFor()
     await t.editor.click()
@@ -377,7 +576,7 @@ const checks = {
     await blur(t.page)
     await t.page.evaluate(() => window.__scene({ documentID: 'cwdoc_living', selected: ['bed'], names: {} }))
     await pending(t.page).waitFor()
-    await t.page.evaluate(() => window.__editing(false))
+    await t.page.evaluate(() => window.__editing(null))
     await t.page.waitForFunction(() => !document.querySelector('.cc-prompt-editor [data-pending]'))
     const segments = await sent(t)
     assert.deepEqual(segments.filter((s) => s.type === 'scene_ref'), [

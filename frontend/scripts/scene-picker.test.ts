@@ -62,7 +62,7 @@ test('searching keeps the matches with their parents, and a filtered selection s
   assert.deepEqual(rows.map((row) => [row.object.id, row.matched]), [['g1', false], ['key', true]])
   assert.equal(pickerRows(objects, '  ').length, objects.length)
   assert.deepEqual(pickerRows(objects, '未命名'), [])
-  assert.deepEqual(pickerRows([object('x', '', null, 1)], '未命名').map((row) => row.object.id), ['x'])
+  assert.deepEqual(pickerRows([object('x', '', null, 1)], '基础体').map((row) => row.object.id), ['x'])
   // Selected before the search narrowed the list: still picked, in list order.
   const sel = { selected: ['sofa', 'key'], active: 'key' }
   assert.deepEqual(pickedObjects(sel, objects).map((o) => o.id), ['key', 'sofa'])

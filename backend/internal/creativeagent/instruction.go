@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -62,6 +63,39 @@ type InstructionSegment struct {
 	// the whole scene; an empty list is a client that lost its selection.
 	DocumentID string   `json:"document_id,omitempty"`
 	ObjectIDs  []string `json:"object_ids,omitempty"`
+}
+
+// UnmarshalJSON checks when a scene field was sent, including zero values.
+func (s *InstructionSegment) UnmarshalJSON(raw []byte) error {
+	type segment InstructionSegment
+	var next segment
+	if err := creativeops.Decode(raw, &next); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	for field := range fields {
+		switch {
+		case strings.EqualFold(field, "object_ids"):
+			if next.Type != "scene_ref" || next.ObjectIDs == nil {
+				return creativeops.ErrValidation
+			}
+		case strings.EqualFold(field, "document_id"):
+			if next.Type != "scene_ref" {
+				return creativeops.ErrValidation
+			}
+		default:
+			if next.Type == "scene_ref" && (strings.EqualFold(field, "text") ||
+				strings.EqualFold(field, "skill_id") || strings.EqualFold(field, "skill_version_id") ||
+				strings.EqualFold(field, "content_revision_id") || strings.EqualFold(field, "command")) {
+				return creativeops.ErrValidation
+			}
+		}
+	}
+	*s = InstructionSegment(next)
+	return nil
 }
 
 // ResolvedSkill is the one skill a submission fixed, with the position it was

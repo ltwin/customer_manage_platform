@@ -495,6 +495,111 @@ func TestASceneReferenceIsFrozenWhereItStood(t *testing.T) {
 	if strings.Count(history, line+"]") != 1 || strings.Contains(history, "先向创作者确认") || strings.Contains(history, name) {
 		t.Fatalf("history line:\n%s", history)
 	}
+
+	// A past scene reference cannot authorize a new run after the account withdraws consent.
+	f.withdraw(f.alice)
+	calls := f.vendor.calls()
+	if _, err := f.startRefRun(c.ID, "", nil, InstructionSegment{Type: "text", Text: "继续讨论灯光"}); !errors.Is(err, ErrConsentRevoked) {
+		t.Fatalf("follow-up without account consent: %v", err)
+	}
+	if f.vendor.calls() != calls {
+		t.Fatal("a follow-up exposed history after consent was withdrawn")
+	}
+}
+
+func TestSceneReferencesSurviveHistoryToolsAndCompaction(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	lamp := sceneObjectID("lamp")
+	f.addPillar(creativedocument.Photographer, doc, lamp, "台灯", 10)
+	first, err := f.startRefRun(c.ID, consent.ID, nil,
+		InstructionSegment{Type: "text", Text: "修改"}, sceneRef(doc, lamp), InstructionSegment{Type: "text", Text: "为蓝色"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.work(f.alice, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.writeScene(creativedocument.Photographer, doc, []string{"object:" + lamp}, map[string]any{"op": "update_objects",
+		"updates": []any{map[string]any{"object_id": lamp, "name": "新的灯名"}}})
+	next, err := f.startRefRun(c.ID, consent.ID, nil, InstructionSegment{Type: "text", Text: "继续"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ordinal int64
+	if err := f.db.QueryRow("SELECT ordinal FROM creative_agent_messages WHERE id=$1", first.TriggerMessageID).Scan(&ordinal); err != nil {
+		t.Fatal(err)
+	}
+	check := func(allowed bool) {
+		t.Helper()
+		h := &runtimeHandler{service: f.service, scope: f.alice, held: claim{RunID: next.ID, ConversationID: c.ID}}
+		history, err := h.readHistory(t.Context(), `{"before_ordinal":0,"limit":20}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var transcript string
+		if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			chat, err := f.service.compactionRequestInTx(t.Context(), tx, c.ID, compactionPlan{CoversThrough: ordinal}, 32000)
+			if err == nil {
+				transcript = chat.Messages[1].Blocks[0].Text
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, text := range []string{history, transcript} {
+			if allowed {
+				inOrder(t, text, "修改", doc, "台灯", lamp, "为蓝色")
+			} else if strings.Contains(text, doc) || strings.Contains(text, lamp) {
+				t.Fatalf("scene metadata left after consent was withdrawn: %s", text)
+			}
+			if strings.Contains(text, "新的灯名") {
+				t.Fatalf("historical name was rewritten: %s", text)
+			}
+		}
+	}
+	check(true)
+	f.withdraw(f.alice)
+	check(false)
+}
+
+func TestEditingContextAndChangesUseTheReferenceSnapshot(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.sceneConsent(c.ID)
+	doc := f.sceneDocument()
+	pillar := sceneObjectID("pillarA")
+	earlier := f.finishedRun(c.ID, consent.ID)
+	f.addPillar(creativedocument.Actor{Kind: "agent", RunID: &earlier}, doc, pillar, "柱 A", 10)
+	f.movePillar(creativedocument.Photographer, doc, pillar, 2)
+	body := Body{Blocks: []Block{{Type: "scene_ref", Scene: &BlockScene{
+		DocumentID: doc, Objects: []BlockSceneObject{{ID: pillar}},
+	}}}}
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		snapshots, err := fillSceneRefsInTx(t.Context(), tx, body)
+		if err != nil {
+			return err
+		}
+		// Another transaction commits after the explicit reference is frozen.
+		f.writeScene(creativedocument.Photographer, doc, []string{"object:" + pillar}, map[string]any{"op": "update_objects",
+			"updates": []any{map[string]any{"object_id": pillar, "name": "后来改名"}}})
+		inputs, err := sceneInputsInTx(t.Context(), tx, c.ID, &SceneContext{DocumentID: doc, SelectedObjectIDs: []string{pillar}}, snapshots)
+		if err != nil {
+			return err
+		}
+		ref := body.Blocks[0].Scene
+		if len(inputs) != 2 || inputs[0].Snapshot["revision"] != ref.Revision || inputs[1].Snapshot["revision"] != ref.Revision ||
+			!strings.Contains(inputs[0].Text, ref.Objects[0].Name) || strings.Contains(inputs[1].Text, "后来改名") {
+			t.Fatalf("scene inputs do not match the reference snapshot: %+v, ref %+v", inputs, ref)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The scene open in the editor is named once, by its own line; a reference to
@@ -615,14 +720,28 @@ func TestASceneReferenceIsChecked(t *testing.T) {
 			}
 		})
 	}
-	// An empty object list is a client that lost its selection, told apart
-	// from an omitted one (the whole scene) only on the wire.
-	_, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
-		"conversation_id": c.ID, "model_key": testModelKey,
-		"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []any{
-			map[string]any{"type": "scene_ref", "document_id": f.sceneDocument(), "object_ids": []string{}}}}}))
-	if !errors.Is(err, creativeops.ErrValidation) {
-		t.Fatalf("empty object list: %v", err)
+	// An omitted object list references the whole scene. On the wire, a
+	// present field has to belong to the segment and carry a valid value.
+	doc := f.sceneDocument()
+	for _, segment := range []map[string]any{
+		{"type": "scene_ref", "document_id": doc, "object_ids": []string{}},
+		{"type": "scene_ref", "document_id": doc, "object_ids": nil},
+		{"type": "scene_ref", "document_id": doc, "text": ""},
+		{"type": "scene_ref", "document_id": doc, "command": ""},
+		{"type": "scene_ref", "document_id": doc, "skill_id": ""},
+		{"type": "scene_ref", "document_id": doc, "skill_version_id": nil},
+		{"type": "scene_ref", "document_id": doc, "content_revision_id": ""},
+		{"type": "text", "text": "原文", "document_id": ""},
+		{"type": "text", "text": "原文", "object_ids": nil},
+		{"type": "scene_ref", "document_id": doc, "unknown": ""},
+	} {
+		_, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
+			"conversation_id": c.ID, "model_key": testModelKey,
+			"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []any{segment}},
+		}))
+		if !errors.Is(err, creativeops.ErrValidation) {
+			t.Fatalf("malformed segment %+v: %v", segment, err)
+		}
 	}
 	if n := f.count("creative_agent_runs", "conversation_id=$1", c.ID); n != 0 {
 		t.Fatalf("refused runs left %d behind", n)

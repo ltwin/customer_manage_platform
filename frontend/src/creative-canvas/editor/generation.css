@@ -485,7 +485,7 @@
   cursor: pointer;
 }
 .cc-prompt-picker button.is-on,
-.cc-prompt-picker button:hover {
+.cc-prompt-picker button:enabled:hover {
   background: var(--s3);
 }
 .cc-prompt-picker button > span:not(.cc-mention-icon) {
@@ -638,11 +638,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cc-scene-picker-list [role='option']:hover {
+.cc-scene-picker-list [role='option']:not([aria-disabled='true']):hover {
   background: var(--s3);
 }
 .cc-scene-picker-list [aria-selected='true'] {
   background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.cc-scene-picker-list [aria-selected='true']:not([aria-disabled='true']):hover {
+  background: color-mix(in srgb, var(--primary) 36%, transparent);
+}
+.cc-scene-picker-list [data-keyboard-active='true'] {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
 }
 .cc-scene-picker-list [aria-disabled='true'] {
   color: var(--fg-3);
@@ -666,6 +673,9 @@
   padding: 0 12px;
   background: var(--primary);
   color: var(--on-primary);
+}
+.cc-scene-picker footer button:enabled:hover {
+  background: color-mix(in srgb, var(--primary) 40%, white);
 }
 .cc-scene-picker footer button:disabled {
   opacity: 0.45;

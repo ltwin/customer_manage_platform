@@ -39,11 +39,18 @@ type ChangeSummary struct {
 // ChangesSinceInTx summarizes what others changed since the conversation's
 // runs last wrote the scene. It is nil when they never wrote it.
 func ChangesSinceInTx(ctx context.Context, tx store.TxAccountScope, documentID string, conversationRuns []string) (*ChangeSummary, error) {
+	return changesSinceInTx(ctx, tx, documentID, conversationRuns, nil)
+}
+
+func changesSinceInTx(ctx context.Context, tx store.TxAccountScope, documentID string, conversationRuns []string, snapshot *creativedocument.Current) (*ChangeSummary, error) {
 	last, err := creativedocument.LastRunRevision(ctx, tx, documentID, conversationRuns)
 	if err != nil || last == 0 {
 		return nil, err
 	}
 	s, err := changesAfter(ctx, tx, func(revision int64) (creativedocument.Current, error) {
+		if revision == 0 && snapshot != nil {
+			return *snapshot, nil
+		}
 		return creativedocument.ReadAtInTx(ctx, tx, documentID, TypeKey, revision)
 	}, documentID, last, conversationRuns)
 	return &s, err
@@ -72,6 +79,9 @@ func changesAfter(ctx context.Context, pages creativedocument.PageReader, at fun
 	}
 	var rows []creativedocument.HistoryRow
 	for _, row := range history {
+		if row.Revision > head.Revision {
+			break
+		}
 		if row.RunID == "" || !slices.Contains(excluded, row.RunID) {
 			rows = append(rows, row)
 		}
@@ -141,46 +151,36 @@ type EditorObject struct {
 	Name string
 }
 
-// EditorContextInTx reads the scene being edited and words it for a run's
-// input. Selected objects no longer in the scene are left out; a scene in the
-// trash is not found.
-func EditorContextInTx(ctx context.Context, tx store.TxAccountScope, documentID string, selected []string) (EditorContext, error) {
-	cur, err := creativedocument.ReadCurrentInTx(ctx, tx, documentID, TypeKey)
-	if err != nil {
-		return EditorContext{}, err
-	}
-	if cur.Document.TrashedAt != nil {
-		return EditorContext{}, creativedocument.ErrNotFound
-	}
-	scene, err := decodeScene(cur.Content.Payload)
-	if err != nil {
-		return EditorContext{}, err
-	}
-	idx := indexObjects(scene.Objects)
-	out := EditorContext{DocumentID: documentID, Title: cur.Title, Revision: cur.Revision, Selected: []string{}}
+// EditorContext words this snapshot as the open scene. It omits selected
+// objects that were already gone at the snapshot revision.
+func (s ReferenceContext) EditorContext(selected []string) EditorContext {
+	out := EditorContext{DocumentID: s.DocumentID, Title: s.Title, Revision: s.Revision, Selected: []string{}}
 	var names []string
 	for _, id := range selected {
-		i, ok := idx[id]
+		name, ok := s.Names[id]
 		if !ok || slices.Contains(out.Selected, id) {
 			continue
 		}
 		out.Selected = append(out.Selected, id)
-		out.Objects = append(out.Objects, EditorObject{ID: id, Name: scene.Objects[i].Name})
-		if name := scene.Objects[i].Name; name != "" {
+		out.Objects = append(out.Objects, EditorObject{ID: id, Name: name})
+		if name != "" {
 			names = append(names, fmt.Sprintf("「%s」(%s)", name, id))
 		} else {
 			names = append(names, id)
 		}
 	}
-	// Objects are named by references in the message now; only a page that
-	// still sends its selection gets it worded here.
-	out.Prompt = fmt.Sprintf("创作者正在编辑场景「%s」(%s，第 %d 版)", out.Title, documentID, cur.Revision)
+	out.Prompt = fmt.Sprintf("创作者正在编辑场景「%s」(%s，第 %d 版)", s.Title, s.DocumentID, s.Revision)
 	if len(names) == 0 {
 		out.Prompt += "。"
 	} else {
 		out.Prompt += "，选中了：" + strings.Join(names, "、") + "。说「这个」「它们」时指的是选中的物件。"
 	}
-	return out, nil
+	return out
+}
+
+// ChangesSinceInTx summarizes changes through this snapshot's revision.
+func (s ReferenceContext) ChangesSinceInTx(ctx context.Context, tx store.TxAccountScope, conversationRuns []string) (*ChangeSummary, error) {
+	return changesSinceInTx(ctx, tx, s.DocumentID, conversationRuns, &s.current)
 }
 
 // ReferenceContext is a scene as a message referencing it saw it: its title
@@ -191,7 +191,8 @@ type ReferenceContext struct {
 	Revision   int64
 	// Names maps every object in the scene to its name; an object absent
 	// from it was not in the scene.
-	Names map[string]string
+	Names   map[string]string
+	current creativedocument.Current
 }
 
 // ReferenceContextInTx reads a referenced scene in the account's scope. A
@@ -208,7 +209,7 @@ func ReferenceContextInTx(ctx context.Context, tx store.TxAccountScope, document
 	if err != nil {
 		return ReferenceContext{}, err
 	}
-	out := ReferenceContext{DocumentID: documentID, Title: cur.Title, Revision: cur.Revision, Names: make(map[string]string, len(scene.Objects))}
+	out := ReferenceContext{DocumentID: documentID, Title: cur.Title, Revision: cur.Revision, Names: make(map[string]string, len(scene.Objects)), current: cur}
 	for _, o := range scene.Objects {
 		out.Names[o.ID] = o.Name
 	}

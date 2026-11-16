@@ -547,7 +547,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					}
 					continue
 				}
-				m := bodyMessage(*meta.Body, meta.Role)
+				m := bodyMessage(*meta.Body, meta.Role, consentHas(consent, "canvas_metadata"))
 				for _, c := range meta.Body.ToolCalls {
 					if c.Name == loadSkillTool || c.Name == readSkillTool {
 						skillCalls[c.ID] = stringArgument(c.Arguments, "skill_version_id")

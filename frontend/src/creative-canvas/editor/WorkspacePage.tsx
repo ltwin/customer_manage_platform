@@ -1325,7 +1325,7 @@ function Workspace({ account }: { account: string }) {
           canvas={view}
           defaultOpen={openAgent}
           canvasFocus={maximized ? null : selection.length === 1 ? selection[0] : null}
-          editingScene={maximized?.typeKey === 'core.scene'}
+          editingSceneID={maximized?.typeKey === 'core.scene' ? maximized.id : null}
         />
       )}
       <header className="cc-header">

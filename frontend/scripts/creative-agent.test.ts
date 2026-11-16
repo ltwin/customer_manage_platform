@@ -592,7 +592,7 @@ test('the queue survives storage and a broken storage is an empty queue', () => 
   assert.deepEqual(readQueue(storage, 'k'), emptyQueue)
 })
 
-test('only words and references steer; a skill keeps the message queued', () => {
+test('only words and content references steer; skills and scene references stay queued', () => {
   assert.deepEqual(
     steerSegments([{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }]),
     [{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }],
@@ -611,6 +611,9 @@ test('only words and references steer; a skill keeps the message queued', () => 
     ],
   )
   assert.equal(steerBlocked(queued('a', { steer: null }), true), '选了 Skill 的消息只能排队')
+  const scene = queued('scene', { send: { model: 'm', segments: [{ type: 'scene_ref', document_id: 'cwdoc_a' }] }, steer: null })
+  assert.equal(steerSegments(scene.send.segments), null)
+  assert.equal(steerBlocked(scene, true), '含场景引用的消息只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), false), '当前模型不支持图片，只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), true), '')
 })
@@ -658,7 +661,7 @@ test('scene references sit in the text by local key and go out in place as scene
 
   // A draft keeps only the references its text uses, and comes back whole.
   const chain = {
-    steps: messageSteps('c', { model: 'm', imageInput: false, revisionIDs: [], segments: agentSegments(text, refs) }),
+    steps: messageSteps('c', { model: 'm', segments: agentSegments(text, refs) }),
     draft: { conversation: 'c', model: 'm', skill: '', text, scenes: usedSceneRefs(text, table) },
   }
   assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)

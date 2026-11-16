@@ -85,8 +85,9 @@ ${auth}
 // 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
 {const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 window.__scene = setSceneContext;
+setSceneContext({ documentID: '${DOC}', selected: [] });
 const nodes = [{id: 'node-scene', metadata: {title: '棚拍布景', type_key: 'core.scene'}, data: {document_id: '${DOC}'}}];
-createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}, editingScene: true}));
+createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}, editingSceneID: '${DOC}'}));
 window.__ready = true;
 </script></body></html>`,
 )

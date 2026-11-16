@@ -71,6 +71,7 @@ const groups: { name: string; kinds: (kind: string) => boolean }[] = [
   },
 ]
 type Expanded = {
+  key: string
   documentID: string
   title: string
   initial: string[]
@@ -270,6 +271,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     }
     if (expand)
       setExpanded({
+        key: item.key,
         documentID: item.scene.documentID,
         title: item.scene.title,
         initial: [],
@@ -297,7 +299,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [references])
   // 点正文里的场景标签：打开它的物件列表，确认后用新引用换掉它（换的是新键，撤销回到旧的）。
-  function editScene(chip: HTMLElement, scene: SceneRefDraft) {
+  function editScene(chip: HTMLElement, key: string, scene: SceneRefDraft) {
     const range = document.createRange()
     range.selectNode(chip)
     const rect = chip.getBoundingClientRect()
@@ -309,6 +311,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
       y: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 420)),
     })
     setExpanded({
+      key,
       documentID: scene.documentID,
       title: scene.title,
       initial: scene.objectIDs,
@@ -319,11 +322,11 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
   function onPickerKey(e: KeyboardEvent<HTMLElement>): boolean {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      if (items.length)
-        setIndex(
-          (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) %
-            items.length,
-        )
+      if (items.length) {
+        const next = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+        setIndex(next)
+        document.getElementById(`${listID}-${next}`)?.scrollIntoView({ block: 'nearest' })
+      }
       return true
     }
     if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && items.length) {
@@ -562,10 +565,9 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         onClick={(e) => {
           if (disabled || !(e.target instanceof Element)) return
           const chip = e.target.closest<HTMLElement>('[data-ref]')
-          const scene = references.find(
-            (r) => r.sourceID === chip?.dataset.ref,
-          )?.scene
-          if (chip && scene && onSceneRef) editScene(chip, scene)
+          const key = chip?.dataset.ref
+          const scene = references.find((r) => r.sourceID === key)?.scene
+          if (chip && key && scene && onSceneRef) editScene(chip, key, scene)
         }}
         onBlur={(e) => {
           rememberCaret()
@@ -632,7 +634,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
           >
             {expanded ? (
               <ScenePicker
-                key={expanded.documentID}
+                key={expanded.key}
                 documentID={expanded.documentID}
                 title={expanded.title}
                 initial={expanded.initial}
@@ -663,6 +665,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
                   className="cc-prompt-search"
                   aria-label="搜索可引用的节点"
                   aria-controls={listID}
+                  aria-activedescendant={items.length ? `${listID}-${active}` : undefined}
                   placeholder="搜索标题、类型或文本内容"
                   value={query ?? ''}
                   onChange={(e) => {

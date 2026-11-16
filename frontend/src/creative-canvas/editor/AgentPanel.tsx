@@ -150,6 +150,14 @@ const noMessages: Message[] = []
 // 一次发送的结局；skipped 是链没落盘、请求没有发出。
 type SendOutcome = ChainOutcome | { kind: 'skipped' }
 
+const unavailableSceneMessage = '引用的场景已不可用，请重新选择'
+
+function sceneReferenceGone(outcome: SendOutcome): boolean {
+  return outcome.kind === 'rejected' &&
+    outcome.error.code === 'not_found' &&
+    Object.keys(outcome.chain.draft?.scenes ?? {}).length > 0
+}
+
 // 队列只是这个标签页的便利：存储不可用时只留在内存里。
 function queueStorage(): Storage | null {
   try {
@@ -216,7 +224,7 @@ export default function AgentPanel({
   canvas,
   defaultOpen = false,
   canvasFocus = null,
-  editingScene = false,
+  editingSceneID = null,
 }: {
   account: string
   canvasID: string
@@ -226,7 +234,7 @@ export default function AgentPanel({
   // 画布上唯一选中的节点；没有或多选时为 null。
   canvasFocus?: string | null
   // 3D 编辑器开着：选中目标改看编辑器里的物件。
-  editingScene?: boolean
+  editingSceneID?: string | null
 }) {
   const [open, setOpen] = useState(defaultOpen)
   // Runs are followed for as long as this canvas is open, panel or no panel.
@@ -255,7 +263,7 @@ export default function AgentPanel({
           canvasID={canvasID}
           canvas={canvas}
           canvasFocus={canvasFocus}
-          editingScene={editingScene}
+          editingSceneID={editingSceneID}
           onClose={() => setOpen(false)}
         />
       )}
@@ -267,14 +275,14 @@ function AgentConversation({
   canvasID,
   canvas,
   canvasFocus,
-  editingScene,
+  editingSceneID,
   onClose,
 }: {
   account: string
   canvasID: string
   canvas?: api.Canvas | null
   canvasFocus: string | null
-  editingScene: boolean
+  editingSceneID: string | null
   onClose: () => void
 }) {
   const storageKey = agentPendingKey(account, canvasID)
@@ -430,7 +438,7 @@ function AgentConversation({
   const compactPercent = catalog?.limits.auto_compact_percent ?? 0
   const ring = ringView(usage, chosenModel, compactPercent)
   const command = waiting ? null : parseCommand(draft)
-  const scene = useStore(sceneContext)
+  const scene = useStore(sceneContext, (value) => value?.documentID === editingSceneID ? value : null)
   const locked = busy || !!pending || storageBroken
   const hasImage = referenced.some((item) => item.kind === 'image')
   const scenesUsed = usedSceneRefs(draft, sceneRefs)
@@ -469,13 +477,14 @@ function AgentConversation({
 
   // 选中进入待选引用：只在选中目标变化时产生（未选 → 选中、A → B）。点进输入框再切出、
   // 选中没变，不会再产生；在画布和 3D 编辑器之间切换只换基线，不产生。
-  const selectionTarget = editingScene
-    ? scene?.selected.length
-      ? `${scene.documentID}:${scene.selected.join(',')}`
-      : null
+  // undefined means the open scene has not reported its initial selection.
+  const selectionTarget = editingSceneID
+    ? scene && scene.selected.length
+      ? JSON.stringify([...new Set(scene.selected)].sort())
+      : scene ? null : undefined
     : canvasFocus
   const baseline = useRef(selectionTarget)
-  const baselineView = useRef(editingScene)
+  const baselineView = useRef(editingSceneID)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [pendingRequest, setPendingRequest] = useState<string | null>(null)
   function clearPending() {
@@ -485,7 +494,7 @@ function AgentConversation({
   }
   // 选中目标能引用时，返回它在输入框里的键；场景先登记成新的场景引用。
   function pendingTarget(): string | null {
-    if (editingScene) {
+    if (editingSceneID) {
       if (!scene?.selected.length || scene.selected.length > maxSceneRefObjects)
         return null
       if (!usedDocs.has(scene.documentID) && usedDocs.size >= maxSceneRefs)
@@ -515,8 +524,9 @@ function AgentConversation({
       : null
   }
   useEffect(() => {
-    if (baselineView.current !== editingScene || waiting) {
-      baselineView.current = editingScene
+    if (baselineView.current !== editingSceneID || selectionTarget === undefined ||
+        baseline.current === undefined || waiting) {
+      baselineView.current = editingSceneID
       baseline.current = selectionTarget
       clearPending()
       return
@@ -529,7 +539,7 @@ function AgentConversation({
     else clearPending()
     // Only a change of what is selected places a reference.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectionTarget, editingScene, waiting])
+  }, [selectionTarget, editingSceneID, waiting])
   // 登记好的引用渲染进 references 之后，再放进输入框。
   const pendingReady =
     !!pendingRequest && references.some((ref) => ref.sourceID === pendingRequest)
@@ -541,23 +551,23 @@ function AgentConversation({
   }, [pendingRequest, pendingReady])
   // 点发送时先把待选引用转正，等这一轮渲染出新正文后再发，
   // 引用数量、图片能力这些检查都按转正后的正文算。
-  const [sendQueued, setSendQueued] = useState(false)
+  const [submitAfterCommit, setSubmitAfterCommit] = useState(false)
   function submit() {
     if (pendingKey && !waiting) {
       editor.current?.commitPending()
       setPendingKey(null)
-      setSendQueued(true)
+      setSubmitAfterCommit(true)
       return
     }
     sendDraft()
   }
   useEffect(() => {
-    if (!sendQueued) return
-    setSendQueued(false)
+    if (!submitAfterCommit) return
+    setSubmitAfterCommit(false)
     sendDraft()
-    // sendDraft reads this render's draft, which is what was queued.
+    // sendDraft reads the draft after the pending reference was committed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sendQueued])
+  }, [submitAfterCommit])
   const unsupportedImage =
     hasImage &&
     !(waiting ? runImageInput : chosenModel?.capability.image_input)
@@ -880,13 +890,9 @@ function AgentConversation({
         !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped))
       ) {
         // 已经停了的那条被拒：没有运行要停，草稿照常放回，不再报错。
-        const sceneGone =
-          outcome.kind === 'rejected' &&
-          outcome.error.code === 'not_found' &&
-          Object.keys(outcome.chain.draft?.scenes ?? {}).length > 0
         setError(
-          sceneGone
-            ? '引用的场景已不可用，请重新选择'
+          sceneReferenceGone(outcome)
+            ? unavailableSceneMessage
             : outcome.error instanceof Error
               ? outcome.error.message
               : '提交结果暂不确定，请确认原操作',
@@ -1066,6 +1072,7 @@ function AgentConversation({
         skill_version_id: selected.skill_version_id,
       })
     const editing = sceneContext.getState()
+    const openScene = editing?.documentID === editingSceneID ? editing : null
     const parts = outgoingParts(
       segments,
       titleOf,
@@ -1075,7 +1082,7 @@ function AgentConversation({
     const send: QueuedMessage['send'] = {
       model,
       segments,
-      scene: editing,
+      scene: openScene,
     }
     const running = !!active
     // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框，
@@ -1113,7 +1120,20 @@ function AgentConversation({
       draft: saved,
     })
   }
-  // 队首发出：没发出去或被拒，放回队首并暂停，等摄影师点「继续发送」。
+  // 队首发出：没发出去或被拒，放回队首并暂停。场景失效时先移回输入框更换引用。
+  function returnToQueue(queue: ConversationQueue, item: QueuedMessage, outcome: SendOutcome) {
+    return putBack(queue, sceneReferenceGone(outcome) ? { ...item, sceneUnavailable: true } : item, true)
+  }
+
+  const draftOccupied = !!draft.trim() || !!skill || attachments.items.length > 0
+  function restoreQueuedScene(item: QueuedMessage) {
+    if (locked || draftOccupied || !item.sceneUnavailable || item.sending) return
+    clearPending()
+    restoreDraft(item.draft)
+    updateQueue(queueKey, (q) => removeQueued(q, item.id))
+    setError(unavailableSceneMessage)
+  }
+
   async function sendQueued(item: QueuedMessage) {
     showOutgoing(item.parts, false)
     const outcome = await sendMessage(item.send, {
@@ -1122,7 +1142,7 @@ function AgentConversation({
     })
     if (outcome.kind === 'rejected' || outcome.kind === 'skipped')
       updateQueue(agentQueueKey(account, item.draft.conversation), (q) =>
-        putBack(q, item, true),
+        returnToQueue(q, item, outcome),
       )
   }
   // 插队：运行进行中走 steers，等补充时走 supplements。气泡同帧出现，
@@ -1186,7 +1206,8 @@ function AgentConversation({
     if (queued && saved.draft && outcome.kind === 'rejected') {
       updateQueue(agentQueueKey(account, saved.draft.conversation), (q) => {
         const item = q.items.find((other) => other.id === queued)
-        return item ? putBack(q, item, !input) : q
+        if (!item) return q
+        return input ? putBack(q, item) : returnToQueue(q, item, outcome)
       })
       if (input)
         steerRefused(outcome, saved.steps[0]?.path.endsWith('/supplements') ?? false)
@@ -1199,7 +1220,7 @@ function AgentConversation({
   }
   // 「继续发送」：运行还在进行就只解除暂停，等它结束；否则立刻发出队首。
   function resumeSending() {
-    if (locked) return
+    if (locked || queue.items[0]?.sceneUnavailable) return
     if (latest) {
       updateQueue(queueKey, (q) => ({ ...q, paused: false }))
       return
@@ -1837,10 +1858,12 @@ function AgentConversation({
               items={shownQueue}
               paused={queue.paused}
               locked={locked}
+              draftOccupied={draftOccupied}
               steerReason={steerReason}
               onSteer={(item) => void steerQueued(item)}
               onRemove={(id) => updateQueue(queueKey, (q) => removeQueued(q, id))}
               onResume={resumeSending}
+              onRestore={restoreQueuedScene}
             />
           )}
           {(latest || starting) && <RunStatus run={latest} />}
@@ -1920,7 +1943,7 @@ function AgentConversation({
               </p>
             )}
             {!waiting &&
-              editingScene &&
+              editingSceneID &&
               (scene?.selected.length ?? 0) > maxSceneRefObjects && (
                 <p className="cc-agent-hint" role="status">
                   一次最多引用 {maxSceneRefObjects} 个物件
