@@ -1,0 +1,44 @@
+{
+  "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
+  "revision": 4,
+  "id": "canvas-node-outline",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-11-16T04:07:29.766Z",
+  "updatedAt": "2026-11-16T06:40:21.385Z",
+  "risk": {
+    "factors": [
+      "data-migration"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-16T06:16:26.733Z",
+      "contentHash": "330065717ba355e6"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-16T06:40:21.129Z",
+      "contentHash": "5d7ccd73fbc70fa2",
+      "deltaHash": "5fa10bc0167504e0"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [
+    {
+      "at": "2026-11-16T06:21:30.506Z",
+      "summary": "调查撤销链发现撤销删除会重置节点行创建时间：新增 creative_graph_identities.created_at 列与回填迁移（0084），风险面加 data-migration；范围与验收不变",
+      "contentHash": "33d0111815737b09",
+      "added": [
+        "data-migration"
+      ],
+      "removed": []
+    }
+  ],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
