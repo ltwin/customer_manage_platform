@@ -647,16 +647,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/creative/conversations/{id}/egress-consents": {
+    "/creative/egress-consent": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 读取本账号对发送前说明的同意；前端据此决定是否弹出说明 */
+        get: operations["getCreativeEgressConsent"];
         put?: never;
-        /** 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门 */
+        /**
+         * 同意当前版本的发送前说明，或修改是否允许检索素材库
+         * @description 账号级同意：之后换对话、换浏览器都不再询问，直到说明版本升级或摄影师撤回。 与现有同意的版本和素材库选择相同时不新增记录，返回现状。 policy_version 不是服务端当前版本时返回 409 creative_egress_policy_changed； expected_revision 与当前状态版本不符（例如另一台设备刚撤回或改过）时返回 409 creative_revision_conflict， 客户端应重新读取状态再请摄影师确认。
+         */
         post: operations["grantCreativeEgressConsent"];
         delete?: never;
         options?: never;
@@ -664,7 +668,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/creative/egress-consents/{id}/revoke": {
+    "/creative/egress-consent/revoke": {
         parameters: {
             query?: never;
             header?: never;
@@ -673,7 +677,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 阻止后续外发；不承诺召回已发出的内容 */
+        /**
+         * 撤回外发同意；不能再开始新的回复，进行中的回复在下一次调用模型前停下，已发出的内容无法召回
+         * @description 已经没有同意时返回现状，不报错。本账号所有对话的压缩摘要随之失效。
+         */
         post: operations["revokeCreativeEgressConsent"];
         delete?: never;
         options?: never;
@@ -4355,13 +4362,11 @@ export interface components {
             schema_version: 1;
             instruction_segments: components["schemas"]["CreativeAgentInstructionSegment"][];
         };
-        /** @description 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。 */
+        /** @description 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。 外发按账号当前有效的同意核对，客户端不传授权；没有有效同意时返回 403 creative_egress_required 或 409 creative_egress_revoked。 */
         CreativeAgentRunPayload: {
             instruction: components["schemas"]["CreativeAgentInstruction"];
             /** @description 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。 */
             model_key: string;
-            /** @description 本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次， 所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。 */
-            egress_consent_id: string;
             /** @description 在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入， 助手据此只改选中的物件。画布视图里发起时不带。 */
             scene_context?: {
                 document_id: string;
@@ -4432,10 +4437,10 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAgentSupplementPayload"];
         };
+        /** @description 重试按账号当前有效的同意核对，客户端不传授权。 */
         CreativeAgentRetryPayload: {
             /** @description 当前只恢复未提交结果的 read_skill_resource；模型、成功或未知步骤明确拒绝。 */
             step_ids: string[];
-            egress_consent_id: string;
         };
         CreativeAgentRetryRequest: {
             /** Format: uuid */
@@ -4455,6 +4460,7 @@ export interface components {
             /** @description 由服务端从会话读出；客户端给的对不上也不采信。 */
             canvas_id: string;
             trigger_message_id: string;
+            /** @description 运行准入时账号当前有效的外发同意（准入证据）；本次变更前创建的运行指向当时的会话级授权。 */
             egress_consent_id: string;
             model_key: string;
             skill_id?: string;
@@ -4698,35 +4704,38 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeAgentConversationCreatePayload"];
         };
-        CreativeEgressConsentScope: {
-            /** @enum {string} */
-            mode: "selected_revisions" | "account_library";
-            data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
-        };
-        /** @description 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。 */
-        CreativeEgressConsent: {
+        CreativeEgressAccountConsent: {
             id: string;
-            /** @enum {string} */
-            purpose: "creative_assistance";
-            conversation_id?: string;
-            scope: components["schemas"]["CreativeEgressConsentScope"];
+            /** @description 同意时的说明版本，可能低于当前版本 */
             policy_version: string;
-            revision: components["schemas"]["CreativeRevision"];
+            /** @description 是否允许助手检索素材库 */
+            library_access: boolean;
             /** Format: date-time */
             granted_at: string;
-            /** Format: date-time */
+        };
+        /** @description 本账号对发送前说明的同意。内容发给平台签约的模型服务商；不对摄影师列出具体服务商， 每次调用实际发往哪家记录在调用证据上。 */
+        CreativeEgressConsentState: {
+            /** @description 服务端当前的说明版本 */
+            policy_version: string;
+            /** @description 当前同意存在，且版本等于 policy_version */
+            effective: boolean;
+            /** @description 状态版本；从未同意过时为 "0" */
+            revision: string;
+            /** @description 当前同意；从未同意或已撤回时为 null */
+            consent: components["schemas"]["CreativeEgressAccountConsent"] | null;
+            /**
+             * Format: date-time
+             * @description 仅在当前没有同意、且最近一次是撤回时返回
+             */
             revoked_at?: string;
-            /** @description 本次授权覆盖的修订数量；清单另存不随回执外发 */
-            approved_revisions: number;
         };
         CreativeEgressConsentGrantPayload: {
-            /** @enum {string} */
-            purpose: "creative_assistance";
-            /** @enum {string} */
-            mode: "selected_revisions" | "account_library";
-            data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
-            /** @description 本条消息显式引用的内容修订，两种模式均可提供且运行引用必须在清单内。account_library 另允许助手按需查找资产库；历史内容按本对话引用判定。 */
-            selected_revision_ids?: string[];
+            /** @description 摄影师看到的说明版本，必须等于服务端当前版本 */
+            policy_version: string;
+            /** @description 是否允许助手检索素材库 */
+            library_access: boolean;
+            /** @description 发起方读到的 CreativeEgressConsentState.revision；与服务端当前状态不符时返回 409 creative_revision_conflict，不写入 */
+            expected_revision: string;
         };
         GrantCreativeEgressConsentRequest: {
             /** Format: uuid */
@@ -4735,9 +4744,7 @@ export interface components {
             client_created_at: string;
             payload: components["schemas"]["CreativeEgressConsentGrantPayload"];
         };
-        CreativeEgressConsentRevokePayload: {
-            expected_revision: components["schemas"]["CreativeRevision"];
-        };
+        CreativeEgressConsentRevokePayload: Record<string, never>;
         RevokeCreativeEgressConsentRequest: {
             /** Format: uuid */
             operation_id: string;
@@ -10387,15 +10394,42 @@ export interface operations {
             };
         };
     };
+    getCreativeEgressConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeEgressConsentState"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     grantCreativeEgressConsent: {
         parameters: {
             query?: never;
             header: {
                 "Idempotency-Key": string;
             };
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -10405,12 +10439,12 @@ export interface operations {
         };
         responses: {
             /** @description 成功；同一操作回放原回执 */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreativeEgressConsent"];
+                    "application/json": components["schemas"]["CreativeEgressConsentState"];
                 };
             };
             /** @description 请求失败 */
@@ -10430,9 +10464,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
             };
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -10447,7 +10479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreativeEgressConsent"];
+                    "application/json": components["schemas"]["CreativeEgressConsentState"];
                 };
             };
             /** @description 请求失败 */

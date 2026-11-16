@@ -15,8 +15,6 @@ export type QueuedMessage = {
   // 作为新一轮发出时原样交给 messageSteps，与当时直接发送的请求一致。
   send: {
     model: string
-    imageInput: boolean
-    revisionIDs: string[]
     segments: Segment[]
     scene: SceneContext | null
   }

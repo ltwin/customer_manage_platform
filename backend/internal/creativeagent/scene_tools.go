@@ -289,7 +289,7 @@ func sceneRefusal(err error) error {
 // sceneConsentInTx is the scene's share of the run's consent: scenes are
 // canvas metadata, read and sent only when the canvas may leave the account.
 func sceneConsentInTx(ctx context.Context, tx store.TxAccountScope, consentID string) error {
-	consent, err := readConsentForUpdate(ctx, tx, consentID)
+	consent, err := effectiveConsentInTx(ctx, tx, consentID)
 	if err != nil {
 		return err
 	}
@@ -402,7 +402,11 @@ func (h *runtimeHandler) editScene(ctx context.Context, step, raw string) (any, 
 			BasedOn: int64(args.BasedOn), Operations: args.Operations, ConversationRuns: runs,
 			// A texture is one the run may read, or one a readable material holds.
 			ReadableImage: func(ctx context.Context, tx store.TxAccountScope, id string) (bool, error) {
-				return textureReadableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+				scope, err := readScopeInTx(ctx, tx)
+				if err != nil {
+					return false, err
+				}
+				return textureReadableInTx(ctx, tx, h.held.RunID, scope, id)
 			}})
 	})
 }

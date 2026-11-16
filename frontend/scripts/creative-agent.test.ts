@@ -14,9 +14,7 @@ import {
   isActiveRun,
   recalledModel,
   runFailure,
-  egressNoticeVersion,
-  noticeSeen,
-  rememberNotice,
+  egressPolicyVersion,
 } from '../src/creative-canvas/editor/agentState.ts'
 import type {
   AgentRun,
@@ -111,18 +109,20 @@ test('a stop asked for before the run existed stays with the uncertain chain', (
   })
   const chain = {
     steps: [
-      step('/conversations/c/egress-consents', 'consent'),
-      step('/conversations/c/runs', 'run'),
+      step('/canvases/canvas/conversations', 'conversation'),
+      step('/conversations/{conversation}/runs', 'run'),
     ],
     stopped: true as const,
   }
   assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)
-  assert.equal(advanceChain(chain, { id: 'consent-id' })?.stopped, true)
+  assert.equal(advanceChain(chain, { id: 'conversation-id' })?.stopped, true)
   const plain = { steps: chain.steps }
   assert.equal(pendingAgentChain(JSON.stringify(plain))?.stopped, undefined)
-  assert.equal(advanceChain(plain, { id: 'consent-id' })?.stopped, undefined)
+  assert.equal(advanceChain(plain, { id: 'conversation-id' })?.stopped, undefined)
 })
-test('legacy records become a chain that replays the original bytes', () => {
+// 上线前存下的链里有逐条授权那一步：接口已经没有了，读出时去掉，随后那次运行
+// 的 egress_consent_id 也一并去掉；其余请求逐字保留。
+test('legacy records become a chain without the per-message grant', () => {
   const body = JSON.stringify({
     operation_id: 'operation-one',
     client_created_at: '2026-09-17T00:00:00Z',
@@ -150,15 +150,27 @@ test('legacy records become a chain that replays the original bytes', () => {
     draft,
   }
   const chain = pendingAgentChain(JSON.stringify(legacy))!
-  assert.equal(chain.steps.length, 2)
-  assert.equal(stepBody(chain.steps[0]), body)
-  assert.deepEqual(chain.steps[1], {
-    path: '/conversations/c/runs',
-    operation: 'stable-run-operation',
-    createdAt: '2026-09-17T00:00:01Z',
-    payload: nextRun,
-  })
+  const { egress_consent_id: _dropped, ...run } = nextRun
+  assert.deepEqual(chain.steps, [
+    {
+      path: '/conversations/c/runs',
+      operation: 'stable-run-operation',
+      createdAt: '2026-09-17T00:00:01Z',
+      payload: run,
+    },
+  ])
   assert.deepEqual(chain.draft, draft)
+  // 新格式的链里留着授权步骤时同样去掉。
+  const saved = pendingAgentChain(
+    JSON.stringify({
+      steps: [
+        { path: '/conversations/c/egress-consents', operation: 'grant', createdAt: '2026-11-01T00:00:00Z', payload: {} },
+        { path: '/conversations/c/runs', operation: 'run', createdAt: '2026-11-01T00:00:00Z', payload: { ...nextRun } },
+      ],
+    }),
+  )!
+  assert.deepEqual(saved.steps.map((step) => step.operation), ['run'])
+  assert.equal('egress_consent_id' in saved.steps[0].payload, false)
   // 一步的旧记录（补充、取消）照样能读。
   const one = pendingAgentChain(
     JSON.stringify({ path: '/agent-runs/r/cancel', operation: 'operation-one', body }),
@@ -176,13 +188,11 @@ test('legacy records become a chain that replays the original bytes', () => {
     pendingAgentChain(JSON.stringify({ ...legacy, path: '/agent-runs/r/retry' })),
   )
 })
-test('a chain carries the new conversation and grant into the later steps', () => {
+test('a chain carries the new conversation into the later steps', () => {
   const steps = [
     conversationStep('canvas'),
     ...messageSteps(conversationSlot, {
       model: 'vision',
-      imageInput: true,
-      revisionIDs: ['ccrv_a'],
       segments: [{ type: 'text', text: '原问题' }],
     }),
   ]
@@ -191,39 +201,30 @@ test('a chain carries the new conversation and grant into the later steps', () =
     draft: { conversation: '', model: 'vision', skill: '', text: '原问题' },
   }
   assert.equal(steps[0].path, '/canvases/canvas/conversations')
+  // 运行请求不带授权：服务端按账号的同意核对。
   assert.deepEqual(steps[1].payload, {
-    purpose: 'creative_assistance',
-    mode: 'account_library',
-    data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
-    selected_revision_ids: ['ccrv_a'],
+    model_key: 'vision',
+    instruction: {
+      schema_version: 1,
+      instruction_segments: [{ type: 'text', text: '原问题' }],
+    },
   })
   const opened = advanceChain(chain, { id: 'conversation' })!
   assert.deepEqual(
     opened.steps.map((step) => step.path),
-    ['/conversations/conversation/egress-consents', '/conversations/conversation/runs'],
+    ['/conversations/conversation/runs'],
   )
   assert.equal(opened.draft?.conversation, 'conversation')
-  const granted = advanceChain(opened, { id: 'consent' })!
-  assert.equal(granted.steps[0].payload.egress_consent_id, 'consent')
   // 操作身份在组装时就定了，往后推进不会换。
   assert.deepEqual(
-    granted.steps.map((step) => step.operation),
-    [steps[2].operation],
+    opened.steps.map((step) => step.operation),
+    [steps[1].operation],
   )
-  assert.equal(advanceChain(granted, { id: 'run' }), null)
+  assert.equal(advanceChain(opened, { id: 'run' }), null)
   assert.throws(() => advanceChain(chain, {}))
   // 还没建对话的步骤不能排在最前面。
   assert.throws(() =>
     pendingAgentChain(JSON.stringify({ steps: steps.slice(1) })),
-  )
-  assert.deepEqual(
-    messageSteps('c', {
-      model: 'text',
-      imageInput: false,
-      revisionIDs: [],
-      segments: [],
-    })[0].payload.data_classes,
-    ['text', 'canvas_metadata', 'media_metadata'],
   )
 })
 test('an uncertain step keeps the chain; a retry replays the same identities', async () => {
@@ -232,8 +233,6 @@ test('an uncertain step keeps the chain; a retry replays the same identities', a
       conversationStep('canvas'),
       ...messageSteps(conversationSlot, {
         model: 'm',
-        imageInput: false,
-        revisionIDs: [],
         segments: [{ type: 'text', text: 'hi' }],
       }),
     ],
@@ -255,23 +254,19 @@ test('an uncertain step keeps the chain; a retry replays the same identities', a
   const left = pendingAgentChain(storage.box.raw)!
   assert.equal(left.steps.length, 1)
   assert.equal(left.steps[0].path, '/conversations/conv/runs')
-  assert.equal(left.steps[0].payload.egress_consent_id, 'id-2')
   const second = await performAgentChain(left, slotOf(storage), send)
   assert.equal(second.kind, 'done')
   assert.equal(storage.box.raw, null)
   assert.deepEqual(sent, [
     chain.steps[0].operation,
     chain.steps[1].operation,
-    chain.steps[2].operation,
-    chain.steps[2].operation,
+    chain.steps[1].operation,
   ])
 })
 test('a refusal clears the chain and a stale owner touches nothing', async () => {
   const chain: PendingAgentChain = {
     steps: messageSteps('c', {
       model: 'm',
-      imageInput: false,
-      revisionIDs: [],
       segments: [],
     }),
     draft: { conversation: 'c', model: 'm', skill: '', text: '原文' },
@@ -422,8 +417,6 @@ test('material references preserve order, immutable revisions and retry identity
   const chain = {
     steps: messageSteps('c', {
       model: 'vision',
-      imageInput: true,
-      revisionIDs: materials.map((item) => item.id),
       segments,
     }),
     draft: { conversation: 'c', model: 'vision', skill: '', text, materials },
@@ -484,41 +477,13 @@ test('a refused request says what to do next', () => {
   assert.equal(runFailure(undefined), '')
 })
 
-test('the first-send notice is remembered per account and per notice version', () => {
-  const items = new Map<string, string>()
-  const storage = {
-    getItem: (key: string) => items.get(key) ?? null,
-    setItem: (key: string, value: string) => void items.set(key, value),
-  } as Storage
-  assert.equal(noticeSeen(storage, 'acc_a'), false)
-  rememberNotice(storage, 'acc_a')
-  assert.equal(noticeSeen(storage, 'acc_a'), true)
-  // 另一个账号在同一台设备上仍要看一次。
-  assert.equal(noticeSeen(storage, 'acc_b'), false)
-  // 说明升级了版本：看过旧版的也要再看一次。
-  items.set('creative-egress-notice:acc_a', 'egress-2026-01-1')
-  assert.equal(noticeSeen(storage, 'acc_a'), false)
-  // 读不到本机存储时宁可多弹：当作没看过，写入失败也不打断发送。
-  const broken = {
-    getItem: () => {
-      throw new Error('denied')
-    },
-    setItem: () => {
-      throw new Error('denied')
-    },
-  } as unknown as Storage
-  assert.equal(noticeSeen(broken, 'acc_a'), false)
-  assert.doesNotThrow(() => rememberNotice(broken, 'acc_a'))
-  assert.equal(noticeSeen(null, 'acc_a'), false)
-})
-
 test('the notice version moves together with the backend egress policy version', () => {
   const service = readFileSync(
     new URL('../../backend/internal/creativeagent/service.go', import.meta.url),
     'utf8',
   )
   const policy = /const policyVersion = "([^"]+)"/.exec(service)?.[1]
-  assert.equal(policy, egressNoticeVersion)
+  assert.equal(policy, egressPolicyVersion)
 })
 
 function queued(id: string, extra: Partial<QueuedMessage> = {}): QueuedMessage {
@@ -526,7 +491,7 @@ function queued(id: string, extra: Partial<QueuedMessage> = {}): QueuedMessage {
     id,
     parts: [{ kind: 'text', text: id }],
     draft: { conversation: 'c', model: 'm', skill: '', text: id },
-    send: { model: 'm', imageInput: true, revisionIDs: [], segments: [{ type: 'text', text: id }], scene: null },
+    send: { model: 'm', segments: [{ type: 'text', text: id }], scene: null },
     steer: [{ type: 'text', text: id }],
     hasImage: false,
     ...extra,
@@ -587,7 +552,7 @@ test('a refused send goes back to the head and pauses', () => {
 test('after a reload a message the chain holds stays in the queue as sending, one never handed over is back', () => {
   const queue = { ...markSending(enqueue(emptyQueue, queued('a')), 'a'), settledRun: 'r1' }
   const chain: PendingAgentChain = {
-    steps: messageSteps('c', { model: 'm', imageInput: false, revisionIDs: [], segments: [{ type: 'text', text: 'a' }] }),
+    steps: messageSteps('c', { model: 'm', segments: [{ type: 'text', text: 'a' }] }),
     draft: { conversation: 'c', model: 'm', skill: '', text: 'a', queueItem: 'a' },
   }
   // The chain still decides; a refusal on resend puts it back at the head.

@@ -341,6 +341,14 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 			return llmgateway.ChatRequest{}, err
 		}
 	}
+	// The summarizer is a model request too: closed library search keeps
+	// what its tools returned out of the transcript as well. Read before the
+	// rows are open: the transaction has one connection.
+	consent, err := readScopeInTx(ctx, tx)
+	if err != nil {
+		return llmgateway.ChatRequest{}, err
+	}
+	library := libraryOpen(consent, true)
 	// Newest first, so a range longer than the page loses its oldest end.
 	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body",
 		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool') AND ordinal>$3 AND ordinal<=$4",
@@ -360,7 +368,7 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 		if json.Unmarshal(payload, &body) != nil || isCommand(body) {
 			continue
 		}
-		if line := transcriptLine(role, body); line != "" {
+		if line := transcriptLine(role, body, library); line != "" {
 			lines = append(lines, line)
 		}
 	}
@@ -400,7 +408,7 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 	}, nil
 }
 
-func transcriptLine(role string, body Body) string {
+func transcriptLine(role string, body Body, library bool) string {
 	var b strings.Builder
 	switch role {
 	case "user":
@@ -415,6 +423,10 @@ func transcriptLine(role string, body Body) string {
 		}
 		if contentReadTool(body.ToolName) {
 			b.WriteString("曾读取内容；正文请用 read_asset 重新读取")
+			return b.String()
+		}
+		if !library && libraryResultTool(body.ToolName, "") {
+			b.WriteString(libraryWithheld)
 			return b.String()
 		}
 	}
@@ -900,13 +912,4 @@ func (s *Service) historyBudget(model llmgateway.ModelConfig, measure contextMea
 		Bytes:  requestByteCeiling(s.limits, model) - fixed,
 		Ratio:  measure.Ratio,
 	}
-}
-
-// invalidateCompactionsInTx retires every checkpoint of a conversation whose
-// authorisation was withdrawn. Its summary was written from what that
-// authorisation let leave, and is not carried on after it.
-func invalidateCompactionsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, now time.Time) error {
-	_, err := tx.Update(ctx, "creative_agent_compactions", "invalidated_at=$3, invalidated_reason='consent_revoked'",
-		"conversation_id=$2 AND invalidated_at IS NULL", conversationID, now)
-	return err
 }

@@ -98,30 +98,18 @@ func (f *fixture) queue() {
 
 const testModelKey = "deepseek-flash"
 
-func (f *fixture) consent(scope store.AccountScope, conversationID string, revisionIDs ...string) Consent {
+// consent gives the account a consent in force, library search off, and
+// returns it as the gate sees it. Revisions the old per-message list named
+// now reach the run through its message references; tests that need the
+// library use libraryConsent.
+func (f *fixture) consent(scope store.AccountScope, _ string, _ ...string) Consent {
 	f.t.Helper()
-	payload := map[string]any{
-		"conversation_id": conversationID,
-		"purpose":         "creative_assistance",
-		"mode":            ScopeAccountLibrary,
-		"data_classes":    []string{"text"},
-	}
-	if len(revisionIDs) > 0 {
-		payload["mode"] = ScopeSelectedRevisions
-		payload["selected_revision_ids"] = revisionIDs
-	}
-	receipt, err := f.service.GrantConsent(f.t.Context(), scope, command(f.t, payload))
-	if err != nil {
-		f.t.Fatalf("grant consent: %v", err)
-	}
-	var c Consent
-	if err := json.Unmarshal(receipt.Outcome.Response, &c); err != nil {
-		f.t.Fatal(err)
-	}
-	return c
+	return f.accountConsent(scope, false)
 }
 
-func (f *fixture) startRun(scope store.AccountScope, conversationID, consentID string, segments ...InstructionSegment) (Run, error) {
+// startRun submits a message. The consent argument is kept for the call
+// sites' shape; the server takes the account's consent in force.
+func (f *fixture) startRun(scope store.AccountScope, conversationID, _ string, segments ...InstructionSegment) (Run, error) {
 	f.t.Helper()
 	receipt, err := f.service.CreateRun(f.t.Context(), scope, command(f.t, map[string]any{
 		"conversation_id": conversationID,
@@ -129,8 +117,7 @@ func (f *fixture) startRun(scope store.AccountScope, conversationID, consentID s
 			"schema_version":       instructionSchemaVersion,
 			"instruction_segments": segments,
 		},
-		"model_key":         testModelKey,
-		"egress_consent_id": consentID,
+		"model_key": testModelKey,
 	}))
 	if err != nil {
 		return Run{}, err
@@ -193,8 +180,9 @@ func TestCreatingARunIsOneFactOrNone(t *testing.T) {
 		t.Fatalf("run %+v", run)
 	}
 	for table, cond := range map[string]string{
-		"creative_agent_runs":     "id=$1",
-		"creative_run_inputs":     "run_id=$1",
+		"creative_agent_runs": "id=$1",
+		// The instruction; the canvas summary beside it is a selection row.
+		"creative_run_inputs":     "run_id=$1 AND input_role='instruction'",
 		"creative_run_events":     "run_id=$1 AND seq=1 AND event_type='run.accepted'",
 		"creative_agent_messages": "id=$1",
 	} {
@@ -390,11 +378,7 @@ func TestAWithdrawnAuthorisationStopsTheDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{
-		"consent_id": consent.ID, "expected_revision": "1",
-	})); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	if err := f.work(f.alice, run.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -580,74 +564,6 @@ func TestAConsentUnderAnEarlierNoticeDoesNotStartARun(t *testing.T) {
 	if _, err := f.startRun(f.alice, c.ID, current.ID,
 		InstructionSegment{Type: "text", Text: "帮我理一理。"}); err != nil {
 		t.Fatalf("a consent under the current notice must start the run: %v", err)
-	}
-}
-
-// An authorisation granted for another conversation does not cover this one:
-// the photographer's own earlier turns are part of what leaves the account.
-func TestTheAuthorisationMustBeForThisConversation(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	mine := f.conversation(f.alice, f.canvasID)
-	other := f.conversation(f.alice, f.canvasID)
-	elsewhere := f.consent(f.alice, other.ID)
-	if _, err := f.startRun(f.alice, mine.ID, elsewhere.ID,
-		InstructionSegment{Type: "text", Text: "帮我理一理。"}); !errors.Is(err, ErrEgressRequired) {
-		t.Fatalf("a consent for another conversation must not start this run, got %v", err)
-	}
-	// Named content needs to have been listed: a library-wide grant authorises
-	// what a search finds, not a revision chosen by hand.
-	revision := f.revision(f.alice, "我的参考文字")
-	library := f.consent(f.alice, mine.ID)
-	if _, err := f.startRun(f.alice, mine.ID, library.ID,
-		InstructionSegment{Type: "content_ref", ContentRevisionID: revision}); !errors.Is(err, ErrEgressRequired) {
-		t.Fatalf("named content under a library-wide grant must be refused, got %v", err)
-	}
-	listed := f.consent(f.alice, mine.ID, revision)
-	run, err := f.startRun(f.alice, mine.ID, listed.ID,
-		InstructionSegment{Type: "content_ref", ContentRevisionID: revision})
-	if err != nil {
-		t.Fatalf("a listed revision must be accepted: %v", err)
-	}
-	if err := f.work(f.alice, run.ID); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(f.vendor.prompt(), "我的参考文字") {
-		t.Fatalf("the authorised content never reached the model:\n%s", f.vendor.prompt())
-	}
-}
-
-// An approval is a record, not a retention root. Once one approved revision has
-// nothing holding it, runs under the same authorisation that never send it must
-// still dispatch; checking every approval would let one cleaned-up reference
-// stop the whole conversation.
-func TestAnUnsentApprovalThatLostItsHolderDoesNotStopTheDispatch(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	sent := f.revision(f.alice, "要发送的参考")
-	gone := f.revision(f.alice, "已经删掉的参考")
-	consent := f.consent(f.alice, c.ID, sent, gone)
-	if _, err := f.db.Exec(`DELETE FROM creative_assets WHERE content_revision_id=$1`, gone); err != nil {
-		t.Fatal(err)
-	}
-	run, err := f.startRun(f.alice, c.ID, consent.ID,
-		InstructionSegment{Type: "content_ref", ContentRevisionID: sent})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.work(f.alice, run.ID); err != nil {
-		t.Fatal(err)
-	}
-	after, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.State != RunSucceeded {
-		t.Fatalf("run %+v", after)
-	}
-	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "要发送的参考") || strings.Contains(prompt, "已经删掉的参考") {
-		t.Fatalf("the model saw the wrong content:\n%s", prompt)
 	}
 }
 

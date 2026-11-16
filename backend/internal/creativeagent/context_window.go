@@ -158,7 +158,7 @@ func (s *Service) currentMeasureInTx(ctx context.Context, tx store.TxAccountScop
 	if err != nil {
 		return measure, err
 	}
-	consent, err := readConsentForUpdate(ctx, tx, consentID)
+	consent, err := effectiveConsentInTx(ctx, tx, consentID)
 	if err != nil {
 		return measure, err
 	}

@@ -97,33 +97,7 @@ func TestCharacterReadAssetsAttachesAllowedViewsInOrder(t *testing.T) {
 	}
 	f.service.SetImageReader(characterImageReader{bytes: buf.Bytes(), failed: broken})
 	c := f.conversation(f.alice, f.canvasID)
-	grant, err := f.service.GrantConsent(ctx, f.alice, command(t, map[string]any{
-		"conversation_id": c.ID, "purpose": "creative_assistance", "mode": ScopeAccountLibrary,
-		"data_classes": []string{"text", "media_metadata", "image_preview"}, "selected_revision_ids": []string{card.ContentRevisionID},
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var consent Consent
-	if err := json.Unmarshal(grant.Outcome.Response, &consent); err != nil {
-		t.Fatal(err)
-	}
-	textOnly := f.conversation(f.alice, f.canvasID)
-	narrow, err := f.service.GrantConsent(ctx, f.alice, command(t, map[string]any{
-		"conversation_id": textOnly.ID, "purpose": "creative_assistance", "mode": ScopeAccountLibrary,
-		"data_classes": []string{"text"}, "selected_revision_ids": []string{card.ContentRevisionID},
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var narrowConsent Consent
-	if err := json.Unmarshal(narrow.Outcome.Response, &narrowConsent); err != nil {
-		t.Fatal(err)
-	}
-	// Refused when sent, before the run reserves budget.
-	if _, err := f.startRun(f.alice, textOnly.ID, narrowConsent.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: card.ContentRevisionID}); !errors.Is(err, ErrEgressRequired) {
-		t.Fatalf("card reference without media_metadata: %v", err)
-	}
+	consent := f.accountConsent(f.alice, true)
 	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: card.ContentRevisionID})
 	if err != nil {
 		t.Fatal(err)

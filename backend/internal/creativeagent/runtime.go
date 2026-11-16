@@ -77,6 +77,21 @@ type runtimeHandler struct {
 	// delivering is the input batches the next request carries for the first
 	// time; its dispatch, or the replay of its step, marks them delivered.
 	delivering []int
+	// libraryBound is set when the request just bound carries library tool
+	// results, so its dispatch can refuse it if library search closed since.
+	libraryBound bool
+}
+
+func (h *runtimeHandler) setLibraryBound(carried bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.libraryBound = carried
+}
+
+func (h *runtimeHandler) carriesLibrary() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.libraryBound
 }
 
 func (h *runtimeHandler) setDelivery(batches []int) {
@@ -195,7 +210,7 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		return h.configureTools(ctx)
 	}
 	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		consent, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+		consent, err := effectiveConsentInTx(ctx, tx, h.held.ConsentID)
 		if err != nil {
 			return err
 		}
@@ -646,8 +661,12 @@ func (h *runtimeHandler) readRunResult(ctx context.Context, raw string) (string,
 		if err != nil {
 			return err
 		}
+		scope, err := readScopeInTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		for _, id := range revisions {
-			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+			readable, err := readableInTx(ctx, tx, h.held.RunID, scope, id)
 			if err != nil {
 				return err
 			}

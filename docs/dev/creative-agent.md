@@ -50,8 +50,9 @@ SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文�
 | `Service.ListConversations` | 按画布分页，游标绑定账号与查询串 |
 | `Service.ListMessages` | 从最新往回翻，每页按阅读顺序返回；`before_ordinal` 不含该序号 |
 | `Service.appendMessageInTx` | 受信服务端写入。客户端没有直接发消息的入口：消息要么随触发它的 run 产生，要么来自某个步骤结果 |
-| `Service.GrantConsent` | 记录外发授权。授权即许可外发，不额外引入 `ai_analysis` 权利判断；但选中修订仍须是摄影师自己能展示的（见下） |
-| `Service.RevokeConsent` | 阻止后续外发；不召回已发出的内容，授权证据保留 |
+| `Service.ReadAccountConsent` | 账号对发送前说明的同意状态（`GET /creative/egress-consent`），前端据此决定是否弹出说明 |
+| `Service.GrantAccountConsent` | 同意当前版本的说明或修改素材库选择；说明版本不符返回 `ErrPolicyChanged`，内容相同不新增记录 |
+| `Service.RevokeAccountConsent` | 撤回同意；效果等同说明过期。不召回已发出的内容，同意记录保留，本账号全部压缩摘要失效 |
 | `Service.Catalog` | 本部署真正可用的模型、Skill、工具与冻结上限；Skill 摘要有界（20 条），完整目录走下面两个端口 |
 | `Service.ListSkills` | 选框与斜杠选择器的统一查询；自己的 Skill 与受信平台目录合成一页 |
 | `Service.SkillVersion` | 一个固定版本的摘要与声明；正文与对象地址不出这一层 |
@@ -433,6 +434,44 @@ Gateway 未结费用；数据库锁阻塞至扫描超时后分页不跳账号。
 - `scripts/creative-agent.e2e.mjs` 覆盖了改名、Esc 取消、改名被拒后回滚、归档后切到下一个对话、只读查看、恢复和空列表。
 
 
+## 2026-11-13：账号级外发同意
+
+本节取代上文各阶段关于逐消息授权（`GrantConsent` / `RevokeConsent`、`selected_revision_ids` 清单、
+「本对话被撤销授权列过的内容一律拒读」、按会话撤销）的描述。设计见
+`.lti/features/2026-11-11-egress-consent-account-level/design.md`。
+
+- **同意按账号记在服务端**：`creative_egress_consents` 中 `conversation_id` 为空的行是账号级同意，
+  `creative_egress_consent_states` 每账号一行指向当前同意（迁移 0083）。说明版本 `policyVersion =
+  egress-2026-11-1`，新增「后台任务完成后助手可能自动回复并计费」条款，素材库检索是单独的选择
+  （`account_library` / 不带清单的 `selected_revisions`）。前端 `egressPolicyVersion` 与之一起改，单测核对。
+- **门禁 `effectiveConsentInTx(ctx, tx, admitted)`**：`FOR SHARE` 读状态行 → 没有同意返回
+  `ErrEgressRequired`（403 `creative_egress_required`），已撤回返回 `ErrConsentRevoked`（409
+  `creative_egress_revoked`）→ 当前同意或运行准入时的同意不是当前说明版本，返回 `ErrEgressRequired`。
+  建运行、终态重试、插队、补充、等待恢复、派发复核、标题、压缩都调用它；同意与撤回 `FOR UPDATE`，
+  所以「谁先提交谁生效」。锁位置沿用原同意锁：会话、运行之后，内容之前。
+- **请求不带授权**：建运行与终态重试的请求删除 `egress_consent_id`；运行上的 `egress_consent_id` 记录准入
+  时的当前同意。旧接口 `/creative/conversations/{id}/egress-consents`、`/creative/egress-consents/{id}/revoke`
+  已下线，新接口为 `GET/POST /creative/egress-consent`、`POST /creative/egress-consent/revoke`（手写路由注册）。
+- **读取范围**（`context.go:directlyReadableInTx` / `heldReadable`）：当前画布；本对话序号在触发消息之前
+  或 `run_id` 为本运行的完整消息引用；同意允许时未进回收站的素材库资产。不在门禁里的读取用
+  `readScopeInTx` 取当前同意，只决定素材库分支是否打开，不因同意失效而失败——失效由下一次派发的门禁结束运行。
+- **素材库关闭**：工具集在运行配置时固定；运行中关闭素材库后，素材库工具返回工具拒绝，运行不结束。
+  已经返回的素材库工具结果（内联的标题、标签、分组，没有修订引用）在之后的每次请求里换成
+  `libraryWithheld` 占位：`bindMessages` 覆盖本运行和历史，`readHistory`、压缩转录同样处理，判定见
+  `library_tools.go:libraryResultTool`（`search_assets` 的 `source: builtin` 除外）。请求组装后、派发提交前
+  关闭的，派发以 `ErrLibraryClosed` 拒绝（包着 `ErrEgressRequired`），运行结束原因 `creative_egress_library_closed`。
+  素材库从开到关时本账号摘要全部失效，与撤回相同。已知边界：`read_asset` 读到的素材库内容是本运行自己的会话引用，
+  按「已有会话引用仍按原许可读取」继续随请求发出，不换成占位。
+- **撤回**：当前同意盖章 `revoked_at`，本账号全部压缩检查点 `invalidated_reason='consent_revoked'`。
+- **同意是条件写入**：请求带 `expected_revision`（读到的状态版本），不符返回 409 `creative_revision_conflict`，
+  旧界面不会把别处的撤回覆盖掉。测试模拟说明升级时改存储里同意行的 `policy_version`，不改 `policyVersion`（常量）。
+- **前端**：`useEgressConsent`（`EgressNotice.tsx`）读服务端状态并按账号缓存；无效时弹出说明，同意后才放行；
+  本地版本与服务端不一致时提示刷新，刷新前调用方经 `confirm(keep)` 存好草稿。发送被 `creative_egress_required` /
+  `creative_egress_revoked` 拒绝时清缓存、重新弹出说明，同意后用同一份草稿以新操作号再发一次（`AgentPanel.tsx:perform`
+  覆盖所有发送入口，首页 `HomeComposer.tsx:run`）。`egressConsent.ts` 对结果未知的写入保留原信封重放。助手面板
+  「对话操作」菜单里的「外发说明」可查看、修改素材库选择、撤回。本机存着的旧待确认链读出时去掉授权步骤和
+  `egress_consent_id`。
+
 ## 2026-10-13：按需查库、会话找回与直接上传
 
 本节取代上文早期阶段关于“最近 20 条引用需重新授权”、库搜索尚未开放和独立附件尚未接入的描述。原设计见 `.codestable/features/2026-10-13-agent-asset-lookup/agent-asset-lookup-design.md`。
@@ -545,7 +584,7 @@ Skill 索引按最近使用顺序保留能放下的条目。命令消息（`/com
   压缩准备后、供应商完成但尚未消费、消费成功但模型循环尚未开始时，均按原 binding 接管；
   已完成的调用不重新收费。手动压缩的 `fallback` 恢复后仍按失败结束，不报告成功。
 
-**授权撤销**：撤销外发授权的事务里，该会话全部检查点 `invalidated_reason='consent_revoked'`；
+**授权撤销**：撤回外发同意的事务里，本账号全部检查点 `invalidated_reason='consent_revoked'`（2026-11-13 起按账号）；
 消费摘要时若授权已撤销，同样不写检查点。
 
 **Skill 索引与按需加载**：投影带一份由 `creative_agent_runs.skill_snapshot` 确定性生成的索引

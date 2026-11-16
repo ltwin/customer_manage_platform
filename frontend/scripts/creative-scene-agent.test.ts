@@ -1073,7 +1073,7 @@ test('a run parked on a page job says what it waits for', () => {
 })
 
 test('a run started from the scene editor carries its scene and at most 50 selected objects; elsewhere none', () => {
-  const message = { model: 'vision', imageInput: true, revisionIDs: [], segments: [{ type: 'text', text: '改成木头的' }] } as Parameters<typeof messageSteps>[1]
+  const message = { model: 'vision', segments: [{ type: 'text', text: '改成木头的' }] } as Parameters<typeof messageSteps>[1]
   const runStep = (scene?: Parameters<typeof messageSteps>[1]['scene']) => messageSteps('c', { ...message, scene }).find((s) => s.path.endsWith('/runs'))!
   assert.equal('scene_context' in runStep().payload, false)
   assert.equal('scene_context' in runStep(null).payload, false)

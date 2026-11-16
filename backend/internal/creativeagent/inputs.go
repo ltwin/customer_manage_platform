@@ -569,7 +569,7 @@ func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccoun
 	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,egress_consent_id", "id=$2", runID).Scan(&canvasID, &consentID); err != nil {
 		return err
 	}
-	consent, err := readConsentForUpdate(ctx, tx, consentID)
+	consent, err := effectiveConsentInTx(ctx, tx, consentID)
 	if err != nil {
 		return err
 	}

@@ -155,18 +155,7 @@ func visualScene(t *testing.T, imageInput bool) (*fixture, Conversation, Consent
 	creativescene.SetJobWaiterForTest(t, f.service.SceneJobWaiter())
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
-	classes := []string{"text", "canvas_metadata"}
-	if imageInput {
-		classes = append(classes, "image_preview")
-	}
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": classes}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var consent Consent
-	if err := json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
-		t.Fatal(err)
-	}
+	consent := f.accountConsent(f.alice, false)
 	return f, c, consent, f.sceneDocument()
 }
 
@@ -568,29 +557,6 @@ func TestSceneWritesReplayTheirReceipt(t *testing.T) {
 	}
 	if n := f.count("creative_document_revisions", "document_id=$1 AND run_id=$2", doc, run.ID); n != 1 {
 		t.Fatalf("revisions after a replay: %d", n)
-	}
-}
-
-// Scenes are canvas metadata: without the canvas in the consent the scene
-// tools say so instead of reading or writing.
-func TestSceneToolsNeedTheCanvasInTheConsent(t *testing.T) {
-	f, c, _, doc := visualScene(t, false)
-	textOnly := f.consent(f.alice, c.ID)
-	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
-		func(r llmgateway.ProviderRequest) llmgateway.Result {
-			return scriptedResult(r, sceneCall("a", readSceneTool, map[string]any{"document_id": doc}))
-		},
-	}}
-	f.vendor.script = s.answer
-	run, err := f.startRun(f.alice, c.ID, textOnly.ID, InstructionSegment{Type: "text", Text: "看看场景"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := f.resume(run.ID); got.State != RunSucceeded {
-		t.Fatalf("run %s %s", got.State, got.ErrorCode)
-	}
-	if got := lastTool(s.request(2)); got["code"] != "creative_tool_not_authorized" {
-		t.Fatalf("read without canvas consent: %v", got)
 	}
 }
 

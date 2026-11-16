@@ -68,8 +68,14 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 			// The inputs this request carries are delivered with the same
 			// commit: a request refused before it goes out leaves them unread.
 			Admit: func(tx store.TxAccountScope) error {
-				if err := s.admitDispatchInTx(ctx, tx, held, runtime.revisions); err != nil {
+				consent, err := s.admitDispatchConsentInTx(ctx, tx, held, runtime.revisions)
+				if err != nil {
 					return err
+				}
+				// Bound with library results while library search was open,
+				// and closed before this commit: those results must not go.
+				if runtime.carriesLibrary() && !libraryOpen(consent, true) {
+					return ErrLibraryClosed
 				}
 				return markInputsDeliveredInTx(ctx, tx, held.RunID, runtime.delivery())
 			},

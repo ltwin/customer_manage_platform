@@ -392,9 +392,7 @@ func TestB3CheckpointRevalidatesMutableAuthority(t *testing.T) {
 			run, held, e := pauseCheckpointRun(t, f, false)
 			switch kind {
 			case "revoked":
-				if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": held.ConsentID, "expected_revision": "1"})); err != nil {
-					t.Fatal(err)
-				}
+				f.withdraw(f.alice)
 			case "cancelled":
 				if _, err := f.db.Exec(`UPDATE creative_agent_runs SET cancel_requested_at=now() WHERE id=$1`, run.ID); err != nil {
 					t.Fatal(err)

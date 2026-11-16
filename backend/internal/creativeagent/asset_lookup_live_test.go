@@ -93,8 +93,8 @@ func TestLiveAgentAssetLookup(t *testing.T) {
 				}
 				prompt = "请直接完成：找回我在本对话很早以前上传的琥珀蓝渐变参考图，读取图片看配色，把它放上画布，再新建一个图片节点并把参考节点连到新节点，用 GPT Image 2 生成这种配色的极简海报。参考图没有存入资产库，请从对话内容找回。"
 			}
-			consent := libraryConsent(t, f, c.ID)
-			receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "egress_consent_id": consent.ID, "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
+			_ = libraryConsent(t, f, c.ID)
+			receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "model_key": "gpt-6.1-sol", "instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{{Type: "text", Text: prompt}}}}))
 			if err != nil {
 				t.Fatal(err)
 			}

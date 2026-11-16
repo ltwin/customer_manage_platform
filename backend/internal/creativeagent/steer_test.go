@@ -189,16 +189,15 @@ func TestSteerReferenceIsRecheckedAfterResume(t *testing.T) {
 	if !strings.Contains(f.vendor.prompt(), "插队带的正文") {
 		t.Fatal("the steered reference never reached the model")
 	}
-	revoked := contextConsent(t, f, c.ID, revision)
-	if _, err = f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": revoked.ID, "expected_revision": revoked.Revision})); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	calls := f.vendor.calls()
+	// The withdrawal is seen while the run is set up again or at its first
+	// dispatch, whichever comes first; either way nothing is sent.
 	resumed, err := f.service.newRunExecution(t.Context(), f.alice, held)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		_, err = resumed.run(t.Context())
 	}
-	if _, err = resumed.run(t.Context()); !errors.Is(err, ErrEgressRequired) {
+	if !errors.Is(err, ErrConsentRevoked) {
 		t.Fatalf("resume after revocation: %v", err)
 	}
 	if f.vendor.calls() != calls {
@@ -417,19 +416,8 @@ func TestSteerReferencesAreCheckedForAccountAndRevocation(t *testing.T) {
 	t.Run("revoked authorisation", func(t *testing.T) {
 		f := setup(t)
 		run, _ := queuedRun(t, f)
-		if _, err := f.db.Exec(`UPDATE creative_egress_consents SET revoked_at=now() WHERE id=$1`, run.EgressConsentID); err != nil {
-			t.Fatal(err)
-		}
+		f.withdraw(f.alice)
 		if err := f.steer(run.ID, InstructionSegment{Type: "text", Text: "继续"}); !errors.Is(err, ErrConsentRevoked) {
-			t.Fatalf("err=%v", err)
-		}
-	})
-	t.Run("image under an authorisation without image previews", func(t *testing.T) {
-		f := setup(t)
-		f.service.SetImageReader(testImageReader{})
-		run, _ := queuedRun(t, f)
-		image := f.mediaRevision(f.alice, "image", "image/png")
-		if err := f.steer(run.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: image}); !errors.Is(err, ErrEgressRequired) {
 			t.Fatalf("err=%v", err)
 		}
 	})
@@ -619,7 +607,7 @@ func TestAnUndeliveredSteerIsShownAsUnread(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			consent, err := readConsentForUpdate(t.Context(), tx, c.EgressConsentID)
+			consent, err := effectiveConsentInTx(t.Context(), tx, c.EgressConsentID)
 			if err != nil {
 				return err
 			}
@@ -649,14 +637,7 @@ func TestSteerImagesKeepTheirOrder(t *testing.T) {
 	f.service.SetImageReader(testImageReader{})
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": c.ID, "purpose": "creative_assistance", "mode": ScopeAccountLibrary, "data_classes": []string{"text", "image_preview"}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var consent Consent
-	if err := json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
-		t.Fatal(err)
-	}
+	consent := f.accountConsent(f.alice, false)
 	a, b := f.mediaRevision(f.alice, "image", "image/png"), f.mediaRevision(f.alice, "image", "image/png")
 	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理"})
 	if err != nil {

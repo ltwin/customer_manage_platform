@@ -1392,15 +1392,17 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 
 ## 运行中附带内容的外发授权
 
-- 权威定义仍在 `docs/product/creative-canvas-system/data-model.md`「外发同意的资源边界」，本次同步修改那里；这里只登记新增的这条规则。
-- 原规则：`selected_revisions` 只覆盖 `creative_egress_consent_contents` 明确列出的修订。新消息建运行时，每个引用都必须在该运行授权的清单里。
-- 补充（owner 2026-11-11）：摄影师在一次运行进行中亲手附带或 @ 引用的本账号内容（插队、补充），由账号级同意覆盖，也就是首次「发送前说明」所列的「你附带或 @ 引用的图片」。不要求它出现在运行授权的清单里，但仍需校验：
-  - 属于本账号且可用（`RequireUsable`，含用途权利）；
-  - 本运行授权未撤销，`policy_version` 有效；
-  - 图片要求授权包含 `image_preview`；
-  - 派发前照常复核撤销与可用性。
-- 不变：工具返回的素材、助手检索得到的内容，仍按原规则授权。授权记录不可修改、不可替换。
-- 后续：整套逐资产授权收敛为账号级同意，另开 change 处理。
+- 权威定义在 `docs/product/creative-canvas-system/data-model.md`「外发同意的资源边界」，本次整段改写为账号级规则。
+- 外发需要同时满足两点：
+  - 账号有有效的外发同意（见「账号外发同意」）。
+  - 内容在本运行的读取范围内：当前画布节点持有的内容；本对话中、序号在触发消息之前或属于本运行的完整消息所引用的内容；同意允许检索素材库时，未进回收站的资产的当前修订。
+- 各内容仍逐项校验：属于本账号且当前可用（`RequireUsable(display)`，含用途权利）；数据类别在同意范围内；图片要求运行模型能看图；派发前照常复核同意和可用性。
+- 摄影师新建消息、插队、补充时附带或 @ 引用的内容，都写在本运行的消息上，所以由上面第二条分支覆盖，不需要清单。
+- 删除的规则：
+  - `selected_revisions` 清单（`creative_egress_consent_contents`）不再参与判断；
+  - 「被本对话已撤回的授权列过的修订一律拒绝」这条规则不再存在。
+- 不变：工具返回的素材、助手检索得到的内容，仍按读取范围和逐项校验处理。
+- 素材库关闭后，本运行和本对话历史里素材库工具（`search_assets` 查账号素材库、`read_library`、`read_library_result`、整理/管理/回收站/恢复、`save_to_library`）返回的内容不再随之后的请求发出，换成一句占位说明；`read_history` 和压缩摘要的转录同样处理。请求组装时素材库还开着、派发事务提交前关了的，这次派发被拒绝，运行以 `creative_egress_library_closed` 结束（门禁上按缺少同意处理，只是结束原因单列，前端提示「素材库检索已关闭」而不是「发送前说明有更新」）。`read_asset` 读到的素材库内容属于本运行自己的会话引用，按「已有会话引用仍按原许可读取」继续可读，不在占位范围内。
 
 ## 内置模型库
 
@@ -1475,3 +1477,56 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 新增条目：在清单里追加，同时提交缩略图，上线前跑一次导入。改动发布新版本，旧版本保留，已有场景不变。不删除已发布的条目。
 - 对象存储里不再被任何条目引用的文件不自动清理。
 - 首次定义（scene-pose-system 子项 3），无迁移。回滚：旧后端不认识 `model.builtin`，读取放了素体的场景会失败，只做前向修复，前后端同一版本上线。
+
+## 账号外发同意
+
+### 用途与存储角色
+
+- 用途：服务端判断一个账号当前能否外发，以及能否检索素材库；保留每次同意、修改和撤回的证据。
+- 存储：PostgreSQL。沿用 `creative_egress_consents`，用 `conversation_id IS NULL` 的行表示账号级同意；新增 `creative_egress_consent_states`，每个账号一行。
+- 角色：权威主数据。所有权：`creativeagent`。
+- 外部可见形式是派生读模型：`GET /creative/egress-consent` 的 `CreativeEgressConsentState`。
+
+### 结构与身份
+
+`creative_egress_consent_states`：
+
+| 列 | 类型 | 必须 | 约束与含义 |
+|---|---|---|---|
+| `account_id` | text | 是 | 主键 |
+| `current_consent_id` | text | 否 | 当前同意的 `creative_egress_consents.id`；为 null 表示没有同意 |
+| `last_revoked_at` | timestamptz | 否 | 最近一次撤回的时间，用来区分「已撤回」和「从未同意」 |
+| `revision` | bigint | 是 | 从 1 开始，每次同意变化或撤回加 1 |
+| `created_at`、`updated_at` | timestamptz | 是 | 服务端时间 |
+
+`creative_egress_consents` 中的账号级行：
+
+| 列 | 账号级取值 |
+|---|---|
+| `id` | `ccec_<uuid>` |
+| `conversation_id` | null |
+| `vendor_key` / `purpose` | `platform` / `creative_assistance`，与现有约定相同 |
+| `scope` | `{"mode": "account_library" \| "selected_revisions", "data_classes": ["text","image_preview","media_metadata","canvas_metadata"]}`。`account_library` 表示允许检索素材库；`selected_revisions` 不带清单，表示不允许 |
+| `policy_version` | 同意时的说明版本，本次为 `egress-2026-11-1` |
+| `superseded_at` | **新增列**，可空。因修改素材库选择而不再是当前同意的时间 |
+| `revoked_at` | 撤回时间 |
+
+约束：
+
+- 部分唯一索引 `(account_id) WHERE conversation_id IS NULL AND superseded_at IS NULL AND revoked_at IS NULL`，保证每个账号至多一条未盖章的账号级行。
+- 账号级行没有 `creative_egress_consent_contents` 子行。
+
+### 访问模式与保证
+
+- **门禁**：先 `FOR SHARE` 锁住状态行，再按 ID 读当前同意行（不加锁），然后核对版本。锁的位置在「会话 / 运行之后、内容之前」，沿用原同意锁的位置。多个对话的派发可以同时持有共享锁。
+- **同意与撤回**：状态行 `FOR UPDATE`。同意时插入新行，旧行盖章 `superseded_at`，`current_consent_id` 指向新行；撤回时当前行盖章 `revoked_at`，`current_consent_id` 置 null。两者都在一个事务里提交。撤回还会在同一事务里，把本账号所有未失效的 `creative_agent_compactions` 标记为 `consent_revoked`。
+- **数据库保证**：主键、部分唯一索引、CHECK 约束（沿用现有 `scope` 约束）。**应用保证**：`current_consent_id` 指向的是同账号、账号级、未盖章的行；内容相同的同意不新增行。
+- 运行的 `egress_consent_id` 保存准入时的当前同意 ID，作为证据，之后只读取它的 `policy_version`。
+- 访问示例：账号同意（行 A，开启素材库）→ 关闭素材库（行 B；A 盖章 superseded）→ 撤回（B 盖章 revoked，current=null，last_revoked_at 有值）。之后门禁返回 `creative_egress_revoked`。
+
+### 生命周期与演进
+
+- 同意行和状态行随账号保留，不清理。
+- 会话级的旧行（`conversation_id` 不为 null）和 `creative_egress_consent_contents` 改为只读历史，不再写入，也不参与门禁和读取；它们的清理沿用会话删除时的既有规则。
+- 迁移只增加表、列和索引，不回填。所有账号上线后都处于「没有同意」状态。反向迁移在已有账号级行时拒绝破坏性删除。
+- 说明版本升级只改服务端常量，不改数据；旧版本的同意自然失效。

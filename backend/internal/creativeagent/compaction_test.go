@@ -234,9 +234,7 @@ func TestTheCompactCommandSummarisesOnRequest(t *testing.T) {
 		t.Fatalf("the next turn did not build on the checkpoint, or carried the command:\n%s", sent)
 	}
 	// Withdrawing the authorisation retires the summary written under it.
-	if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": f.consent.ID, "expected_revision": f.consent.Revision})); err != nil {
-		t.Fatal(err)
-	}
+	f.withdraw(f.alice)
 	if n := f.count("creative_agent_compactions", "invalidated_reason='consent_revoked'"); n != 1 {
 		t.Fatalf("invalidated=%d", n)
 	}

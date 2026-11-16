@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 // 默认已看过首次外发说明；地址带 ?notice=0 时从没看过开始（V6-029）。
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 const fixture = new URL('../.agent-command-qa.html', import.meta.url)
 await writeFile(
   fixture,
@@ -17,7 +17,8 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-if (!location.search.includes('notice=0')) localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
+if (!location.search.includes('notice=0')) // 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
+{const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',canvas:{nodes:[{id:'node-image',metadata:{title:'主图'},data:{content_revision_id:'ccrv_image'},content:{id:'ccrv_image',kind:'image',payload:{},media:[],truncated:false}}]}}));
 </script></body></html>`,
 )
@@ -60,23 +61,21 @@ try {
     const page = await browser.newPage()
     page.on('pageerror', (error) => console.error('page error:', error.message))
     const gates = [delay(), delay()]
-    let grants = 0
-    const posts = []
+    // 同一次发送被两个持有者先后重放（收起再打开后点了重新发送）：两次请求
+    // 用的是同一个操作身份，服务端只会建一次运行。
+    let attempts = 0
+    const keys = []
     await page.route('**/api/v1/creative/**', async (route) => {
       const req = route.request(),
         path = new URL(req.url()).pathname
       const json = (body) => route.fulfill({ json: body })
       if (req.method() === 'POST') {
         const body = req.postDataJSON()
-        if (path.endsWith('/egress-consents')) {
-          assert.equal(body.payload.mode, 'account_library')
-          assert.deepEqual(body.payload.selected_revision_ids, [])
-          const index = grants++
-          await gates[index].promise
-          return json({ id: 'consent', approved_revisions: 0 })
-        }
         if (path.endsWith('/runs')) {
-          posts.push(body)
+          assert.equal('egress_consent_id' in body.payload, false, 'a run carries no authorisation')
+          keys.push(req.headers()['idempotency-key'])
+          const index = attempts++
+          await gates[index].promise
           return json({
             id: 'run',
             trigger_message_id: 'message',
@@ -133,7 +132,7 @@ try {
     assert.equal(await page.getByRole('checkbox').count(), 0, 'sending needs no consent tick')
     await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
-      (k) => JSON.parse(sessionStorage.getItem(k))?.steps?.length === 2,
+      (k) => JSON.parse(sessionStorage.getItem(k))?.steps?.length === 1,
       key,
     )
     assert.equal(
@@ -145,19 +144,17 @@ try {
     await page.getByRole('button', { name: '收起创作助手' }).click()
     await page.getByRole('button', { name: '打开创作助手' }).click()
     await page.getByRole('button', { name: '重新发送' }).click()
-    for (let i = 0; grants < 2 && i < 500; i++)
+    for (let i = 0; attempts < 2 && i < 500; i++)
       await new Promise((resolve) => setTimeout(resolve, 10))
-    assert.equal(grants, 2)
+    assert.equal(attempts, 2)
     gates[order === 'old-first' ? 0 : 1].release()
-    if (order === 'old-first') {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      assert.equal(posts.length, 0, 'unmounted owner advanced the chain')
-    } else
+    if (order === 'new-first')
       await page.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
     gates[order === 'old-first' ? 1 : 0].release()
     await page.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
     await new Promise((resolve) => setTimeout(resolve, 100))
-    assert.equal(posts.length, 1, 'same grant created multiple runs')
+    assert.equal(attempts, 2, 'nothing was sent a third time')
+    assert.equal(keys[0], keys[1], 'both owners replayed one operation, so one run')
     await page.close()
   }
   // A dropped response, refresh, and definitive rejection must retain the editable draft.
@@ -168,8 +165,6 @@ try {
     const path = new URL(route.request().url()).pathname
     const json = (body) => route.fulfill({ json: body })
     if (route.request().method() === 'POST') {
-      if (path.endsWith('/egress-consents'))
-        return json({ id: 'consent', approved_revisions: 0 })
       if (path.endsWith('/runs')) {
         if (++runPosts === 1) return route.abort('failed')
         return route.fulfill({
@@ -257,14 +252,12 @@ try {
   await page.close()
   const materialPage = await browser.newPage()
   const submissions = []
-  const approvals = []
   let failOnce = true
   materialPage.on('pageerror', (error) => { throw error })
   await materialPage.route('**/api/v1/creative/**', async (route) => {
     const req = route.request(), path = new URL(req.url()).pathname
     const json = (body) => route.fulfill({json: body})
     if (req.method() === 'POST') {
-      if (path.endsWith('/egress-consents')) { approvals.push(req.postDataJSON()); return json({id:'consent',approved_revisions:0}) }
       if (path.endsWith('/runs')) {
         submissions.push(req.postDataJSON())
         if (failOnce) { failOnce = false; return route.abort('failed') }
@@ -304,9 +297,6 @@ try {
   await materialPage.waitForFunction((k)=>sessionStorage.getItem(k)===null,key)
   assert.equal(submissions.length,2)
   assert.deepEqual(submissions[0],submissions[1],'retry keeps original reference payload')
-  assert.deepEqual(approvals[0].payload.selected_revision_ids,['ccrv_image','ccrv_text'])
-  assert(approvals[0].payload.data_classes.includes('image_preview'))
-  assert(approvals[0].payload.data_classes.includes('canvas_metadata'))
   assert.deepEqual(submissions[0].payload.instruction.instruction_segments.filter((s)=>s.type==='content_ref').map((s)=>s.content_revision_id),['ccrv_image','ccrv_text'])
   await materialPage.close()
   // 回到一个会话沿用它最近一次运行的模型；已下架的不沿用。
@@ -503,6 +493,8 @@ try {
   const chainPage = await browser.newPage()
   chainPage.on('pageerror', (error) => { throw error })
   const chainPosts = []
+  const consentPosts = []
+  let agreed = false
   const made = new Map()
   let dropConversation = true
   await chainPage.route('**/api/v1/creative/**', async (route) => {
@@ -516,14 +508,16 @@ try {
         if (dropConversation) { dropConversation = false; return route.abort('failed') }
         return json({ id: made.get(id), title: '新对话' })
       }
-      if (path.endsWith('/egress-consents')) return json({ id: 'consent', approved_revisions: 0 })
+      if (path.endsWith('/egress-consent')) { consentPosts.push(req.postDataJSON().payload); return json({ policy_version: noticeVersion, effective: true, revision: '1', consent: { id: 'ccec_qa', policy_version: noticeVersion, library_access: true, granted_at: '2026-11-13T00:00:00Z' } }) }
       if (path.endsWith('/runs')) return json({ ...finishedRun, conversation_id: path.split('/').at(-2) })
     }
+    if (path.endsWith('/egress-consent'))
+      return json(agreed ? { policy_version: noticeVersion, effective: true, revision: '1', consent: { id: 'ccec_qa', policy_version: noticeVersion, library_access: true, granted_at: '2026-11-13T00:00:00Z' } } : { policy_version: noticeVersion, effective: false, revision: '0', consent: null })
     if (path.endsWith('/agent/catalog')) return json({ limits: { attachments: 10, image_preview_count: 8 }, skills: [], models: [{ model_key: 'model', display_name: 'Test model', available: true, capability: { image_input: false } }] })
     if (path.endsWith('/agent-runs/run')) return json(finishedRun)
     return json({ items: [] })
   })
-  // 从没看过首次外发说明：新消息先弹窗，取消什么都不发、草稿留着。
+  // 从没同意过发送前说明：新消息先弹窗，取消什么都不发、草稿留着。
   await chainPage.goto(`${url}?notice=0`)
   await chainPage.getByRole('button', { name: '打开创作助手' }).click()
   await chainPage.getByLabel('创作问题').fill('第一条消息')
@@ -535,10 +529,11 @@ try {
   assert.deepEqual(chainPosts, [], 'cancelling the notice sends nothing')
   assert.equal(await chainPage.getByLabel('创作问题').textContent(), '第一条消息', 'the draft stays')
   await chainPage.getByRole('button', { name: '发送', exact: true }).click()
-  await notice.getByRole('button', { name: '知道了，发送' }).click()
+  await notice.getByRole('button', { name: '同意并发送' }).click()
   await chainPage.getByRole('alert').waitFor()
   assert.equal(made.size, 1, 'the server created the conversation')
-  assert.equal(await chainPage.evaluate(() => localStorage.getItem('creative-egress-notice:qa-account')), noticeVersion)
+  assert.deepEqual(consentPosts, [{ policy_version: noticeVersion, library_access: true, expected_revision: '0' }], 'the agreement is recorded on the server')
+  agreed = true
   // 重放是此前确认过的发送，不再弹窗：清掉本机记录也一样。
   await chainPage.evaluate(() => localStorage.clear())
   await chainPage.reload()
@@ -549,8 +544,9 @@ try {
   assert.equal(conversationPosts.length, 2)
   assert.equal(conversationPosts[0][1], conversationPosts[1][1], 'the retry replays the same conversation operation')
   assert.equal(made.size, 1, 'no second, empty conversation')
-  assert.deepEqual(chainPosts.slice(2).map(([p]) => p), ['/conversations/conv1/egress-consents', '/conversations/conv1/runs'])
-  // 旧格式：当前一步加上下一次运行的身份。
+  assert.deepEqual(chainPosts.filter(([p]) => !p.endsWith('/egress-consent')).slice(2).map(([p]) => p), ['/conversations/conv1/runs'])
+  // 旧格式：当前一步加上下一次运行的身份。逐条授权那一步已经没有接口，重发时
+  // 跳过，运行也不再带授权编号。
   chainPosts.length = 0
   await chainPage.evaluate((k) => sessionStorage.setItem(k, JSON.stringify({
     path: '/conversations/conv1/egress-consents',
@@ -565,14 +561,11 @@ try {
   await chainPage.getByRole('button', { name: '打开创作助手' }).click()
   await chainPage.getByRole('button', { name: '重新发送' }).click()
   await chainPage.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
-  assert.deepEqual(chainPosts, [
-    ['/conversations/conv1/egress-consents', 'legacy-consent'],
-    ['/conversations/conv1/runs', 'legacy-run'],
-  ])
+  assert.deepEqual(chainPosts, [['/conversations/conv1/runs', 'legacy-run']])
   assert.equal(await notice.count(), 0, 'replays never ask again')
   await chainPage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore; a lost conversation reply replays one operation; legacy pending records resend; the first-send notice gates new messages but not replays',
+    'PASS: two owners replaying one send create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore; a lost conversation reply replays one operation; legacy pending records resend without their grant; the account consent gates new messages but not replays',
   )
 } finally {
   await browser.close()

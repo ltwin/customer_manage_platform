@@ -467,7 +467,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 	// Skill results name their version only in the call that produced them.
 	skillCalls := map[string]string{}
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
+		consent, err := effectiveConsentInTx(ctx, tx, held.ConsentID)
 		if err != nil {
 			return err
 		}
@@ -570,7 +570,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 							continue
 						}
 						hasSource = true
-						readable, err := readableInTx(ctx, tx, held.RunID, consent.ID, block.RefID)
+						readable, err := readableInTx(ctx, tx, held.RunID, consent, block.RefID)
 						if err != nil {
 							return err
 						}
@@ -650,15 +650,22 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 // the effects. Content checks stay with the caller so library/canvas writes can
 // acquire their domain locks before locking content.
 func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, held claim) error {
+	_, err := s.admitRunConsentInTx(ctx, tx, held)
+	return err
+}
+
+// admitRunConsentInTx is admitRunInTx returning the consent the gate found in
+// force, for a caller that goes on to decide what it may send.
+func (s *Service) admitRunConsentInTx(ctx context.Context, tx store.TxAccountScope, held claim) (Consent, error) {
 	if err := tx.RequireCreativeCapability(ctx, "agent_start"); err != nil {
-		return err
+		return Consent{}, err
 	}
 	now, err := tx.CreativeNow(ctx)
 	if err != nil {
-		return err
+		return Consent{}, err
 	}
 	if !now.Before(held.Deadline) {
-		return llmgateway.ErrDeadline
+		return Consent{}, llmgateway.ErrDeadline
 	}
 	var state string
 	var epoch int64
@@ -666,13 +673,13 @@ func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, hel
 	err = tx.QueryRowForUpdate(ctx, "creative_agent_runs", "state,execution_epoch,cancel_requested_at,lease_until",
 		"id=$2 AND claim_token=$3", held.RunID, held.Token).Scan(&state, &epoch, &cancelRequested, &leaseUntil)
 	if errors.Is(err, store.ErrNoRows) {
-		return ErrRunState
+		return Consent{}, ErrRunState
 	}
 	if err != nil {
-		return err
+		return Consent{}, err
 	}
 	if state != RunRunning || epoch != held.Epoch || cancelRequested != nil || leaseUntil == nil || !now.Before(*leaseUntil) {
-		return ErrRunState
+		return Consent{}, ErrRunState
 	}
 	return s.admitParkedRunInTx(ctx, tx, held, now)
 }
@@ -681,20 +688,28 @@ func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, hel
 // run is read before the consent and the consent before the content, matching
 // the global order.
 func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope, held claim, revisions []string) error {
-	if err := s.admitRunInTx(ctx, tx, held); err != nil {
-		return err
+	_, err := s.admitDispatchConsentInTx(ctx, tx, held, revisions)
+	return err
+}
+
+// admitDispatchConsentInTx is admitDispatchInTx returning the consent in
+// force, read once under the state row's share lock.
+func (s *Service) admitDispatchConsentInTx(ctx context.Context, tx store.TxAccountScope, held claim, revisions []string) (Consent, error) {
+	scope, err := s.admitRunConsentInTx(ctx, tx, held)
+	if err != nil {
+		return Consent{}, err
 	}
 	// Include content read by tools in this run, including restored checkpoints.
 	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result','render_view'))", held.RunID)
 	if err != nil {
-		return err
+		return Consent{}, err
 	}
 	checked := append([]string(nil), revisions...)
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return err
+			return Consent{}, err
 		}
 		if !slices.Contains(checked, id) {
 			checked = append(checked, id)
@@ -703,21 +718,21 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return err
+		return Consent{}, err
 	}
 	for _, revisionID := range checked {
-		readable, err := readableInTx(ctx, tx, held.RunID, held.ConsentID, revisionID)
+		readable, err := readableInTx(ctx, tx, held.RunID, scope, revisionID)
 		if err != nil {
-			return err
+			return Consent{}, err
 		}
 		if !readable {
-			return ErrEgressRequired
+			return Consent{}, ErrEgressRequired
 		}
 		if _, err := creativecontent.RequireUsable(ctx, tx, revisionID, "display"); err != nil {
-			return translateContent(err)
+			return Consent{}, translateContent(err)
 		}
 	}
-	return nil
+	return scope, nil
 }
 
 // prepareModelStep fixes this turn as a persisted step before anything is sent.
@@ -1211,6 +1226,8 @@ func failureCode(err error) string {
 		return "creative_compaction_failed"
 	case errors.Is(err, ErrConsentRevoked):
 		return "creative_egress_revoked"
+	case errors.Is(err, ErrLibraryClosed):
+		return "creative_egress_library_closed"
 	case errors.Is(err, ErrEgressRequired):
 		return "creative_egress_required"
 	case errors.Is(err, ErrUnsupportedSegment):

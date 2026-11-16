@@ -21,20 +21,40 @@ const (
 	conversationAssetsTool = "list_conversation_assets"
 )
 
+// requireLibrary lets a library tool through. A consent that no longer stands
+// ends the run, as at any dispatch; a consent that stands with library search
+// switched off only refuses this call — the photographer can turn it back on
+// in 外发说明, and the run carries on with the canvas and the conversation.
 func (h *runtimeHandler) requireLibrary(ctx context.Context, metadata bool) error {
 	return h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		c, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+		c, err := effectiveConsentInTx(ctx, tx, h.held.ConsentID)
 		if err != nil {
 			return err
 		}
-		if err := coversRun(c, h.held.ConversationID, nil); err != nil {
-			return err
-		}
 		if c.Scope.Mode != ScopeAccountLibrary || metadata && !consentHas(c, "media_metadata") {
-			return ErrEgressRequired
+			return refuseTool("素材库检索已关闭，查不了账号里的素材；内置材质和内置模型（素体）用 source: \"builtin\" 查")
 		}
 		return nil
 	})
+}
+
+// libraryWithheld stands in for a library tool's result once library search
+// is closed: the titles, tags and groups it returned are the account's library
+// data, and closing the library stops them leaving with every later request.
+const libraryWithheld = "素材库检索已关闭，这次素材库工具的结果不再发送；需要时可以请创作者在「外发说明」里重新打开素材库检索"
+
+// libraryResultTool reports whether a tool's result carries the account's
+// library data. args is the call's arguments when known; a search whose
+// arguments are lost is taken to have searched the account.
+func libraryResultTool(name, args string) bool {
+	switch name {
+	case searchAssetsTool:
+		return args == "" || stringArgument(args, "source") != sourceBuiltin
+	case readLibraryTool, readLibraryResultTool, organizeAssetsTool, manageLibraryTool,
+		trashAssetsTool, restoreAssetsTool, saveLibraryTool:
+		return true
+	}
+	return false
 }
 
 type assetSearchArgs struct {
@@ -176,7 +196,11 @@ func (h *runtimeHandler) resolveCanvasAssets(ctx context.Context, actions []canv
 			commands[i].Asset = &creativelibrary.AssetReference{ID: asset.ID, Revision: asset.Revision, ContentRevisionID: asset.ContentRevisionID}
 		}
 		err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-			readable, err := readableRevisionInTx(ctx, tx, h.held.RunID, h.held.ConsentID, a.ContentRevisionID, a.AssetID != "")
+			scope, err := readScopeInTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+			readable, err := readableRevisionInTx(ctx, tx, h.held.RunID, scope, a.ContentRevisionID, a.AssetID != "")
 			if err != nil {
 				return err
 			}

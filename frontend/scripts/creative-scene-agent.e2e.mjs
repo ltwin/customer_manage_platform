@@ -16,7 +16,7 @@ const auth = `setAuthenticated({access_token:'local-test',expires_in:3600,token_
 const renderFixture = new URL('../.scene-agent-qa.html', import.meta.url)
 const hostFixture = new URL('../.scene-agent-host-qa.html', import.meta.url)
 const panelFixture = new URL('../.scene-agent-panel-qa.html', import.meta.url)
-const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
+const noticeVersion = /egressPolicyVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 await writeFile(
   renderFixture,
   `<html><body><script type="module">
@@ -82,7 +82,8 @@ import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setSceneContext} from '/src/creative-scene/context.ts';
 import {setAuthenticated} from '/src/auth/session.ts';
 ${auth}
-localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
+// 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
+{const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 window.__scene = setSceneContext;
 const nodes = [{id: 'node-scene', metadata: {title: '棚拍布景'}, data: {document_id: '${DOC}'}}];
 createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}}));
@@ -370,8 +371,6 @@ async function routePanel(context, panel) {
     if (path === '/agent/catalog')
       return json({ limits: { attachments: 10, image_preview_count: 8 }, skills: [], models: [{ model_key: 'vision', display_name: '看图模型', available: true, capability: { image_input: true }, context_window_tokens: 100_000 }] })
     if (path.endsWith('/conversations')) return json({ items: [{ id: 'c', title: '搭景' }] })
-    if (path.endsWith('/conversations/c/egress-consents') && request.method() === 'POST')
-      return json({ id: 'consent-new', conversation_id: 'c', revision: '1', purpose: 'creative_assistance', policy_version: noticeVersion, scope: {}, granted_at: '2026-10-18T00:00:00Z' }, 201)
     if (path.endsWith('/conversations/c/runs') && request.method() === 'POST') {
       panel.created.push(request.postDataJSON())
       return json({ ...runBase, id: 'run9', trigger_message_id: 'm9', state: 'queued' }, 202)

@@ -509,7 +509,14 @@ func TestCTerminalRetryExecutesOnlyRecordedResourceRead(t *testing.T) {
 			if err = f.db.QueryRow(`SELECT id FROM creative_agent_steps WHERE run_id=$1 AND kind='tool'`, run.ID).Scan(&step); err != nil {
 				t.Fatal(err)
 			}
-			input := map[string]any{"run_id": run.ID, "step_ids": []string{step}, "egress_consent_id": consent.ID}
+			input := map[string]any{"run_id": run.ID, "step_ids": []string{step}}
+			// The retry carries no consent of its own: it is admitted under
+			// the account's consent in force, or not at all.
+			f.withdraw(f.alice)
+			if _, err := f.service.RetryRun(t.Context(), f.alice, command(t, input)); !errors.Is(err, ErrConsentRevoked) {
+				t.Fatalf("a retry without a consent in force: %v", err)
+			}
+			f.agree(f.alice, false)
 			receipt, err := f.service.RetryRun(t.Context(), f.alice, command(t, input))
 			if err != nil {
 				t.Fatal(err)
@@ -605,37 +612,6 @@ CREATE TRIGGER fail_recovery_delivery BEFORE INSERT ON creative_agent_messages F
 		})
 	}
 }
-func TestCTextOnlyConsentDoesNotGrantLibraryAccess(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	c := f.conversation(f.alice, f.canvasID)
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{
-		"conversation_id": c.ID, "purpose": "creative_assistance",
-		"mode": "selected_revisions", "data_classes": []string{"text"}, "selected_revision_ids": []string{},
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var consent Consent
-	if err = json.Unmarshal(receipt.Outcome.Response, &consent); err != nil {
-		t.Fatal(err)
-	}
-	if consent.Scope.Mode != ScopeSelectedRevisions || consent.ApprovedRevisions != 0 {
-		t.Fatalf("broad consent: %+v", consent)
-	}
-	revision := f.revision(f.alice, "未授权的资料")
-	if _, err = f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: revision}); err == nil {
-		t.Fatal("text-only consent granted content access")
-	}
-	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理问题"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.work(f.alice, run.ID); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestCRecoveredQueueClosurePreservesUnknownUsage(t *testing.T) {
 	for _, reason := range []string{"deadline", "model-disabled"} {
 		t.Run(reason, func(t *testing.T) {

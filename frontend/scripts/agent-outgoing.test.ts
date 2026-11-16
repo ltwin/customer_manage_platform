@@ -139,8 +139,6 @@ test('a send into an existing conversation rereads only the thread', () => {
   const into = {
     steps: messageSteps('c-1', {
       model: 'm',
-      imageInput: false,
-      revisionIDs: [],
       segments: [{ type: 'text', text: 'x' }],
     }),
   }
@@ -152,8 +150,6 @@ test('a send into an existing conversation rereads only the thread', () => {
       conversationStep('canvas'),
       ...messageSteps(conversationSlot, {
         model: 'm',
-        imageInput: false,
-        revisionIDs: [],
         segments: [{ type: 'text', text: 'x' }],
       }),
     ],

@@ -85,9 +85,7 @@ func TestRuntimeRechecksConsentBetweenTurns(t *testing.T) {
 	c := f.conversation(f.alice, f.canvasID)
 	consent := f.consent(f.alice, c.ID)
 	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
-		if _, err := f.service.RevokeConsent(t.Context(), f.alice, command(t, map[string]any{"consent_id": consent.ID, "expected_revision": "1"})); err != nil {
-			t.Fatal(err)
-		}
+		f.withdraw(f.alice)
 		return scriptedResult(r, llmgateway.ToolCall{ID: "call-1", Name: "read_run_result", Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)}), nil
 	}
 	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理"})
@@ -381,7 +379,7 @@ func TestRuntimeSecondDispatchRevocationReturnsItsBudget(t *testing.T) {
 	c := f.conversation(f.alice, f.canvasID)
 	consent := f.consent(f.alice, c.ID)
 	if _, err := f.db.Exec(`CREATE FUNCTION revoke_before_second_turn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
- IF NEW.kind='model' AND NEW.ordinal>1 THEN UPDATE creative_egress_consents SET revoked_at=clock_timestamp() WHERE account_id=NEW.account_id; END IF; RETURN NEW; END $$;
+ IF NEW.kind='model' AND NEW.ordinal>1 THEN UPDATE creative_egress_consent_states SET current_consent_id=NULL, last_revoked_at=clock_timestamp() WHERE account_id=NEW.account_id; END IF; RETURN NEW; END $$;
  CREATE TRIGGER revoke_second_turn BEFORE INSERT ON creative_agent_steps FOR EACH ROW EXECUTE FUNCTION revoke_before_second_turn()`); err != nil {
 		t.Fatal(err)
 	}

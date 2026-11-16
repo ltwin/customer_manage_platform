@@ -4,13 +4,12 @@ import { readFile, writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 const base = process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'
 const fixture = new URL('../.asset-lookup-qa.html', import.meta.url)
-const version = /egressNoticeVersion = '([^']+)'/.exec(await readFile(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
+const version = /egressPolicyVersion = '([^']+)'/.exec(await readFile(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 await writeFile(fixture, `<html><body><div id="root" class="cc-workspace"></div><script type="module">
 import React from 'react';import {createRoot} from 'react-dom/client';
 import '/src/index.css';import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'fixture',expires_in:3600,token_type:'Bearer'},{id:'asset-qa',username:'qa'});
-localStorage.setItem('creative-egress-notice:asset-qa','egress-2026-10-1');
 createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'asset-qa',canvasID:'canvas',defaultOpen:true}));
 </script></body></html>`)
 const browser = await chromium.launch({headless:true})
@@ -29,7 +28,8 @@ try {
   if(path.endsWith('/part-authorizations'))return json({upload_id:'upload',parts:[{part_number:1,url:base+'/qa-storage/upload',method:'PUT',headers:{}}]})
   if(path.endsWith('/complete')){ready=true;return json(upload())}
   if(path.endsWith('/uploads/upload'))return json(upload())
-  if(path.endsWith('/egress-consents'))return json({id:'consent'})
+  if(path.endsWith('/egress-consent')&&req.method()==='GET')return json({policy_version:version,effective:false,revision:'0',consent:null})
+  if(path.endsWith('/egress-consent'))return json({policy_version:version,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:version,library_access:req.postDataJSON().payload.library_access,granted_at:'2026-11-13T00:00:00Z'}})
   if(path.endsWith('/runs')&&req.method()==='POST')return json({id:'run',conversation_id:'conversation',trigger_message_id:'sent',state:'succeeded',settlement_state:'settled'})
   if(path.endsWith('/agent-runs/run'))return json({id:'run',conversation_id:'conversation',trigger_message_id:'sent',state:'succeeded',settlement_state:'settled',blocks:[]})
   if(path.endsWith('/conversations'))return json({items:[{id:'conversation',title:'已有对话'}]})
@@ -55,21 +55,20 @@ try {
  assert.equal(posts.some(p=>p.path.endsWith('/assets')),false,'pasting must not save to library')
  await page.getByRole('button',{name:'发送',exact:true}).click()
  await page.getByRole('heading',{name:'发送前说明'}).waitFor()
- assert.match(await page.getByText(/助手还会按需查找资产库/).innerText(),/按需查找资产库/)
- await page.getByRole('button',{name:'知道了，发送'}).click()
+ assert.match(await page.getByText(/允许助手检索我的素材库/).innerText(),/检索我的素材库/)
+ await page.getByRole('button',{name:'同意并发送'}).click()
  await page.waitForFunction(()=>document.querySelectorAll('.cc-agent-box [data-ref]').length===0)
  // The composer clears on send now, before the requests go out: wait for the run itself.
  for(let i=0;i<50&&!posts.some(p=>p.path.endsWith('/runs'));i++)await page.waitForTimeout(100)
- const consent=posts.find(p=>p.path.endsWith('/egress-consents')).body.payload
- assert.equal(consent.mode,'account_library')
- assert.deepEqual(consent.selected_revision_ids,['ccrv_pasted'],'old message references must not enter new grant')
- assert(consent.data_classes.includes('media_metadata'))
+ // 同意按账号记在服务端；运行请求不带授权。
+ const consent=posts.find(p=>p.path.endsWith('/egress-consent')).body.payload
+ assert.deepEqual(consent,{policy_version:version,library_access:true,expected_revision:'0'})
  const run=posts.find(p=>p.path.endsWith('/runs')).body.payload
+ assert.equal('egress_consent_id' in run,false)
  assert(run.instruction.instruction_segments.some(s=>s.content_revision_id==='ccrv_pasted'))
- assert.equal(await page.evaluate(()=>localStorage.getItem('creative-egress-notice:asset-qa')),version)
  await page.setViewportSize({width:390,height:844})
  const layout=await page.locator('.cc-agent-panel').evaluate(el=>({width:el.getBoundingClientRect().width,viewport:innerWidth,overflow:el.scrollWidth-el.clientWidth}))
  assert(layout.width<=layout.viewport&&layout.overflow<=1,JSON.stringify(layout))
  assert.deepEqual(errors,[])
- console.log('PASS: paste -> staged upload -> current-only consent -> content_ref; notice version refresh; no library insert; mobile no horizontal overflow')
+ console.log('PASS: paste -> staged upload -> account consent -> content_ref; no library insert; mobile no horizontal overflow')
 } finally {await browser.close();await rm(fixture,{force:true})}
