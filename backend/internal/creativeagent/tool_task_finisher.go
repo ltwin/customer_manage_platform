@@ -258,7 +258,7 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 			_, err = tx.Update(ctx, "creative_agent_tool_tasks", "next_check_at=$3", "id=$2", id, recheck)
 			return err
 		}
-		if err = finishTaskRow(ctx, tx, task, outcome); err != nil {
+		if err = s.finishTaskInTx(ctx, tx, task, outcome); err != nil {
 			return err
 		}
 		if task.Mode == modeForeground && gate != nil {

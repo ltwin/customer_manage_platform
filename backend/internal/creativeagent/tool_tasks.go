@@ -417,7 +417,7 @@ func (s *Service) CancelToolTask(ctx context.Context, scope store.AccountScope, 
 			if _, err := tx.Update(ctx, "creative_agent_tool_tasks", "stop_requested_at=clock_timestamp()", "id=$2", handle); err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if err := finishTaskRow(ctx, tx, row, outcome); err != nil {
+			if err := s.finishTaskInTx(ctx, tx, row, outcome); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			return toolTaskReceipt(ctx, tx, handle)

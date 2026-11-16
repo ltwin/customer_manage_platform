@@ -265,6 +265,14 @@ func TestBackgroundBakeRefusedOnAnArchivedProject(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT revision FROM creative_documents WHERE id=$1`, doc).Scan(&after); err != nil || after != before {
 		t.Fatalf("archived scene written: %d -> %d %v", before, after, err)
 	}
+	// The task fails with the refusal, and its notice is suppressed.
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	task := f.sceneTasks(run.ID)[0]
+	if task.State != taskFailed || f.notice(task.ID) != "suppressed" || f.count("creative_agent_messages", "role='system'") != 0 {
+		t.Fatalf("task=%+v notice=%s", task, f.notice(task.ID))
+	}
 }
 
 // A run parked under the definitions before run_in_background resumes with

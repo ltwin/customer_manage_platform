@@ -58,9 +58,47 @@ func (s *Service) ReadRunSnapshot(ctx context.Context, scope store.AccountScope,
 			}
 			snapshot.Blocks = append(snapshot.Blocks, block)
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		return projectBlockTasks(ctx, tx, snapshot.Blocks)
 	})
 	return snapshot, err
+}
+
+// projectBlockTasks puts each long-running tool's current task on its card
+// (contracts: 快照和事件). The card's block keeps its own revision; the task
+// carries one of its own, so a later read of a finished run still shows the
+// background result.
+func projectBlockTasks(ctx context.Context, tx store.ReadTxAccountScope, blocks []RunBlock) error {
+	steps := []string{}
+	at := map[string]int{}
+	for i, b := range blocks {
+		if b.Type != BlockTool {
+			continue
+		}
+		var payload struct {
+			StepID  string `json:"step_id"`
+			ToolKey string `json:"tool_key"`
+		}
+		if json.Unmarshal(b.Payload, &payload) != nil || payload.StepID == "" {
+			continue
+		}
+		switch payload.ToolKey {
+		case generateNodeTool, compressImageTool, writeModelTool, renderViewTool, exportShotsTool:
+			steps = append(steps, payload.StepID)
+			at[payload.StepID] = i
+		}
+	}
+	tasks, err := toolTasksByInTx(ctx, tx, "tool_step_id", steps)
+	if err != nil {
+		return err
+	}
+	for step, task := range tasks {
+		blocks[at[step]].Payload = projectTaskOnPayload(blocks[at[step]].Payload, task)
+	}
+	return nil
 }
 
 // RunEvent is the envelope every run event travels in. The SSE id is the seq.
