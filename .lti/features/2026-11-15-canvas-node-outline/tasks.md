@@ -10,8 +10,8 @@
 ## 2. 节点树派生与定位算法（纯函数）
 
 - [x] 2.1 `nodeKind.ts` + `KindIcon.tsx`：从 `CanvasView.tsx` 移出 `KindIcon`、`nodeKind`、`kindLabel`、`untitled`，`CanvasView` 改为引用；行为不变，前端类型检查与现有画布单测通过
-- [ ] 2.2 先写 `creative-canvas-outline.test.ts`（红）再实现 `outline.ts:buildOutline`：created_at 倒序 + id 兜底、pending 置顶、分组嵌套与折叠、NFKC + 小写的标题搜索（含 `untitled` 兜底标题）、类型多选与未知类型排除、命中祖先路径强制展开且不改折叠集、`total` / `matched` 计数、空画布；单测全绿
-- [ ] 2.3 同一测试文件补 `viewport.ts:revealViewport` 用例（能放下时倍率不变并居中、放不下时缩小不低于下限且不放大、insets 生效）并实现；单测全绿
+- [x] 2.2 先写 `creative-canvas-outline.test.ts`（红）再实现 `outline.ts:buildOutline`：created_at 倒序 + id 兜底、pending 置顶、分组嵌套与折叠、NFKC + 小写的标题搜索（含 `untitled` 兜底标题）、类型多选与未知类型排除、命中祖先路径强制展开且不改折叠集、`total` / `matched` 计数、空画布；单测全绿
+- [x] 2.3 同一测试文件补 `viewport.ts:revealViewport` 用例（能放下时倍率不变并居中、放不下时缩小不低于下限且不放大、insets 生效）并实现；单测全绿
 
 ## 3. 面板与节点树界面
 

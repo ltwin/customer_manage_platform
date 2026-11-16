@@ -1,4 +1,5 @@
 import type { CanvasNode } from './api.ts'
+import { worldPoint } from './graph.ts'
 
 export type Viewport = { x: number; y: number; zoom: number }
 export type Rect = { x: number; y: number; width: number; height: number }
@@ -51,6 +52,42 @@ export function fitViewport(
     zoom,
     x: insets.left + (w - bounds.width * zoom) / 2 - bounds.x * zoom,
     y: insets.top + (h - bounds.height * zoom) / 2 - bounds.y * zoom,
+  }
+}
+
+// 单个节点的世界坐标矩形（分组内节点坐标相对父组），含卡片外的标签；节点不在时为 null。
+export function nodeRect(nodes: CanvasNode[], id: string): Rect | null {
+  const n = nodes.find((v) => v.id === id)
+  if (!n) return null
+  const p = worldPoint(nodes, id)
+  return {
+    x: p.x,
+    y: p.y - labelHeight,
+    width: n.metadata.width,
+    height: n.metadata.height + labelHeight,
+  }
+}
+
+// 把视口带到一个节点（节点树点击）：放得下就保持倍率只平移居中；
+// 放不下才缩小到刚好放下，不低于最小倍率，也从不放大。
+export function revealViewport(
+  rect: Rect,
+  stage: { width: number; height: number },
+  insets: Insets,
+  current: Viewport,
+): Viewport {
+  const w = Math.max(1, stage.width - insets.left - insets.right)
+  const h = Math.max(1, stage.height - insets.top - insets.bottom)
+  const fit = Math.min(
+    w / Math.max(1, rect.width),
+    h / Math.max(1, rect.height),
+  )
+  const zoom =
+    fit >= current.zoom ? current.zoom : Math.max(zoomLimits.min, fit)
+  return {
+    zoom,
+    x: insets.left + w / 2 - (rect.x + rect.width / 2) * zoom,
+    y: insets.top + h / 2 - (rect.y + rect.height / 2) * zoom,
   }
 }
 
