@@ -44,30 +44,53 @@ var (
 type runCheckpoint struct {
 	runtime        *runtimeHandler
 	registryDigest string
-	skillDigest    string
-	mu             sync.Mutex
-	revision       int64
+	// legacyDigest is the registry before run_in_background; a checkpoint
+	// saved under it resumes with those tool definitions.
+	legacyDigest string
+	skillDigest  string
+	mu           sync.Mutex
+	revision     int64
 }
 
 var _ adk.CheckPointStore = (*runCheckpoint)(nil)
 var _ adk.CheckPointDeleter = (*runCheckpoint)(nil)
 
 func newRunCheckpoint(h *runtimeHandler) (*runCheckpoint, error) {
+	registry, err := registryDigest(h)
+	if err != nil {
+		return nil, err
+	}
+	legacy := h.legacyToolSchemas
+	h.legacyToolSchemas = true
+	old, err := registryDigest(h)
+	h.legacyToolSchemas = legacy
+	if err != nil {
+		return nil, err
+	}
+	skill, err := json.Marshal(h.held.Skill)
+	if err != nil {
+		return nil, err
+	}
+	return &runCheckpoint{runtime: h, registryDigest: registry, legacyDigest: old, skillDigest: digestBytes(skill)}, nil
+}
+
+// registryDigest is the identity of the tools, limits and model a
+// checkpoint is saved against.
+func registryDigest(h *runtimeHandler) (string, error) {
 	var infos []*schema.ToolInfo
 	for _, d := range agentToolDefinitions() {
 		if h.allowed(d.entry.Key) {
 			info, err := d.bind(h).Info(context.Background())
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			infos = append(infos, info)
 		}
 	}
 	schemas, err := llmgateway.EinoToolDefinitions(infos)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-
 	registry, err := json.Marshal(struct {
 		Version string                      `json:"version"`
 		Tools   []ToolEntry                 `json:"tools"`
@@ -82,13 +105,9 @@ func newRunCheckpoint(h *runtimeHandler) (*runCheckpoint, error) {
 		Model:   h.service.models.Snapshot(h.held.Model),
 	})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	skill, err := json.Marshal(h.held.Skill)
-	if err != nil {
-		return nil, err
-	}
-	return &runCheckpoint{runtime: h, registryDigest: digestBytes(registry), skillDigest: digestBytes(skill)}, nil
+	return digestBytes(registry), nil
 }
 func digestBytes(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
 
@@ -191,6 +210,12 @@ func (c *runCheckpoint) Get(ctx context.Context, key string) ([]byte, bool, erro
 		now, err := tx.CreativeNow(ctx)
 		if err != nil {
 			return err
+		}
+		if registry == c.legacyDigest && registry != c.registryDigest {
+			// Saved before run_in_background: the run keeps the tool
+			// definitions its model steps were built with.
+			c.registryDigest = registry
+			h.legacyToolSchemas = true
 		}
 		if runtime != checkpointRuntime || serializer != checkpointSerializer || registry != c.registryDigest || skill != c.skillDigest {
 			return errCheckpointVersion

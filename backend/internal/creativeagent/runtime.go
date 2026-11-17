@@ -50,6 +50,10 @@ var (
 // tool index; framework call IDs are only used to locate that recorded plan.
 type runtimeHandler struct {
 	libraryEnabled bool
+	// legacyToolSchemas is set when the run resumes a checkpoint saved
+	// before the long-running tools offered run_in_background: it keeps the
+	// tool definitions that checkpoint was saved with (agent-tool-background).
+	legacyToolSchemas bool
 	*adk.BaseChatModelAgentMiddleware
 	service   *Service
 	scope     store.AccountScope
@@ -77,6 +81,9 @@ type runtimeHandler struct {
 	// delivering is the input batches the next request carries for the first
 	// time; its dispatch, or the replay of its step, marks them delivered.
 	delivering []int
+	// notices are the background task notices the next request carries
+	// (agent-tool-background); its dispatch marks them delivered.
+	notices []string
 	// libraryBound is set when the request just bound carries library tool
 	// results, so its dispatch can refuse it if library search closed since.
 	libraryBound bool
@@ -98,6 +105,18 @@ func (h *runtimeHandler) setDelivery(batches []int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.delivering = batches
+}
+
+func (h *runtimeHandler) setNotices(handles []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.notices = handles
+}
+
+func (h *runtimeHandler) carriedNotices() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.notices
 }
 
 func (h *runtimeHandler) delivery() []int {
@@ -428,6 +447,19 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
 			return err
+		}
+		// A task can publish the result or the detach reply while this call
+		// is still unwinding. Return the journaled reply to the model.
+		if err := tx.QueryRow(ctx, "creative_agent_steps", "state,output", "id=$2", stepID).Scan(&state, &saved); err != nil {
+			return err
+		}
+		if state == "succeeded" || state == "failed" {
+			var out toolProjection
+			if err := json.Unmarshal(saved, &out); err != nil {
+				return err
+			}
+			projection = out.Result
+			return nil
 		}
 		var err error
 		projection, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: stepID, CallID: callID, Name: name, Args: args, Result: result,

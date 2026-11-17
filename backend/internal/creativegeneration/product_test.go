@@ -149,7 +149,7 @@ func TestAgentGenerationAdmitGuardsAcceptance(t *testing.T) {
 	in := creativegeneration.AgentGeneration{Seed: "run/step-stopped", CanvasID: f.target.CanvasID, NodeID: f.node, DraftRevision: int64(canvas.Nodes[0].Prompt.Revision)}
 	stopped := errors.New("run stopped")
 	in.Admit = func(context.Context, store.TxAccountScope) error { return stopped }
-	if _, err = p.GenerateNode(t.Context(), f.scope, in); !errors.Is(err, stopped) {
+	if _, err = p.SubmitAgentGeneration(t.Context(), f.scope, in); !errors.Is(err, stopped) {
 		t.Fatalf("refused admission: %v", err)
 	}
 	for _, table := range []string{"llm_requests", "creative_node_executions", "creative_generation_bindings"} {
@@ -160,9 +160,9 @@ func TestAgentGenerationAdmitGuardsAcceptance(t *testing.T) {
 	var admitted atomic.Int64
 	in.Seed = "run/step-running"
 	in.Admit = func(context.Context, store.TxAccountScope) error { admitted.Add(1); return nil }
-	result, err := p.GenerateNode(t.Context(), f.scope, in)
+	execution, err := p.SubmitAgentGeneration(t.Context(), f.scope, in)
 	must(t, err)
-	if admitted.Load() != 1 || result.State != "running" || count(t, f.db, "SELECT count(*) FROM llm_requests WHERE state='prepared'") != 1 {
-		t.Fatalf("admitted generation %+v", result)
+	if admitted.Load() != 1 || execution != creativegeneration.AgentExecutionID(f.scope.AccountID(), in.Seed) || count(t, f.db, "SELECT count(*) FROM llm_requests WHERE state='prepared'") != 1 {
+		t.Fatalf("admitted generation %s", execution)
 	}
 }

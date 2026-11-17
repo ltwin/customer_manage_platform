@@ -1584,6 +1584,56 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent-tool-tasks/{handle}/detach:
+    post:
+      tags: [creative-foundation]
+      operationId: detachCreativeAgentToolTask
+      summary: 将助手正在等待的任务转到后台
+      description: 源任务已完成时返回原前台结果；回看截图仅支持前台。同一幂等键回放首个成功回执。
+      parameters:
+      - {in: path, name: handle, required: true, schema: {type: string, pattern: '^cctask_[0-9a-f-]+$'}}
+      - {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeAgentControlRequest'}
+      responses:
+        '200':
+          description: 任务状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentToolTask'}
+        default:
+          description: 请求失败；其他账号的任务不可见，任务状态冲突时回读卡片
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent-tool-tasks/{handle}/cancel:
+    post:
+      tags: [creative-foundation]
+      operationId: cancelCreativeAgentToolTask
+      summary: 取消助手的后台任务
+      description: 已发出的生成仍会扣费，且取消后不采用结果；已结束的任务返回原结果。同一幂等键回放首个成功回执。
+      parameters:
+      - {in: path, name: handle, required: true, schema: {type: string, pattern: '^cctask_[0-9a-f-]+$'}}
+      - {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeAgentControlRequest'}
+      responses:
+        '200':
+          description: 任务状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentToolTask'}
+        default:
+          description: 请求失败；其他账号的任务不可见，任务状态冲突时回读卡片
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /creative/agent-runs/{id}/close-reconciliation:
     post:
       tags: [creative-foundation]
@@ -9842,6 +9892,10 @@ components:
           type: string
           description: 由服务端从会话读出；客户端给的对不上也不采信。
         trigger_message_id: {type: string}
+        trigger_kind:
+          type: string
+          enum: [background_tool]
+          description: 后台任务完成触发的自动运行；既有入口省略。
         egress_consent_id:
           type: string
           description: 运行准入时账号当前有效的外发同意（准入证据）；本次变更前创建的运行指向当时的会话级授权。
@@ -9865,7 +9919,7 @@ components:
         wait_reason:
           type: string
           description: >-
-            等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成，
+            等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）、tool_task（等待耗时工具）或 slot_busy（任务已完成，
             等其他助手运行释放写入槽位）。
         source_run_id: {type: string}
         limits_version: {type: string}
@@ -9932,6 +9986,23 @@ components:
       properties:
         summary: {type: string}
         duration_ms: {type: integer, format: int64}
+    CreativeAgentToolTask:
+      type: object
+      additionalProperties: false
+      required: [handle, mode, state, revision, tool_key, run_id, tool_step_id]
+      properties:
+        handle: {type: string, pattern: '^cctask_'}
+        mode: {type: string, enum: [foreground, background]}
+        state: {type: string, enum: [running, succeeded, failed, cancelled, expired]}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        result:
+          type: object
+          additionalProperties: true
+          description: 终态时的领域工具结果；运行中省略。
+        finished_at: {type: string, format: date-time}
+        tool_key: {type: string, enum: [generate_node, compress_image, write_model, render_view, export_shots]}
+        run_id: {type: string}
+        tool_step_id: {type: string}
     CreativeAgentToolPayload:
       type: object
       additionalProperties: false
@@ -9947,6 +10018,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/CreativeAgentNodeRef'}
         error_code: {type: string}
+        task: {$ref: '#/components/schemas/CreativeAgentToolTask'}
     CreativeAgentNodeRef:
       type: object
       additionalProperties: false
@@ -10064,7 +10136,8 @@ components:
       description: >-
         事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。
         block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated；
-        run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage。
+        run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage；
+        background_tool.completed 带 handle、message_id，提示重读对话。
       properties:
         schema_version: {type: integer, enum: [1]}
         run_id: {type: string}
@@ -10103,6 +10176,9 @@ components:
         body: {$ref: '#/components/schemas/CreativeAgentMessageBody'}
         revision: {$ref: '#/components/schemas/CreativeRevision'}
         created_at: {type: string, format: date-time}
+        background_task:
+          allOf: [{$ref: '#/components/schemas/CreativeAgentToolTask'}]
+          description: 仅后台任务完成的系统消息携带，必为终态。
     CreativeAgentMessagePage:
       type: object
       additionalProperties: false

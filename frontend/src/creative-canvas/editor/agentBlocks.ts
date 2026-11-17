@@ -4,6 +4,8 @@ import { runLabels, type AgentRun } from './agentState.ts'
 
 export type AgentBlock = components['schemas']['CreativeAgentBlock']
 export type RunEvent = components['schemas']['CreativeAgentRunEvent']
+export type ToolTask = components['schemas']['CreativeAgentToolTask']
+type ToolPayload = components['schemas']['CreativeAgentToolPayload']
 type BlockUpdated = components['schemas']['CreativeAgentBlockUpdated']
 
 // What one run looks like right now: the snapshot plus every event after it.
@@ -43,6 +45,30 @@ export function renderable(block: AgentBlock): boolean {
 
 // 运行里画得出来的 input 块所带的消息：对话里不再单独画一遍。画不出来的
 // 块只剩占位，那条消息仍由对话画。
+export function blockTask(block: AgentBlock): ToolTask | undefined {
+  if (block.type !== 'tool' || !renderable(block)) return
+  const task = (block.payload as ToolPayload).task
+  if (task?.run_id === block.run_id && /^cctask_/.test(task.handle) && /^\d+$/.test(task.revision))
+    return task
+}
+
+export function newerTask(left: ToolTask, right?: ToolTask): ToolTask {
+  return right?.handle === left.handle && BigInt(right.revision) > BigInt(left.revision)
+    ? right
+    : left
+}
+
+// An old run can gain a task result without advancing its closed SSE log.
+function mergeTaskBlocks(old: AgentBlock[], next: AgentBlock[]): AgentBlock[] {
+  const prior = new Map(old.map((block) => [block.id, blockTask(block)]))
+  return next.map((block) => {
+    const task = blockTask(block)
+    const prev = prior.get(block.id)
+    if (!prev || !task || newerTask(task, prev) === task) return block
+    return { ...block, payload: { ...block.payload, task: prev } }
+  })
+}
+
 export function inputMessageIDs(blocks: AgentBlock[]): string[] {
   return blocks.flatMap((block) =>
     block.type === 'input' && renderable(block)
@@ -65,8 +91,9 @@ export function mergeSnapshot(
 ): RunView {
   const next = fromSnapshot(snapshot)
   // Usage arrives only as events; a snapshot never carries it.
-  if (!old || BigInt(next.seq) >= BigInt(old.seq))
-    return old?.usage ? { ...next, usage: old.usage } : next
+  if (!old) return next
+  if (BigInt(next.seq) >= BigInt(old.seq))
+    return { ...next, blocks: mergeTaskBlocks(old.blocks, next.blocks), usage: old.usage }
   if (BigInt(next.seq) >= BigInt(old.runSeq))
     return { ...old, run: next.run, runSeq: next.seq }
   return old
@@ -100,7 +127,13 @@ export function applyEvent(view: RunView, event: RunEvent): Applied {
     if (change.state) block.state = change.state
     if (change.finished_at) block.finished_at = change.finished_at
     if (change.payload_version) block.payload_version = change.payload_version
-    if (change.patch?.set) block.payload = change.patch.set
+    if (change.patch?.set) {
+      block.payload = change.patch.set
+      const task = blockTask(block)
+      const prior = blockTask(old)
+      if (task && prior && newerTask(task, prior) === prior)
+        block.payload = { ...block.payload, task: prior }
+    }
     else if (change.patch?.append) {
       const { path, text } = change.patch.append
       const before = old.payload[path]
@@ -233,11 +266,11 @@ export function nodeRefs(block: AgentBlock): string[] {
 
 // What the status row says the run is doing right now.
 export function currentStep(view: RunView): string {
-  // Parked on a page job, its tool row stays open; the wait says more.
-  if (view.run.state === 'waiting_client')
-    return view.run.wait_reason === 'slot_busy'
-      ? '等待其他助手运行结束'
-      : runLabels.waiting_client
+  if (view.run.state === 'waiting_client') {
+    if (view.run.wait_reason === 'slot_busy') return '等待其他助手运行结束'
+    if (view.run.wait_reason === 'tool_task') return '等待工具完成'
+    return runLabels.waiting_client
+  }
   const open = view.blocks.findLast(
     (block) => !block.hidden && !block.finished_at,
   )

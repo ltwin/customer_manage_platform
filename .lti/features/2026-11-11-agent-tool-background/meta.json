@@ -1,12 +1,12 @@
 {
   "uid": "32a22e30-4c4f-4fcb-b837-3b86b7ade489",
-  "revision": 5,
+  "revision": 11,
   "id": "agent-tool-background",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-11T12:39:58.970Z",
-  "updatedAt": "2026-11-16T03:20:12.736Z",
+  "updatedAt": "2026-11-17T09:01:37.269Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -44,8 +44,99 @@
       "removed": []
     }
   ],
-  "verify": [],
+  "baseline": {
+    "commit": "ccb471c846a505772c488fc277e2b94776d612fb",
+    "at": "2026-11-16T03:37:12.405Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5c95fadbd127f443152c97300e1b4ed5e9811694ab73051bd03c57b4b73ef763"
+    },
+    "preExisting": [
+      ".lti/snapshots/5c95fadbd127f443152c97300e1b4ed5e9811694ab73051bd03c57b4b73ef763.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "Codex",
+      "at": "2026-11-17T07:54:52.226Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 LTI 配置 checks，按仓库 Make 门禁实跑并记录；供应商和浏览器接口使用测试替身，未部署生产或代替摄影师验收。"
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "阶段 4 完成；生成物、全量 Go/前端门禁、真实 PostgreSQL 路由和迁移、并发三轮及浏览器回归通过。逐项证据见 verification.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "15f2c1374c9c7f69b1c9628f716867d2d91458814a28c01052c125705bc59df2"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-17T09:01:19.156Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "LTI 未配置 checks，复用已执行的 Make 门禁、PostgreSQL 集成及模拟 API 浏览器验收证据。未部署生产、未测真实供应商或生产受理延迟。"
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "审计修复、全仓 Go 构建、受影响包 lint 与完整测试通过；同步 develop 后生成物、审计回归、HTTP 和 0084/0085 迁移定向验证通过。验收证据见 verification.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f99677576d729dc5a21909206c0e0f3560896ad10dfeb83e29d700193a5bd098"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-17T09:01:34.035Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "根据对话明确验收决定记录，复用技术验收证据。生产部署、真实供应商和生产时延未验证。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "Owner 确认本 Feature 可以收尾并合入 develop，接受审计修复后的当前快照。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "f99677576d729dc5a21909206c0e0f3560896ad10dfeb83e29d700193a5bd098"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-17T09:01:36.935Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

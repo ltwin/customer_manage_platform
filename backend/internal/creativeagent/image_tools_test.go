@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -16,18 +17,66 @@ import (
 // stubCompressor stands in for image editing; its own database tests cover
 // the candidate and the adoption.
 type stubCompressor struct {
-	mu    sync.Mutex
-	calls []creativeimageedit.AgentCompress
+	mu          sync.Mutex
+	calls       []creativeimageedit.AgentCompress
+	pending     bool
+	adopts      []bool
+	discarded   []string
+	conclude    creativeimageedit.AgentCompressResult
+	beforeAdopt func()
 }
 
-func (s *stubCompressor) CompressForAgent(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress) (creativeimageedit.AgentCompressResult, error) {
+func (s *stubCompressor) AcceptAgentCompress(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress) (string, error) {
 	s.mu.Lock()
 	s.calls = append(s.calls, in)
 	s.mu.Unlock()
 	if in.NodeID == "cwnode_busy" {
-		return creativeimageedit.AgentCompressResult{}, &creativeimageedit.Refusal{Message: "这个节点正在生成，完成后再试"}
+		return "", &creativeimageedit.Refusal{Message: "这个节点正在生成，完成后再试"}
 	}
-	return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, State: creativeimageedit.AgentApplied, Quality: in.Quality, SourceSize: 1000, OutputSize: 600, ReductionPercent: 40}, nil
+	return "ccier_" + in.NodeID, nil
+}
+
+func (s *stubCompressor) AgentCompressPendingInTx(context.Context, store.TxAccountScope, string) (bool, time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending, time.Now().Add(10 * time.Minute), nil
+}
+
+func (s *stubCompressor) ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, render string, admit creativeimageedit.CompressAdmit) (creativeimageedit.AgentCompressResult, error) {
+	if s.beforeAdopt != nil {
+		s.beforeAdopt()
+	}
+	var adopt bool
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		adopt, err = admit(ctx, tx)
+		return err
+	}); err != nil {
+		return creativeimageedit.AgentCompressResult{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.adopts = append(s.adopts, adopt)
+	if s.conclude.State != "" {
+		return s.conclude, nil
+	}
+	if !adopt {
+		return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentNotApplied, Reason: "助手已停止"}, nil
+	}
+	return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentApplied, Quality: in.Quality, SourceSize: 1000, OutputSize: 600, ReductionPercent: 40}, nil
+}
+
+func (s *stubCompressor) DiscardAgentCompressInTx(_ context.Context, _ store.TxAccountScope, in creativeimageedit.AgentCompress, render string) (creativeimageedit.AgentCompressResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.discarded = append(s.discarded, render)
+	return creativeimageedit.AgentCompressResult{NodeID: in.NodeID, RenderID: render, State: creativeimageedit.AgentNotApplied, Reason: "压缩已取消"}, nil
+}
+
+func (s *stubCompressor) set(pending bool) {
+	s.mu.Lock()
+	s.pending = pending
+	s.mu.Unlock()
 }
 
 func offered(r llmgateway.ProviderRequest, name string) bool {
@@ -94,8 +143,197 @@ func TestAssistantCompressesAnImage(t *testing.T) {
 	if !strings.Contains(refused, "正在生成") || f.count("creative_agent_steps", "tool_key=$1 AND error_code='creative_tool_refused'", compressImageTool) != 1 {
 		t.Fatalf("refusal %q", refused)
 	}
-	if len(compressor.calls) != 2 || compressor.calls[0].Quality != 75 || compressor.calls[0].CanvasID != f.canvasID ||
-		compressor.calls[1].Quality != 0 || !strings.HasPrefix(compressor.calls[0].Seed, run.ID+"/ccst_") || compressor.calls[0].Seed == compressor.calls[1].Seed {
+	// Parallel tool calls can reach the compressor in either order.
+	calls := make(map[string]creativeimageedit.AgentCompress, len(compressor.calls))
+	for _, call := range compressor.calls {
+		calls[call.NodeID] = call
+	}
+	photo, busy := calls["cwnode_photo"], calls["cwnode_busy"]
+	if len(compressor.calls) != 2 || photo.Quality != 75 || photo.CanvasID != f.canvasID ||
+		busy.Quality != 0 || !strings.HasPrefix(photo.Seed, run.ID+"/ccst_") || !strings.HasPrefix(busy.Seed, run.ID+"/ccst_") || photo.Seed == busy.Seed {
 		t.Fatalf("calls %+v", compressor.calls)
+	}
+}
+
+// startParkedCompress runs one compress_image call on a candidate that is
+// still encoding, so the call parks on its task.
+func startParkedCompress(t *testing.T, f *fixture) (Run, *stubCompressor, *[]string) {
+	t.Helper()
+	f.queue()
+	compressor := &stubCompressor{pending: true}
+	f.service.SetImageCompressor(compressor)
+	c := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, c.ID)
+	var answers []string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, call("a", 0, compressImageTool, `{"node_id":"cwnode_photo","quality":70}`)), nil
+		}
+		answers = append(answers, toolResult(r, 0))
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "压缩一下"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	parked, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || parked.State != RunWaitingClient || parked.WaitReason != waitToolTask {
+		t.Fatalf("not parked on its task: %+v %v", parked, err)
+	}
+	if f.slotHolder() != "" {
+		t.Fatal("a parked compress kept the slot")
+	}
+	return run, compressor, &answers
+}
+
+// An encode that takes longer than any old wait parks the call; the finisher
+// adopts the candidate once and hands the real sizes back.
+func TestCompressParksUntilTheCandidateIsEncoded(t *testing.T) {
+	f := setup(t)
+	run, compressor, answers := startParkedCompress(t, f)
+	task := f.sceneTasks(run.ID)
+	if len(task) != 1 || task[0].Tool != compressImageTool || task[0].Mode != modeForeground || task[0].State != taskRunning {
+		t.Fatalf("task=%+v", task)
+	}
+	f.markDue(task[0].ID)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunWaitingClient || len(compressor.adopts) != 0 {
+		t.Fatalf("moved while encoding: %s adopts=%v", got.State, compressor.adopts)
+	}
+
+	compressor.set(false)
+	f.markDue(task[0].ID)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	// A second pass over a finished task adopts nothing again.
+	f.markDue(task[0].ID)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		State string `json:"state"`
+	}
+	if got := f.sceneTasks(run.ID)[0]; got.State != taskSucceeded || json.Unmarshal(got.Result, &stored) != nil || stored.State != "applied" {
+		t.Fatalf("task=%+v", got)
+	}
+	if len(compressor.adopts) != 1 || !compressor.adopts[0] {
+		t.Fatalf("adopts=%v", compressor.adopts)
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunSucceeded || len(*answers) != 1 || !strings.Contains((*answers)[0], `"reduction_percent":40`) {
+		t.Fatalf("run=%s answers=%v", got.State, *answers)
+	}
+}
+
+// A stopped call's candidate is discarded, never adopted for it.
+func TestStoppedCompressDiscardsTheCandidate(t *testing.T) {
+	f := setup(t)
+	run, compressor, answers := startParkedCompress(t, f)
+	if _, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); err != nil {
+		t.Fatal(err)
+	}
+	compressor.set(false)
+	task := f.sceneTasks(run.ID)[0]
+	f.markDue(task.ID)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.sceneTasks(run.ID)[0]; got.State != taskCancelled {
+		t.Fatalf("task=%+v", got)
+	}
+	if len(compressor.adopts) != 1 || compressor.adopts[0] {
+		t.Fatalf("adopts=%v", compressor.adopts)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunCancelled || len(*answers) != 0 {
+		t.Fatalf("stopped run moved: %s %v", got.State, *answers)
+	}
+}
+
+// A stop after the finisher sees a ready candidate still wins before adoption.
+func TestStopWinsBetweenCompressionReadinessAndAdoption(t *testing.T) {
+	f := setup(t)
+	run, compressor, answers := startParkedCompress(t, f)
+	compressor.set(false)
+	compressor.beforeAdopt = func() {
+		if _, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handle := f.sceneTasks(run.ID)[0].ID
+	f.markDue(handle)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if task := f.sceneTasks(run.ID)[0]; task.State != taskCancelled || !slices.Equal(compressor.adopts, []bool{false}) {
+		t.Fatalf("task=%+v adopts=%v", task, compressor.adopts)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunCancelled || len(*answers) != 0 {
+		t.Fatalf("stopped run moved: %s %v", got.State, *answers)
+	}
+}
+
+func TestFastCompressDetachedBeforeAdoptionPublishesNotice(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	compressor := &stubCompressor{}
+	f.service.SetImageCompressor(compressor)
+	c := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, c.ID)
+	var toolReply, nextRequest string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, call("a", 0, compressImageTool, `{"node_id":"cwnode_photo"}`)), nil
+		}
+		toolReply, nextRequest = toolResult(r, 0), requestText(r)
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "压缩一下"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handle string
+	compressor.beforeAdopt = func() {
+		handle = f.sceneTasks(run.ID)[0].ID
+		if _, err := f.service.DetachToolTask(t.Context(), f.alice, handle, command(t, map[string]any{})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if task := f.sceneTasks(run.ID)[0]; task.Mode != modeBackground || task.State != taskSucceeded {
+		t.Fatalf("task=%+v", task)
+	}
+	if !strings.Contains(toolReply, `"detached":true`) || !strings.Contains(nextRequest, noticePrefix) || !strings.Contains(nextRequest, `"state":"applied"`) {
+		t.Fatalf("tool reply %s, request %s", toolReply, nextRequest)
+	}
+	if n := f.count("creative_agent_messages", "conversation_id=$1 AND role='system'", c.ID); n != 1 || f.notice(handle) != "delivered" {
+		t.Fatalf("system messages=%d notice=%s", n, f.notice(handle))
+	}
+}
+
+// Each final candidate state reads the same way to the model and the task.
+func TestCompressOutcomes(t *testing.T) {
+	for state, want := range map[string]string{
+		creativeimageedit.AgentApplied:     taskSucceeded,
+		creativeimageedit.AgentNotReduced:  taskSucceeded,
+		creativeimageedit.AgentUnconfirmed: taskSucceeded,
+		creativeimageedit.AgentFailed:      taskFailed,
+		creativeimageedit.AgentNotApplied:  taskFailed,
+	} {
+		outcome, err := compressOutcome(creativeimageedit.AgentCompressResult{NodeID: "n", State: state}, true)
+		success := state == creativeimageedit.AgentApplied
+		if err != nil || !outcome.Done || outcome.State != want || !strings.Contains(outcome.Result, `"state":"`+state+`"`) ||
+			strings.Contains(outcome.Result, `"success":true`) != success {
+			t.Fatalf("%s: %+v %v", state, outcome, err)
+		}
 	}
 }

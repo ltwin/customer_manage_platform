@@ -43,6 +43,7 @@ type mcpFixture struct {
 	otherWeb string // another account's web token
 	canvasID string
 	st       *store.Store
+	db       *sql.DB
 }
 
 // newMCPFixture serves the real router with the external agent endpoint on,
@@ -110,7 +111,7 @@ func newMCPFixture(t *testing.T, enabled bool) mcpFixture {
 	}
 	mine := canvas(testAcctID, "九月，向海而行")
 	canvas("mcp-other", "别人的项目")
-	return mcpFixture{server: server, web: issueToken(t, tokens, testAcctID), otherWeb: issueToken(t, tokens, "mcp-other"), canvasID: mine, st: s}
+	return mcpFixture{server: server, web: issueToken(t, tokens, testAcctID), otherWeb: issueToken(t, tokens, "mcp-other"), canvasID: mine, st: s, db: db}
 }
 
 var noRedirect = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

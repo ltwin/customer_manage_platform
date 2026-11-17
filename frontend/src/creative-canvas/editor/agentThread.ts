@@ -49,7 +49,7 @@ export function turnHead(messages: ThreadMessage[]): number {
 
 function visible(messages: ThreadMessage[]): ThreadMessage[] {
   return messages.filter(
-    (message) => message.role === 'user' || message.role === 'assistant',
+    (message) => message.role === 'user' || message.role === 'assistant' || !!message.background_task,
   )
 }
 

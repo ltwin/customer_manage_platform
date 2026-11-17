@@ -64,14 +64,14 @@ stateDiagram-v2
 | 条件 | `wake_skip_reason` | 判定时机 |
 |---|---|---|
 | 来源运行以 `cancelled` 结束（含摄影师停止） | `source_stopped` | 发布通知时；来源运行还在跑的，随它结束再判 |
-| 来源运行以 `failed` 结束（含超期） | `source_failed` | 同上 |
+| 来源运行以 `failed` 结束（含超期），或以 `partial` 结束且记录了错误码 | `source_failed` | 同上 |
 | 对话里最近一次非自动运行之后，已连续有 5 轮 `trigger_kind=background_tool` 的运行 | `chain_limit` | 建运行事务内，持会话槽锁时计数 |
 | 账号没有有效外发同意（未同意、已撤回、说明版本已变） | `egress` | 建运行事务内，走现有门禁 |
 | 积分不足以预留 | `credits` | 同上 |
 | 模型或 Skill 已不可用 | `unavailable` | 同上 |
 | 对话有 `waiting_input` / `waiting_apply` / `waiting_client` 的未结束运行 | 不写，只是暂不开轮 | 每次到期复查；摄影师补充时随补充送达 |
 
-  `succeeded` 和 `partial` 是正常结束，可以唤醒。来源运行还在执行时，通知直接送进这一轮，不涉及唤醒。
+  `succeeded` 以及无错误码的 `partial` 可以唤醒。来源运行还在执行时，通知直接送进这一轮，不涉及唤醒。
 - 计数规则：摄影师发消息、插队或补充所开的运行都不是自动运行，计数归零。不需要新列，在建运行事务里按对话查最近一次非自动运行之后的自动运行数。
 
 ## 核心流程

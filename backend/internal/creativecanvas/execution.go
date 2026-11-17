@@ -290,6 +290,34 @@ func GetNodeExecution(ctx context.Context, scope store.AccountScope, target Exec
 	})
 	return e, err
 }
+
+// NodeExecutionInTx reads and locks one execution in the caller's
+// transaction, for a caller that already holds the locks before it in order
+// (the agent tool task finisher holds the project).
+func NodeExecutionInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) (NodeExecution, error) {
+	return readExecution(ctx, tx, target)
+}
+
+// ExecutionOutputRevisionsInTx lists the content revisions an execution put
+// on its node as versions, oldest first.
+func ExecutionOutputRevisionsInTx(ctx context.Context, tx store.TxAccountScope, canvasID, executionID string) ([]string, error) {
+	rows, err := tx.QueryPage(ctx, "creative_node_versions", "content_revision_id", "canvas_id=$2 AND execution_id_snapshot=$3 AND deleted_at IS NULL",
+		[]store.OrderBy{{Column: "version_no"}, {Column: "id"}}, 1000, 0, canvasID, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func executionRefs(ctx context.Context, tx store.TxAccountScope, id, direction string) ([]creativecontent.Revision, error) {
 	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction=$3", []store.OrderBy{{Column: "ordinal"}}, 64, 0, id, direction)
 	if err != nil {
@@ -540,6 +568,27 @@ func cancelNodeExecution(ctx context.Context, scope store.AccountScope, c creati
 		}
 		return outcome(200, "node_execution", e.ID, resultRevision, e)
 	})
+}
+
+// CancelExecutionInTx cancels an execution in the caller's transaction, the
+// internal cancellation CancelNodeExecution sends, generations included. It is
+// for an assistant generation the photographer cancels from its background
+// card (agent-tool-background, a local exception to the 2026-10-09 rule): a
+// request not yet sent is withdrawn, one already sent still runs and is
+// charged, and its result is discarded. The caller holds the project lock.
+func CancelExecutionInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
+	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
+	if err != nil {
+		return err
+	}
+	e, err := readExecution(ctx, tx, target)
+	if err != nil {
+		return err
+	}
+	if e.ApplyState != "pending" {
+		return nil
+	}
+	return finishExecution(ctx, tx, canvas, e, "cancelled", "discarded", "")
 }
 
 func minTime(a, b time.Time) time.Time {

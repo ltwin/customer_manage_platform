@@ -181,7 +181,7 @@ func complete(ctx context.Context, tx store.TxAccountScope, in CompleteInput) (C
 		if w == nil {
 			return CompleteResponse{}, errors.New("creative scene: no job waiter registered")
 		}
-		gate, err = w.Admit(ctx, tx, *job.RunID)
+		gate, err = w.Admit(ctx, tx, job)
 		if errors.Is(err, ErrRunGate) {
 			return CompleteResponse{}, &runGateError{runID: *job.RunID, cause: err}
 		}
@@ -194,7 +194,11 @@ func complete(ctx context.Context, tx store.TxAccountScope, in CompleteInput) (C
 		return CompleteResponse{}, err
 	}
 	var res JobResult
+	refusing, _ := gate.(RefusingGate)
 	switch {
+	case refusing != nil && refusing.Refusal() != nil:
+		// The job finishes, but its write is not allowed any more.
+		res = JobResult{Failure: refusing.Refusal()}
 	case in.Outcome == JobFailed:
 		res = JobResult{Failure: &JobFailure{Code: in.Error.Code, Message: in.Error.Message}}
 	case job.Kind == KindBakeModel && in.Bake != nil:

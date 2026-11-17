@@ -133,7 +133,7 @@ func settleOnce(ctx context.Context, scope store.AccountScope, id string, counts
 			if w == nil {
 				return errors.New("creative scene: no job waiter registered")
 			}
-			gate, err = w.Admit(ctx, tx, *job.RunID)
+			gate, err = w.Admit(ctx, tx, job)
 			if errors.Is(err, ErrRunGate) {
 				gateFailed = &runGateError{runID: *job.RunID, cause: err}
 				return gateFailed

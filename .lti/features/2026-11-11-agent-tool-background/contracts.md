@@ -42,6 +42,7 @@ PostgreSQL `creative_agent_tool_tasks` 由 `creativeagent` 维护。每行代表
 
 - 索引：worker 跨账号扫描走全局部分索引 `(next_check_at, id) WHERE next_check_at IS NOT NULL` 和 `(wake_after, id) WHERE wake_after IS NOT NULL`，按批 `FOR UPDATE SKIP LOCKED`，每项按行上的 `account_id` 建 AccountScope 处理。对话待送达项走 `(account_id, conversation_id, finished_at, id) WHERE notification_state = 'pending'`。打开历史卡片用来源步骤唯一键读任务。
 - 源状态触发器：`creative_node_executions`（`state`、`apply_state`）、`creative_image_edit_renders`（`state`）、`creative_scene_jobs`（`state`）上的 `AFTER UPDATE` 触发器，值变化时把对应运行中任务的 `next_check_at` 置为 `now()`，命中行时 `pg_notify('creative_agent_tool_tasks', '')`。触发器不读写运行、会话和消息，不抛异常；没有任务行时什么都不做。creative-worker 用专用 LISTEN 连接接收，另每 5 秒兜底扫描。
+- `source_failed` 包含以 `failed` 结束的来源运行，以及带错误码的 `partial`。自动运行取得项目锁和会话槽锁后复查待送达通知，再决定开轮和预留积分。
 - 模式、工具步骤结论、卡片投影和必要的运行续跑原子提交。终态通知和系统消息原子提交。只有完成时的后台任务可以进入通知待送达。前台场景任务在完成事务里由运行侧同时写任务终态并续跑，不经收尾器。
 - 任务在创建源任务时登记。既有前台场景任务由无对应关联的旧路径继续处理。升级前已启动的生成、压缩运行走旧检查点兼容路径。
 - 对话存在期间保留系统消息、终态卡片的最小投影及待送达任务。关闭或删除对话后抑制尚未写出的通知，任务源按照自身期限结束。对话永久删除时按账号和对话清理完成消息的引用及终态关联，仍在执行的任务留下结算和执行所需字段，终态后由维护扫描清除。运行、源记录或执行事件到期不会删除仍由对话持有的终态卡片与消息。
@@ -239,7 +240,7 @@ Content-Type: application/json
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
 ### 交互规则
-- **原子性**：结果落库与任务终态在同一事务里。新任务同事务标记助手收尾，前台由收尾器继续运行，后台由收尾器写完成通知。存量任务沿用运行继续的原事务。场景写入和导出的画布放置在保存点内执行，冲突、结果不合规或无法放置时回滚到保存点，任务记为 `failed`（带原因），前台运行或后台通知随后将结果送给助手。导出的节点只在任务成功时创建。
+- **原子性**：结果落库与任务终态在同一事务里。前台在同一事务记录助手工具任务终态并续跑，存量任务沿用原有续跑路径。后台在同一事务标记待收尾，随后由收尾器发布完成通知。场景写入和导出的画布放置在保存点内执行，冲突、结果不合规或无法放置时回滚到保存点，任务记为 `failed`（带原因），前台运行或后台通知随后将结果送给助手。导出的节点只在任务成功时创建。
 - **幂等**：沿用公共约定。网络中断后用同一 key 重试或查回执。
 
 ### 调用示例
@@ -283,8 +284,8 @@ Content-Type: application/json
 ## api: ADD 助手图片压缩的无人值守采用
 
 - `compress_image` 拆成两步：候选受理（固定源修订、质量参数，派生创建、采用、丢弃三个 operation ID），以及采用。工具调用内不再每 2 秒轮询，也去掉 90 秒等待上限。
-- 候选 ready 后由 creative-worker 的收尾器调用同一个同步 apply，前台、后台都一样；只在收到已提交回执时报告 `applied`。这取代 `docs/product/creative-canvas-system/modules/image-editing-backend.md` §5.3 第 2、4 条（「等待上限 90 秒」「取消 / 进程崩溃后没有后台自动采用者」），该文档同步修订。
-- 采用前复核任务归属、源修订和画布写入条件，沿用源变更拒绝、非内容版本冲突的有界重试和回执核实。apply 已发出而响应未知时按原操作回执核实，不误报未应用。
+- 候选 ready 后走统一收尾，调用图片编辑面板也使用的同步 apply。快速完成的候选可以由当前工具调用直接进入收尾。收到提交回执或读回候选确认已采用后报告 `applied`。这取代 `docs/product/creative-canvas-system/modules/image-editing-backend.md` §5.3 第 2、4 条（「等待上限 90 秒」「取消 / 进程崩溃后没有后台自动采用者」），该文档同步修订。
+- 在 apply 事务内复核任务归属和当前模式，前台同时复核运行执行权。沿用源修订和画布写入检查、非内容版本冲突的有界重试及回执核实。apply 已发出而响应未知时按原操作回执核实，不误报未应用。
 - 不采用的情况：来源运行停止时任务仍为前台；卡片取消；候选失败或过期。这些情况丢弃候选，任务结果为 `not_applied`（取消为 `cancelled`）。
 - 摄影师在编辑面板发起的压缩和裁切不变，仍由前端等 ready 后自己调用 apply。
 

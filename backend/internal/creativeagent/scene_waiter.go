@@ -30,12 +30,84 @@ type sceneGate struct {
 	held claim
 }
 
-// Admit locks the run in the run lock order (project, slot, gateway group,
+// detachedGate admits the completion of a job its run handed to the
+// background. Settling it does nothing: the job's state change marks its task
+// and the finisher publishes the result (design: 场景写入的执行权).
+type detachedGate struct{ refusal *creativescene.JobFailure }
+
+func (g *detachedGate) Refusal() *creativescene.JobFailure { return g.refusal }
+
+// Admit admits a job's write. A background job is admitted by what it was
+// accepted for; a job its run waits on, through the run.
+func (w sceneWaiter) Admit(ctx context.Context, tx store.TxAccountScope, job creativescene.Job) (creativescene.RunGate, error) {
+	background, err := backgroundSceneJobInTx(ctx, tx, job)
+	if err != nil || background {
+		if err != nil {
+			return nil, err
+		}
+		return admitDetachedInTx(ctx, tx, job)
+	}
+	gate, err := w.admitRun(ctx, tx, *job.RunID)
+	if err != nil {
+		return nil, err
+	}
+	// The run is held now, so its task can no longer move to the background
+	// under us; one that moved while we waited for the run is detached.
+	if background, err = backgroundSceneJobInTx(ctx, tx, job); err != nil || background {
+		if err != nil {
+			return nil, err
+		}
+		return admitDetachedInTx(ctx, tx, job)
+	}
+	return gate, nil
+}
+
+// backgroundSceneJobInTx says whether job's task runs in the background. It
+// reads the task without locking it: the task row is locked last.
+func backgroundSceneJobInTx(ctx context.Context, tx store.TxAccountScope, job creativescene.Job) (bool, error) {
+	if job.ToolCallID == nil {
+		return false, nil
+	}
+	var mode string
+	err := tx.QueryRow(ctx, "creative_agent_tool_tasks", "mode", "tool_step_id=$2", *job.ToolCallID).Scan(&mode)
+	if errors.Is(err, store.ErrNoRows) {
+		return false, nil
+	}
+	return mode == modeBackground, err
+}
+
+// admitDetachedInTx admits a background job's completion without its run:
+// the account's creative capability and the project's write protection are
+// rechecked; the run's lease, slot, skills and consent are not. Writing back
+// to the canvas or scene is not egress (design: 场景写入的执行权). A refused
+// write finishes the job as failed (review R4).
+func admitDetachedInTx(ctx context.Context, tx store.TxAccountScope, job creativescene.Job) (creativescene.RunGate, error) {
+	if err := tx.RequireCreativeCapability(ctx, "agent_start"); err != nil {
+		if errors.Is(err, store.ErrCreativeAccessDenied) {
+			return &detachedGate{refusal: &creativescene.JobFailure{Code: "access_denied", Message: "账号已不能使用创作助手，结果没有写入"}}, nil
+		}
+		return nil, err
+	}
+	var canvasID string
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id", "id=$2", *job.RunID).Scan(&canvasID); err != nil {
+		return nil, err
+	}
+	err := creativecanvas.LockProjectForWorkInTx(ctx, tx, canvasID)
+	switch {
+	case errors.Is(err, creativecanvas.ErrArchived):
+		return &detachedGate{refusal: &creativescene.JobFailure{Code: "archived", Message: "项目已归档，结果没有写入"}}, nil
+	case err != nil:
+		return nil, err
+	}
+	return &detachedGate{}, nil
+}
+
+// admitRun locks the run in the run lock order (project, slot, gateway group,
 // run, skill, consent) and rechecks what its write needs. A run still running
 // or queued is admitted too: the job finished while the attempt that parked
 // was unwinding, or while a rerun after a crash had not reached the call yet.
-func (w sceneWaiter) Admit(ctx context.Context, tx store.TxAccountScope, runID string) (creativescene.RunGate, error) {
-	refuse := func(err error) (creativescene.RunGate, error) {
+func (w sceneWaiter) admitRun(ctx context.Context, tx store.TxAccountScope, runID string) (*sceneGate, error) {
+	refuse := func(err error) (*sceneGate, error) {
 		if runGateRefusal(err) {
 			return nil, fmt.Errorf("%w: %w", creativescene.ErrRunGate, err)
 		}
@@ -93,6 +165,9 @@ func runGateRefusal(err error) bool {
 // else. A step that is no longer prepared was already written; a run still
 // running or queued picks the result up from the journal.
 func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate creativescene.RunGate, job creativescene.Job, res creativescene.JobResult) error {
+	if _, detached := gate.(*detachedGate); detached {
+		return nil
+	}
 	g, ok := gate.(*sceneGate)
 	if !ok {
 		return errors.New("creative agent: foreign run gate")
@@ -100,34 +175,19 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 	if job.ToolCallID == nil {
 		return nil
 	}
-	var state, name, parent string
-	var index int
-	var input []byte
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_steps", "state,tool_key,parent_model_step_id,tool_call_index,input",
-		"id=$2 AND run_id=$3 AND kind='tool'", *job.ToolCallID, g.c.ID).Scan(&state, &name, &parent, &index, &input); err != nil {
-		return fmt.Errorf("creative agent: parked step %s: %w", *job.ToolCallID, err)
+	var result string
+	var failed bool
+	if err := w.s.publishParkedStepWithInTx(ctx, tx, g, *job.ToolCallID, func(args string) (string, bool, error) {
+		var err error
+		result, failed, err = sceneToolResult(ctx, tx, job, res, args)
+		return result, failed, err
+	}); err != nil {
+		return err
 	}
-	if state == "prepared" {
-		var call llmgateway.ToolCall
-		if err := json.Unmarshal(input, &call); err != nil {
-			return err
-		}
-		result, failed, err := sceneToolResult(ctx, tx, job, res, string(call.Arguments))
-		if err != nil {
-			return err
-		}
-		h, err := w.s.parkedHandlerInTx(ctx, tx, g.held)
-		if err != nil {
-			return err
-		}
-		code := ""
-		if failed {
-			code = "creative_tool_failed"
-		}
-		if _, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: *job.ToolCallID, CallID: runtimeCallID(parent, index), Name: name,
-			Args: string(call.Arguments), Result: result, Failed: failed, Code: code}); err != nil {
-			return err
-		}
+	// The task ends with the call, in the same transaction: a foreground
+	// scene task does not wait for the finisher (design C6).
+	if err := finishSceneTaskInTx(ctx, tx, job, res, result, failed); err != nil {
+		return err
 	}
 	if g.c.State != RunWaitingClient {
 		return nil
@@ -138,6 +198,48 @@ func (w sceneWaiter) Settle(ctx context.Context, tx store.TxAccountScope, gate c
 	}
 	// Admit took the project lock, so the slot comes next in order.
 	_, err = w.s.resumeClientWait(ctx, tx, g.c, now)
+	return err
+}
+
+// publishParkedStepInTx publishes result as the tool result of a call that
+// parked on stepID, in the order callTool publishes one. A step that is no
+// longer prepared was already written and is left alone.
+func (s *Service) publishParkedStepInTx(ctx context.Context, tx store.TxAccountScope, g *sceneGate, stepID, result string, failed bool) error {
+	return s.publishParkedStepWithInTx(ctx, tx, g, stepID, func(string) (string, bool, error) { return result, failed, nil })
+}
+
+// publishParkedStepWithInTx is publishParkedStepInTx with the result built
+// from the call's arguments, only once the step is known to be prepared.
+func (s *Service) publishParkedStepWithInTx(ctx context.Context, tx store.TxAccountScope, g *sceneGate, stepID string,
+	build func(args string) (string, bool, error)) error {
+	var state, name, parent string
+	var index int
+	var input []byte
+	if err := tx.QueryRowForUpdate(ctx, "creative_agent_steps", "state,tool_key,parent_model_step_id,tool_call_index,input",
+		"id=$2 AND run_id=$3 AND kind='tool'", stepID, g.c.ID).Scan(&state, &name, &parent, &index, &input); err != nil {
+		return fmt.Errorf("creative agent: parked step %s: %w", stepID, err)
+	}
+	if state != "prepared" {
+		return nil
+	}
+	var call llmgateway.ToolCall
+	if err := json.Unmarshal(input, &call); err != nil {
+		return err
+	}
+	result, failed, err := build(string(call.Arguments))
+	if err != nil {
+		return err
+	}
+	h, err := s.parkedHandlerInTx(ctx, tx, g.held)
+	if err != nil {
+		return err
+	}
+	code := ""
+	if failed {
+		code = "creative_tool_failed"
+	}
+	_, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: stepID, CallID: runtimeCallID(parent, index), Name: name,
+		Args: string(call.Arguments), Result: result, Failed: failed, Code: code})
 	return err
 }
 
@@ -155,7 +257,7 @@ func (w sceneWaiter) Abort(ctx context.Context, scope store.AccountScope, runID 
 			return err
 		}
 		if terminalRun(c.State) {
-			return creativescene.CancelRunJobs(ctx, tx, c.ID)
+			return cancelRunSceneJobsInTx(ctx, tx, c.ID)
 		}
 		if c.State != RunWaitingClient {
 			return nil
@@ -247,4 +349,29 @@ func (s *Service) admitParkedRunInTx(ctx context.Context, tx store.TxAccountScop
 	// re-checked here is whether the account's consent still stands under
 	// the notice the run was admitted with.
 	return effectiveConsentInTx(ctx, tx, held.ConsentID)
+}
+
+// cancelRunSceneJobsInTx cancels the scene jobs a run leaves unfinished when
+// it ends, except those it handed to the background: they finish on their
+// own and report back (agent-tool-background).
+func cancelRunSceneJobsInTx(ctx context.Context, tx store.TxAccountScope, runID string) error {
+	rows, err := tx.Query(ctx, "creative_agent_tool_tasks", "source_id",
+		"source_run_id=$2 AND mode='background' AND state='running' AND tool_key IN ('write_model','export_shots')", runID)
+	if err != nil {
+		return err
+	}
+	keep := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		keep = append(keep, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return creativescene.CancelRunJobs(ctx, tx, runID, keep)
 }

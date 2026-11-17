@@ -123,6 +123,9 @@ type toolPayload struct {
 	DetailRef string    `json:"detail_ref"`
 	NodeRefs  []NodeRef `json:"node_refs"`
 	ErrorCode string    `json:"error_code,omitempty"`
+	// Task is the long-running tool's task when the call has one; a snapshot
+	// replaces it with the current task (agent-tool-background).
+	Task *ToolTask `json:"task,omitempty"`
 }
 
 // Plan step states.
@@ -454,11 +457,18 @@ func (s *Service) writeToolBlockInTx(ctx context.Context, tx store.TxAccountScop
 		duration := finished.Sub(*started).Milliseconds()
 		payload.DurationMS = &duration
 	}
+	tasks, err := toolTasksByInTx(ctx, tx, "tool_step_id", []string{stepID})
+	if err != nil {
+		return err
+	}
+	if task, ok := tasks[stepID]; ok {
+		payload.Task = &task
+	}
 	blockState, ok := toolBlockStates[state]
 	if !ok {
 		return errCheckpointJournal
 	}
-	_, err := writeBlockInTx(ctx, tx, runID, "call:"+stepID, blockChange{Type: BlockTool, State: blockState, Set: payload, Hidden: hiddenTools[toolKey]})
+	_, err = writeBlockInTx(ctx, tx, runID, "call:"+stepID, blockChange{Type: BlockTool, State: blockState, Set: payload, Hidden: hiddenTools[toolKey]})
 	return err
 }
 

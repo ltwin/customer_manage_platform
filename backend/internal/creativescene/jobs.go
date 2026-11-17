@@ -243,11 +243,14 @@ type RunGate any
 // package implements it and registers it at start-up, so this package never
 // imports the agent runtime.
 type JobWaiter interface {
-	// Admit locks the run in the run lock order (project, slot, gateway group,
-	// run, skill, consent) and rechecks what an agent write needs: the
-	// agent_start capability, the run's deadline, no cancellation, active
-	// skills and a standing consent. A run that fails it returns ErrRunGate.
-	Admit(ctx context.Context, tx store.TxAccountScope, runID string) (RunGate, error)
+	// Admit admits the write of a job a run created. A job its run waits on
+	// locks the run in the run lock order (project, slot, gateway group, run,
+	// skill, consent) and rechecks what an agent write needs: the agent_start
+	// capability, the run's deadline, no cancellation, active skills and a
+	// standing consent; a run that fails it returns ErrRunGate. A job the run
+	// handed to the background is admitted by what it was accepted for and
+	// does not touch the run (agent-tool-background).
+	Admit(ctx context.Context, tx store.TxAccountScope, job Job) (RunGate, error)
 	// Settle writes the job's tool result into the run and, when the run waits
 	// on nothing else, takes the slot and queues it.
 	Settle(ctx context.Context, tx store.TxAccountScope, gate RunGate, job Job, res JobResult) error
@@ -255,6 +258,12 @@ type JobWaiter interface {
 	// cancels its jobs. A run that had already ended has the jobs it left
 	// behind cancelled.
 	Abort(ctx context.Context, scope store.AccountScope, runID string, cause error) error
+}
+
+// RefusingGate is a gate that admits the job's completion but not its
+// write: the job is recorded with this failure instead of its result.
+type RefusingGate interface {
+	Refusal() *JobFailure
 }
 
 var (
@@ -614,9 +623,13 @@ func activeTarget(job Job) json.RawMessage {
 }
 
 // CancelRunJobs cancels a run's unfinished jobs, in the transaction that ends
-// the run (the run row is already locked, so jobs come after it).
-func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string) error {
-	rows, err := tx.Query(ctx, "creative_scene_jobs", "id", "run_id=$2 AND state IN ('queued','claimed')", runID)
+// the run (the run row is already locked, so jobs come after it). Jobs in
+// keep outlive the run: it handed them to the background.
+func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string, keep []string) error {
+	if keep == nil {
+		keep = []string{}
+	}
+	rows, err := tx.Query(ctx, "creative_scene_jobs", "id", "run_id=$2 AND state IN ('queued','claimed') AND NOT (id = ANY($3::text[]))", runID, keep)
 	if err != nil {
 		return err
 	}
@@ -646,6 +659,17 @@ func CancelRunJobs(ctx context.Context, tx store.TxAccountScope, runID string) e
 		}
 	}
 	return nil
+}
+
+// CancelJobInTx cancels one unfinished job in the caller's transaction: a
+// background job the photographer cancels from its card. A job that already
+// ended keeps its result.
+func CancelJobInTx(ctx context.Context, tx store.TxAccountScope, id string) error {
+	jobs, err := LockJobs(ctx, tx, []string{id})
+	if err != nil || len(jobs) == 0 || Terminal(jobs[0].State) {
+		return err
+	}
+	return finishJob(ctx, tx, jobs[0], JobResult{Failure: &JobFailure{Code: JobCancelled, Message: "任务已取消"}}, false, true, time.Time{})
 }
 
 // finishJob moves a locked job to its terminal state with its result.

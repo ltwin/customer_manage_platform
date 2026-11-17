@@ -128,7 +128,10 @@ type Run struct {
 	SkillVersionID   string `json:"skill_version_id,omitempty"`
 	// Kind is chat for an ordinary turn and compact for a /compact request,
 	// which only summarises the conversation and never answers.
-	Kind             string               `json:"kind"`
+	Kind string `json:"kind"`
+	// TriggerKind is background_tool for a run a finished background task
+	// opened; empty for the existing entries.
+	TriggerKind      string               `json:"trigger_kind,omitempty"`
 	State            string               `json:"state"`
 	SettlementState  string               `json:"settlement_state"`
 	ErrorCode        string               `json:"error_code,omitempty"`
@@ -144,16 +147,19 @@ type Run struct {
 
 const runColumns = "id,conversation_id,canvas_id,trigger_message_id,egress_consent_id,model_key," +
 	"skill_id,skill_version_id,state,settlement_state,error_code,limits_version,revision," +
-	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at,waiting_token,wait_reason,source_run_id,kind"
+	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at,waiting_token,wait_reason,source_run_id,kind,trigger_kind"
 
 func scanRun(row interface{ Scan(...any) error }) (Run, error) {
 	var r Run
-	var skillID, versionID, errorCode, waiting, reason, source *string
+	var skillID, versionID, errorCode, waiting, reason, source, trigger *string
 	var revision, lastSeq, prunedSeq int64
 	if err := row.Scan(&r.ID, &r.ConversationID, &r.CanvasID, &r.TriggerMessageID, &r.EgressConsentID,
 		&r.ModelKey, &skillID, &versionID, &r.State, &r.SettlementState, &errorCode, &r.LimitsVersion,
-		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &waiting, &reason, &source, &r.Kind); err != nil {
+		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &waiting, &reason, &source, &r.Kind, &trigger); err != nil {
 		return Run{}, err
+	}
+	if trigger != nil {
+		r.TriggerKind = *trigger
 	}
 	if waiting != nil {
 		r.WaitingToken = *waiting
@@ -353,51 +359,16 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			// The scene lines are sent with every request, so they come out of
-			// the history's share like the submission does.
-			planned := resolved
-			planned.Bytes += sceneInputBytes(scenes)
-			history, err := s.planHistoryInTx(ctx, tx, input.ConversationID, consent.ID, int64(trigger.Ordinal), model, planned)
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			run, err := s.insertRunInTx(ctx, tx, runInsert{
-				ID: runID, ConversationID: input.ConversationID, CanvasID: canvasID,
-				TriggerMessageID: trigger.ID, ConsentID: consent.ID, Model: model,
-				Skill: resolved.Skill, ClaimToken: claim, ReservationID: reservation.ID,
-				Deadline: deadline, Now: now, Kind: history.Kind, Compaction: history.Plan,
-			})
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks, scenes); err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if resolved.Skill != nil {
-				snapshot := resolved.Skill.Snapshot
-				if err := tx.Insert(ctx, "creative_run_skill_refs",
-					[]string{"run_id", "segment_ordinal", "skill_id", "skill_version_id", "skill_owner_account_id", "digest"},
-					runID, resolved.Skill.SegmentOrdinal, snapshot.SkillID, snapshot.ID,
-					snapshot.OwnerAccountID, snapshot.Digest); err != nil {
-					return creativeops.Outcome{}, err
-				}
-			}
-			if run.LastEventSeq, err = appendRunEventInTx(ctx, tx, runID, "run.accepted",
-				map[string]string{"state": RunQueued, "run_revision": "1"}); err != nil {
-				return creativeops.Outcome{}, err
-			}
-			task, err := json.Marshal(runTask{RunID: runID})
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if _, err := jobs.EnqueueInTx(ctx, tx.Jobs(s.runtime), jobs.Request{
-				Kind: jobRunKind,
+			run, err := s.openRunInTx(ctx, tx, openRun{
+				ID: runID, ConversationID: input.ConversationID, CanvasID: canvasID, Trigger: trigger,
+				ConsentID: consent.ID, Model: model, Resolved: resolved, Scenes: scenes,
+				ClaimToken: claim, ReservationID: reservation.ID, Deadline: deadline, Now: now,
 				// Deterministic per run, so a retried creation cannot enqueue a
 				// second task for work that already has one.
-				OperationID: uuid.NewSHA1(uuid.MustParse(command.OperationID), []byte(jobRunKind+":"+runID)).String(),
-				CreatedAt:   command.CreatedAt,
-				Payload:     task,
-			}); err != nil {
+				JobOperationID: uuid.NewSHA1(uuid.MustParse(command.OperationID), []byte(jobRunKind+":"+runID)).String(),
+				JobCreatedAt:   command.CreatedAt,
+			})
+			if err != nil {
 				return creativeops.Outcome{}, err
 			}
 			response, err := json.Marshal(run)
@@ -409,6 +380,77 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				ResultKind: "agent_run", ResultID: &run.ID, ResultRevision: &revision}, nil
 		},
 	}, command)
+}
+
+// openRun is what a new run starts from once its slot, budget hold,
+// conversation and consent are held and its trigger message exists: the
+// photographer's submission, or a background task's notice.
+type openRun struct {
+	ID, ConversationID, CanvasID string
+	Trigger                      Message
+	ConsentID                    string
+	Model                        llmgateway.ModelConfig
+	Resolved                     ResolvedInstruction
+	Scenes                       []sceneInput
+	ClaimToken, ReservationID    string
+	Deadline, Now                time.Time
+	// TriggerKind is empty for the existing entries, background_tool for a
+	// run a finished background task opened.
+	TriggerKind    string
+	JobOperationID string
+	JobCreatedAt   time.Time
+}
+
+// openRunInTx is the shared tail of creating a run (agent-tool-background
+// 3.2): history, the run row, its frozen inputs, its skill, the accepted
+// event and its job, in the caller's transaction.
+func (s *Service) openRunInTx(ctx context.Context, tx store.TxAccountScope, in openRun) (Run, error) {
+	// The scene lines are sent with every request, so they come out of
+	// the history's share like the submission does.
+	planned := in.Resolved
+	planned.Bytes += sceneInputBytes(in.Scenes)
+	history, err := s.planHistoryInTx(ctx, tx, in.ConversationID, in.ConsentID, int64(in.Trigger.Ordinal), in.Model, planned)
+	if err != nil {
+		return Run{}, err
+	}
+	run, err := s.insertRunInTx(ctx, tx, runInsert{
+		ID: in.ID, ConversationID: in.ConversationID, CanvasID: in.CanvasID,
+		TriggerMessageID: in.Trigger.ID, ConsentID: in.ConsentID, Model: in.Model,
+		Skill: in.Resolved.Skill, ClaimToken: in.ClaimToken, ReservationID: in.ReservationID,
+		Deadline: in.Deadline, Now: in.Now, Kind: history.Kind, Compaction: history.Plan, TriggerKind: in.TriggerKind,
+	})
+	if err != nil {
+		return Run{}, err
+	}
+	if err := s.freezePlannedInputsInTx(ctx, tx, in.ID, history, in.Resolved.Body.Blocks, in.Scenes); err != nil {
+		return Run{}, err
+	}
+	if in.Resolved.Skill != nil {
+		snapshot := in.Resolved.Skill.Snapshot
+		if err := tx.Insert(ctx, "creative_run_skill_refs",
+			[]string{"run_id", "segment_ordinal", "skill_id", "skill_version_id", "skill_owner_account_id", "digest"},
+			in.ID, in.Resolved.Skill.SegmentOrdinal, snapshot.SkillID, snapshot.ID,
+			snapshot.OwnerAccountID, snapshot.Digest); err != nil {
+			return Run{}, err
+		}
+	}
+	if run.LastEventSeq, err = appendRunEventInTx(ctx, tx, in.ID, "run.accepted",
+		map[string]string{"state": RunQueued, "run_revision": "1"}); err != nil {
+		return Run{}, err
+	}
+	task, err := json.Marshal(runTask{RunID: in.ID})
+	if err != nil {
+		return Run{}, err
+	}
+	if _, err := jobs.EnqueueInTx(ctx, tx.Jobs(s.runtime), jobs.Request{
+		Kind:        jobRunKind,
+		OperationID: in.JobOperationID,
+		CreatedAt:   in.JobCreatedAt,
+		Payload:     task,
+	}); err != nil {
+		return Run{}, err
+	}
+	return run, nil
 }
 
 // plannedHistory is what a new run will carry as history and whether it
@@ -609,8 +651,9 @@ type runInsert struct {
 	Deadline, Now                time.Time
 	// Kind defaults to chat. Compaction, when set, is the plan the worker
 	// carries out before (or, for a compact run, instead of) the turn.
-	Kind       string
-	Compaction *compactionPlan
+	Kind        string
+	Compaction  *compactionPlan
+	TriggerKind string
 }
 
 func (s *Service) insertRunInTx(ctx context.Context, tx store.TxAccountScope, in runInsert) (Run, error) {
@@ -649,18 +692,18 @@ func (s *Service) insertRunInTx(ctx context.Context, tx store.TxAccountScope, in
 			"model_key", "model_snapshot", "skill_id", "skill_version_id", "skill_snapshot",
 			"state", "claim_token", "next_step_ordinal", "last_event_seq", "limits_version",
 			"limits_snapshot", "initial_llm_reservation_id", "deadline_at", "created_at", "updated_at",
-			"kind", "compaction_state", "compaction_plan"},
+			"kind", "compaction_state", "compaction_plan", "trigger_kind"},
 		in.ID, in.ConversationID, in.CanvasID, in.TriggerMessageID, in.ConsentID,
 		in.Model.ModelKey, modelSnapshot, skillID, versionID, nullableJSON(skillSnapshot),
 		RunQueued, in.ClaimToken, 1, 0, limitsVersion,
 		limitsSnapshot, in.ReservationID, in.Deadline, in.Now, in.Now,
-		in.Kind, compactionState, compactionPlanJSON); err != nil {
+		in.Kind, compactionState, compactionPlanJSON, nullableText(in.TriggerKind)); err != nil {
 		return Run{}, err
 	}
 	run := Run{
 		ID: in.ID, ConversationID: in.ConversationID, CanvasID: in.CanvasID,
 		TriggerMessageID: in.TriggerMessageID, EgressConsentID: in.ConsentID,
-		ModelKey: in.Model.ModelKey, Kind: in.Kind, State: RunQueued, SettlementState: "not_started",
+		ModelKey: in.Model.ModelKey, Kind: in.Kind, TriggerKind: in.TriggerKind, State: RunQueued, SettlementState: "not_started",
 		LimitsVersion: limitsVersion, Revision: 1,
 		DeadlineAt: in.Deadline, CreatedAt: in.Now,
 	}

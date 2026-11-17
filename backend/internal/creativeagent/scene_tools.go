@@ -52,6 +52,10 @@ type sceneTool struct {
 
 var _ tool.InvokableTool = (*sceneTool)(nil)
 
+// sceneBackgroundNote goes with run_in_background on scene tools: the page
+// renders the job, so it has to stay open (review R8).
+const sceneBackgroundNote = "放到后台后仍由创作者的页面渲染，页面关闭时任务会过期。"
+
 const sceneConventions = "单位米，Y 轴向上，正面朝 +Z；旋转是单位四元数 [x,y,z,w]。"
 
 func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
@@ -155,48 +159,50 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		}, nil
 	case writeModelTool:
 		base.Required = true
+		params := map[string]*schema.ParameterInfo{
+			"document_id":       doc,
+			"based_on_revision": base,
+			"target": {Type: schema.Object, Required: true, Desc: "add 与 replace 二选一", SubParams: map[string]*schema.ParameterInfo{
+				"add": {Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
+					"name":      str(""),
+					"transform": {Type: schema.Object, Required: true, SubParams: map[string]*schema.ParameterInfo{"position": numbers, "rotation": numbers, "scale": numbers}},
+					"parent_id": str("编组 ID，可省略"),
+				}},
+				"replace": {Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
+					"object_id": {Type: schema.String, Required: true},
+					"scope":     {Type: schema.String, Enum: []string{"this", "all_instances"}},
+				}},
+			}},
+			"code":                     str("生成或改写模型代码时必传，与 base_content_revision_id、retry_job_id 互斥"),
+			"base_content_revision_id": str("只改参数时必传：read_scene 的 model.content_revision_id，与 code、retry_job_id 互斥"),
+			"params":                   {Type: schema.Object, Desc: "参数取值，省略的用默认值"},
+			"name_hint":                str("模型名，如「哥特式石柱」"),
+			"retry_job_id":             str("复用烘焙产物时必传：冲突结果给出的任务 ID，只另传 document_id、based_on_revision、target"),
+		}
 		return &schema.ToolInfo{
 			Name: writeModelTool,
-			Desc: "用代码生成模型并放进场景：新增物件，或替换模型实例的模型。代码在创作者的页面编译，调用等到写入后返回尺寸 size_m、三角面、材质槽、部件和挂点；编译失败返回错误和行号，改代码重试。" +
-				"代码是只有 export 的 ES 模块：export const params = {h: {type:'number', default:6, min:2, max:20, unit:'m', label:'高度'}}（number|integer|boolean|enum(options)|color，≤32 项）；" +
-				"export const mount = 'floor'（floor 原点在底面中心，wall 背面底边中心，ceiling 顶面中心，free 几何中心）；export default function build({params, THREE, lib, rng}) {…; return group}。" +
-				sceneConventions + "只能是三角网格；材质只用 lib.material(slot, hint)（hint 如 stone、wood），不用纹理和着色器。lib：subtract/union/intersect(a,b)、extrude(shape,depth,{bevel})、lathe(points,segments)、array(obj,count,[x,y,z])、radial(obj,count,radius,axis)；rng() 是确定性随机数。" +
-				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤200 万。" +
-				"视口流畅度取决于场景里的物件数和每个模型的材质槽数，与三角面关系不大：同一槽位的零件渲染时会自动合并，不必为了性能减少分段数或零件。" +
-				"只改参数时给 base_content_revision_id 代替 code；导入的模型（imported）没有代码，不能作 base_content_revision_id，只能换材质或摆放，整个替换照常可以。被多个实例共用的模型：scope=this 只改这一个（分出新模型），all_instances 一起改。" +
-				"烘焙期间目标被改过时返回 conflict 和 retry_job_id：单独传它、新基线和 target 即可写入，不重新编译。",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"document_id":       doc,
-				"based_on_revision": base,
-				"target": {Type: schema.Object, Required: true, Desc: "add 与 replace 二选一", SubParams: map[string]*schema.ParameterInfo{
-					"add": {Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
-						"name":      str(""),
-						"transform": {Type: schema.Object, Required: true, SubParams: map[string]*schema.ParameterInfo{"position": numbers, "rotation": numbers, "scale": numbers}},
-						"parent_id": str("编组 ID，可省略"),
-					}},
-					"replace": {Type: schema.Object, SubParams: map[string]*schema.ParameterInfo{
-						"object_id": {Type: schema.String, Required: true},
-						"scope":     {Type: schema.String, Enum: []string{"this", "all_instances"}},
-					}},
-				}},
-				"code":                     str("生成或改写模型代码时必传，与 base_content_revision_id、retry_job_id 互斥"),
-				"base_content_revision_id": str("只改参数时必传：read_scene 的 model.content_revision_id，与 code、retry_job_id 互斥"),
-				"params":                   {Type: schema.Object, Desc: "参数取值，省略的用默认值"},
-				"name_hint":                str("模型名，如「哥特式石柱」"),
-				"retry_job_id":             str("复用烘焙产物时必传：冲突结果给出的任务 ID，只另传 document_id、based_on_revision、target"),
-			}),
+			Desc: t.handler.offerBackground("用代码生成模型并放进场景：新增物件，或替换模型实例的模型。代码在创作者的页面编译，调用等到写入后返回尺寸 size_m、三角面、材质槽、部件和挂点；编译失败返回错误和行号，改代码重试。"+
+				"代码是只有 export 的 ES 模块：export const params = {h: {type:'number', default:6, min:2, max:20, unit:'m', label:'高度'}}（number|integer|boolean|enum(options)|color，≤32 项）；"+
+				"export const mount = 'floor'（floor 原点在底面中心，wall 背面底边中心，ceiling 顶面中心，free 几何中心）；export default function build({params, THREE, lib, rng}) {…; return group}。"+
+				sceneConventions+"只能是三角网格；材质只用 lib.material(slot, hint)（hint 如 stone、wood），不用纹理和着色器。lib：subtract/union/intersect(a,b)、extrude(shape,depth,{bevel})、lathe(points,segments)、array(obj,count,[x,y,z])、radial(obj,count,radius,axis)；rng() 是确定性随机数。"+
+				"对象名 part:<id> 是部件，空对象 anchor:<id> 是挂点。代码 ≤64 KiB，编译 ≤5 秒，三角面 ≤200 万。"+
+				"视口流畅度取决于场景里的物件数和每个模型的材质槽数，与三角面关系不大：同一槽位的零件渲染时会自动合并，不必为了性能减少分段数或零件。"+
+				"只改参数时给 base_content_revision_id 代替 code；导入的模型（imported）没有代码，不能作 base_content_revision_id，只能换材质或摆放，整个替换照常可以。被多个实例共用的模型：scope=this 只改这一个（分出新模型），all_instances 一起改。"+
+				"烘焙期间目标被改过时返回 conflict 和 retry_job_id：单独传它、新基线和 target 即可写入，不重新编译。", params, sceneBackgroundNote),
+			ParamsOneOf: schema.NewParamsOneOfByParams(params),
 		}, nil
 	case exportShotsTool:
+		params := map[string]*schema.ParameterInfo{
+			"document_id":       doc,
+			"shots":             strs("要导出的分镜 ID，省略时有分镜导出全部分镜（按帧序），没有分镜导出全部摄像机；最多 32 个；未绑定摄像机的分镜会被列出并拒绝"),
+			"camera_object_ids": strs("没有分镜的场景按摄像机导出：省略为全部摄像机（按物件顺序），最多 32 台；不能和 shots 同用"),
+			"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
+		}
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
-			Desc: "把场景的分镜导出成图，放到当前画布上这个场景节点的右侧：有分镜时每个分镜一行（按分镜的帧和它绑定的摄像机出图，标题用分镜名），没有分镜时每台摄像机一行；clay（白模：固定的工作室光，不受环境和灯光影响，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。" +
-				"图在创作者的页面渲染，材质光照按场景的渲染器，白模和线稿按工作台；长边按 render.resolution（缺省 2k 即 2048）；4K、8K 的白模和材质光照是 JPEG，线稿是 PNG。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"document_id":       doc,
-				"shots":             strs("要导出的分镜 ID，省略时有分镜导出全部分镜（按帧序），没有分镜导出全部摄像机；最多 32 个；未绑定摄像机的分镜会被列出并拒绝"),
-				"camera_object_ids": strs("没有分镜的场景按摄像机导出：省略为全部摄像机（按物件顺序），最多 32 台；不能和 shots 同用"),
-				"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
-			}),
+			Desc: t.handler.offerBackground("把场景的分镜导出成图，放到当前画布上这个场景节点的右侧：有分镜时每个分镜一行（按分镜的帧和它绑定的摄像机出图，标题用分镜名），没有分镜时每台摄像机一行；clay（白模：固定的工作室光，不受环境和灯光影响，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。"+
+				"图在创作者的页面渲染，材质光照按场景的渲染器，白模和线稿按工作台；长边按 render.resolution（缺省 2k 即 2048）；4K、8K 的白模和材质光照是 JPEG，线稿是 PNG。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。", params, sceneBackgroundNote),
+			ParamsOneOf: schema.NewParamsOneOfByParams(params),
 		}, nil
 	default:
 		return &schema.ToolInfo{
@@ -427,6 +433,10 @@ type writeModelArgs struct {
 
 func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any, error) {
 	var args writeModelArgs
+	raw, background, err := h.backgroundArgument(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
 	}
@@ -458,7 +468,7 @@ func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any,
 			return job, conflict, err
 		}
 		return job, nil, err
-	}, raw)
+	}, raw, background)
 }
 
 func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any, error) {
@@ -479,7 +489,7 @@ func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any,
 		job, err := creativescene.CreateRenderJobInTx(ctx, tx, creativescene.RenderInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step,
 			MarkerID: args.Shot, CameraObjectID: args.CameraObjectID, Viewpoint: args.Viewpoint, Preset: args.Preset, Frame: args.Frame, Mode: args.Mode, DepthOfField: args.DepthOfField})
 		return job, nil, err
-	}, raw)
+	}, raw, false)
 }
 
 // exportShots places the scene's shot (or camera) images on the run's
@@ -491,6 +501,10 @@ func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any
 		Shots           []string `json:"shots"`
 		CameraObjectIDs []string `json:"camera_object_ids"`
 		Passes          []string `json:"passes"`
+	}
+	raw, background, err := h.backgroundArgument(ctx, raw)
+	if err != nil {
+		return nil, err
 	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
@@ -506,14 +520,15 @@ func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any
 		}
 		job, err := creativescene.CreateExportJobInTx(ctx, tx, in)
 		return job, nil, err
-	}, raw)
+	}, raw, background)
 }
 
 // parkOnJob creates the call's client job behind the run's admission and
 // parks on it. An answer that needs no job (a conflict) comes back as is. A
 // job that already ended (a rerun after its result was written elsewhere)
-// answers with its result.
-func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Context, store.TxAccountScope) (creativescene.Job, any, error), args string) (any, error) {
+// answers with its result. In the background the call answers with the
+// task's handle instead, whatever the job's state: the finisher reports it.
+func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Context, store.TxAccountScope) (creativescene.Job, any, error), args string, background bool) (any, error) {
 	var job creativescene.Job
 	var answer any
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -527,8 +542,16 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 		if job, answer, err = create(ctx, tx); err != nil || answer != nil {
 			return err
 		}
+		if background && job.ToolCallID != nil {
+			tool, err := sceneToolKey(job.Kind)
+			if err != nil {
+				return err
+			}
+			answer = acceptedInBackground(*job.ToolCallID)
+			return h.registerToolTaskInTx(ctx, tx, newToolTask{StepID: *job.ToolCallID, ToolKey: tool, SourceID: job.ID, Mode: modeBackground, Due: true})
+		}
 		if !creativescene.Terminal(job.State) {
-			return nil
+			return h.registerSceneTaskInTx(ctx, tx, job)
 		}
 		res, err := creativescene.ResultOf(job)
 		if err != nil {
@@ -542,6 +565,20 @@ func (h *runtimeHandler) parkOnJob(ctx context.Context, create func(context.Cont
 		return answer, err
 	}
 	return nil, errParked{jobID: job.ID}
+}
+
+// registerSceneTaskInTx records the task behind a parked call's job, in the
+// transaction that created or replayed it. A job's completion finishes the
+// task in its own transaction (sceneWaiter.Settle).
+func (h *runtimeHandler) registerSceneTaskInTx(ctx context.Context, tx store.TxAccountScope, job creativescene.Job) error {
+	if job.ToolCallID == nil {
+		return nil
+	}
+	tool, err := sceneToolKey(job.Kind)
+	if err != nil {
+		return err
+	}
+	return h.registerToolTaskInTx(ctx, tx, newToolTask{StepID: *job.ToolCallID, ToolKey: tool, SourceID: job.ID, Mode: modeForeground})
 }
 
 // bakeSucceeded is write_model's answer for a written model.

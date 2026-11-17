@@ -302,23 +302,35 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 
 	in := creativegeneration.AgentGeneration{Seed: "run/step", CanvasID: f.target.CanvasID, NodeID: node, DraftRevision: 2}
 	var refusal *creativegeneration.Refusal
-	if _, err = f.product.GenerateNode(t.Context(), f.scope, in); !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "已被改动") {
+	if _, err = f.product.SubmitAgentGeneration(t.Context(), f.scope, in); !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "已被改动") {
 		t.Fatalf("stale draft not refused: %v", err)
 	}
 	in.DraftRevision = 1
-	first, err := f.product.GenerateNode(t.Context(), f.scope, in)
+	execution, err := f.product.SubmitAgentGeneration(t.Context(), f.scope, in)
 	must(t, err)
-	if first.State != "running" || first.ApplyState != "pending" || !first.Adopted() || first.NodeID != node {
-		t.Fatalf("first %+v", first)
+	read := func() (creativegeneration.AgentGenerationResult, bool) {
+		t.Helper()
+		var result creativegeneration.AgentGenerationResult
+		var done bool
+		must(t, f.scope.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			var err error
+			result, done, err = f.product.AgentGenerationInTx(t.Context(), tx, f.target.CanvasID, node, execution)
+			return err
+		}))
+		return result, done
 	}
-	f.target.ExecutionID = first.ExecutionID
+	if first, done := read(); done || first.State != "running" || first.ApplyState != "pending" || !first.Adopted() || first.NodeID != node {
+		t.Fatalf("first %+v done=%v", first, done)
+	}
+	f.target.ExecutionID = execution
 	for range 6 {
 		f.advance(t)
 	}
-	again, err := f.product.GenerateNode(t.Context(), f.scope, in)
+	replayed, err := f.product.SubmitAgentGeneration(t.Context(), f.scope, in)
 	must(t, err)
-	if again.State != "succeeded" || again.ApplyState != "applied" || again.ExecutionID != first.ExecutionID || len(again.ContentRevisionIDs) != 1 || len(f.relay.sent) != 1 {
-		t.Fatalf("replay %+v, submitted %d times", again, len(f.relay.sent))
+	again, done := read()
+	if !done || again.State != "succeeded" || again.ApplyState != "applied" || replayed != execution || again.ExecutionID != execution || len(again.ContentRevisionIDs) != 1 || len(f.relay.sent) != 1 {
+		t.Fatalf("replay %+v done=%v, submitted %d times", again, done, len(f.relay.sent))
 	}
 	if sent := f.relay.sent[0]; sent["model"] != "gpt-image-2.6-sunburst" || sent["size"] != "2:3" || sent["quality"] != "high" {
 		t.Fatalf("sent %v", sent)
