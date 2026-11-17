@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
@@ -29,6 +32,8 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/agent-runs/:id/supplements", w.SupplementCreativeAgentRun)
 	r.POST("/creative/agent-runs/:id/steers", w.SteerCreativeAgentRun)
 	r.POST("/creative/agent-runs/:id/retry", w.RetryCreativeAgentRun)
+	r.POST("/creative/agent-tool-tasks/:handle/detach", w.DetachCreativeAgentToolTask)
+	r.POST("/creative/agent-tool-tasks/:handle/cancel", w.CancelCreativeAgentToolTask)
 	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id/events", w.WatchCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id/blocks/:block_id/detail", w.GetCreativeAgentRunBlockDetail)
@@ -301,6 +306,26 @@ func (h *handlers) GrantCreativeEgressConsent(c *gin.Context, _ GrantCreativeEgr
 		return
 	}
 	h.creativeWrite(c, "", "", agent.GrantAccountConsent)
+}
+
+func (h *handlers) DetachCreativeAgentToolTask(c *gin.Context, handle string, _ DetachCreativeAgentToolTaskParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "", "", func(ctx context.Context, scope store.AccountScope, cmd creativeops.Command) (creativeops.Receipt, error) {
+		return agent.DetachToolTask(ctx, scope, handle, cmd)
+	})
+}
+
+func (h *handlers) CancelCreativeAgentToolTask(c *gin.Context, handle string, _ CancelCreativeAgentToolTaskParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "", "", func(ctx context.Context, scope store.AccountScope, cmd creativeops.Command) (creativeops.Receipt, error) {
+		return agent.CancelToolTask(ctx, scope, handle, cmd)
+	})
 }
 
 // CreateCreativeAgentRun answers 202: the submission was accepted, not

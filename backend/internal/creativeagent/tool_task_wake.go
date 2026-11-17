@@ -105,6 +105,9 @@ func scheduleWakeInTx(ctx context.Context, tx store.TxAccountScope, taskID strin
 // WakeDueToolTasks opens turns for the configuration groups whose wake time
 // passed, each in its own account scope and transaction.
 func (s *Service) WakeDueToolTasks(ctx context.Context, db *store.Store, batch int) (int, error) {
+	if s.backgroundTasksDisabled {
+		return 0, nil
+	}
 	refs, err := db.WakeDueToolTasks(ctx, batch)
 	if err != nil {
 		return 0, err
@@ -132,7 +135,7 @@ func (s *Service) WakeDueToolTasks(ctx context.Context, db *store.Store, batch i
 func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id string) error {
 	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		task, err := scanWakeTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", wakeTaskColumns,
-			"id=$2 AND notification_state='pending' AND wake_after IS NOT NULL AND wake_after<=clock_timestamp()", id))
+			"id=$2 AND notification_state='pending' AND wake_run_id IS NULL AND wake_after IS NOT NULL AND wake_after<=clock_timestamp()", id))
 		if errors.Is(err, store.ErrNoRows) {
 			return nil
 		}
@@ -144,12 +147,12 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 				return nil
 			}
 			_, err := tx.Update(ctx, "creative_agent_tool_tasks", "wake_after=NULL,wake_skip_reason=$3,updated_at=clock_timestamp()",
-				"id = ANY($2::text[]) AND notification_state='pending'", ids, reason)
+				"id = ANY($2::text[]) AND notification_state='pending' AND wake_run_id IS NULL", ids, reason)
 			return err
 		}
 		postpone := func(ids []string) error {
 			_, err := tx.Update(ctx, "creative_agent_tool_tasks", "wake_after=clock_timestamp()+$3::interval,updated_at=clock_timestamp()",
-				"id = ANY($2::text[]) AND notification_state='pending'", ids, fmt.Sprintf("%d milliseconds", wakeRecheck.Milliseconds()))
+				"id = ANY($2::text[]) AND notification_state='pending' AND wake_run_id IS NULL", ids, fmt.Sprintf("%d milliseconds", wakeRecheck.Milliseconds()))
 			return err
 		}
 		group, err := wakeGroupInTx(ctx, tx, task.ConversationID, task.ModelKey, task.SkillVersionID)
@@ -162,17 +165,23 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 		if err != nil {
 			return err
 		}
-		var eligible, stopped, failed []string
+		var eligible, stopped, failed, unavailable []string
 		var first *wakeTask
 		for i, t := range group {
 			var state string
-			if err := tx.QueryRow(ctx, "creative_agent_runs", "state", "id=$2", t.SourceRunID).Scan(&state); err != nil {
+			var stoppedAt *time.Time
+			err := tx.QueryRow(ctx, "creative_agent_runs", "state,cancel_requested_at", "id=$2", t.SourceRunID).Scan(&state, &stoppedAt)
+			if errors.Is(err, store.ErrNoRows) {
+				unavailable = append(unavailable, t.ID)
+				continue
+			}
+			if err != nil {
 				return err
 			}
-			switch state {
-			case RunCancelled:
+			switch {
+			case state == RunCancelled || stoppedAt != nil:
 				stopped = append(stopped, t.ID)
-			case RunFailed:
+			case state == RunFailed:
 				failed = append(failed, t.ID)
 			default:
 				eligible = append(eligible, t.ID)
@@ -185,6 +194,9 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 			return err
 		}
 		if err := skip(failed, skipSourceFailed); err != nil {
+			return err
+		}
+		if err := skip(unavailable, skipUnavailable); err != nil {
 			return err
 		}
 		if len(eligible) == 0 {
@@ -215,7 +227,8 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 		case errors.Is(err, ErrBudgetExceeded):
 			return skip(eligible, skipCredits)
 		case errors.Is(err, ErrModelCapability), errors.Is(err, ErrUnsupportedSegment), errors.Is(err, creativeskill.ErrNotFound),
-			errors.Is(err, creativeskill.ErrDisabled), errors.Is(err, creativecanvas.ErrArchived), errors.Is(err, store.ErrCreativeAccessDenied):
+			errors.Is(err, creativeskill.ErrDisabled), errors.Is(err, creativecanvas.ErrArchived), errors.Is(err, store.ErrCreativeAccessDenied),
+			errors.Is(err, ErrConversationArchived), errors.Is(err, ErrNotFound):
 			return skip(eligible, skipUnavailable)
 		case err != nil:
 			return err
@@ -224,15 +237,23 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 		// dispatch, the notices wait for the photographer rather than open
 		// another paid turn.
 		_, err = tx.Update(ctx, "creative_agent_tool_tasks", "wake_after=NULL,wake_run_id=$3,updated_at=clock_timestamp()",
-			"id = ANY($2::text[]) AND notification_state='pending'", eligible, runID)
+			"id = ANY($2::text[]) AND notification_state='pending' AND wake_run_id IS NULL", eligible, runID)
 		return err
 	})
 }
 
-// automaticRunsInARowInTx counts the conversation's newest runs opened by
-// background results, back to the last run the photographer started.
+// automaticRunsInARowInTx counts automatic turns since the photographer
+// last spoke. A supplement or steer also breaks the chain even though it
+// belongs to a turn that already exists.
 func automaticRunsInARowInTx(ctx context.Context, tx store.TxAccountScope, conversationID string) (int, error) {
-	rows, err := tx.QueryPage(ctx, "creative_agent_runs", "trigger_kind", "conversation_id=$2",
+	rows, err := tx.QueryPage(ctx, "creative_agent_runs", "trigger_kind", `conversation_id=$2 AND (
+ trigger_kind IS NULL OR NOT EXISTS (
+ SELECT 1 FROM creative_agent_messages trigger_message
+ JOIN creative_agent_messages photographer_message
+   ON photographer_message.account_id=trigger_message.account_id
+   AND photographer_message.conversation_id=trigger_message.conversation_id
+ WHERE trigger_message.account_id=$1 AND trigger_message.id=creative_agent_runs.trigger_message_id
+   AND photographer_message.role='user' AND photographer_message.ordinal>trigger_message.ordinal))`,
 		[]store.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}}, wakeChainLimit+1, 0, conversationID)
 	if err != nil {
 		return 0, err

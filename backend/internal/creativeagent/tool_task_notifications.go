@@ -23,6 +23,9 @@ func (s *Service) finishTaskInTx(ctx context.Context, tx store.TxAccountScope, t
 	if task.Mode != modeBackground {
 		return nil
 	}
+	if err := patchToolTaskBlockInTx(ctx, tx, task.SourceRunID, task.ToolStepID, task.ID); err != nil {
+		return err
+	}
 	return s.publishNoticeInTx(ctx, tx, task, outcome)
 }
 
@@ -62,7 +65,62 @@ func (s *Service) publishNoticeInTx(ctx context.Context, tx store.TxAccountScope
 		"id=$2 AND notification_state='none'", task.ID, message.ID); err != nil {
 		return err
 	}
-	return scheduleWakeInTx(ctx, tx, task.ID)
+	if err := scheduleWakeInTx(ctx, tx, task.ID); err != nil {
+		return err
+	}
+	active, err := toolTaskRunStreamsInTx(ctx, tx, task.SourceRunID)
+	if err != nil || !active {
+		return err
+	}
+	_, err = appendRunEventInTx(ctx, tx, task.SourceRunID, "background_tool.completed",
+		map[string]string{"handle": task.ID, "message_id": message.ID})
+	return err
+}
+
+// Acquire the run lock before touching source or task rows when a later
+// publication may write its event log. Finished runs remain readable only.
+func lockToolTaskRunInTx(ctx context.Context, tx store.TxAccountScope, runID string) error {
+	var id string
+	err := tx.QueryRowForUpdate(ctx, "creative_agent_runs", "id", "id=$2", runID).Scan(&id)
+	if errors.Is(err, store.ErrNoRows) {
+		return nil // Background work can outlive the source run journal.
+	}
+	return err
+}
+
+func toolTaskRunStreamsInTx(ctx context.Context, tx store.TxAccountScope, runID string) (bool, error) {
+	return tx.Exists(ctx, "creative_agent_runs", "id=$2 AND finished_at IS NULL", runID)
+}
+
+// patchToolTaskBlockInTx updates the task projection independent of the
+// tool step's own state. The caller holds the run lock. A history read
+// projects the live task row even after the run's stream has closed.
+func patchToolTaskBlockInTx(ctx context.Context, tx store.TxAccountScope, runID, stepID, handle string) error {
+	active, err := toolTaskRunStreamsInTx(ctx, tx, runID)
+	if err != nil || !active {
+		return err
+	}
+	block, err := scanBlock(tx.QueryRow(ctx, "creative_agent_blocks", blockColumns, "run_id=$2 AND source_key=$3", runID, "call:"+stepID))
+	if errors.Is(err, store.ErrNoRows) {
+		return nil // A later block creation projects the current task.
+	}
+	if err != nil {
+		return err
+	}
+	task, err := readToolTaskInTx(ctx, tx, handle)
+	if err != nil {
+		return err
+	}
+	payload := projectTaskOnPayload(block.Payload, task)
+	changed, err := tx.Update(ctx, "creative_agent_blocks", "payload=$3,revision=revision+1,updated_at=clock_timestamp()",
+		"id=$2 AND payload IS DISTINCT FROM $3::jsonb", block.ID, []byte(payload))
+	if err != nil || changed == 0 {
+		return err
+	}
+	_, err = appendRunEventInTx(ctx, tx, runID, "block.updated", blockUpdated{
+		BlockID: block.ID, Revision: block.Revision + 1, PayloadVersion: block.PayloadVersion, Patch: &blockPatch{Set: &payload},
+	})
+	return err
 }
 
 // noticeText is the one line the conversation shows; the structured result
@@ -192,11 +250,29 @@ func noticeContent(task ToolTask) (string, error) {
 	return noticePrefix + string(raw), nil
 }
 
+// Manual runs can read every pending notice. An automatic run takes only
+// its configuration and leaves other groups (and skipped notices) available
+// for their own wake or a later photographer message. This same predicate
+// also drives the final watermark check so a foreign group cannot keep the
+// automatic run in a continuation loop.
+const runNoticePredicate = `conversation_id=$2 AND notification_state='pending' AND EXISTS (
+ SELECT 1 FROM creative_agent_runs r WHERE r.account_id=$1 AND r.id=$3
+ AND (r.trigger_kind IS NULL
+ OR creative_agent_tool_tasks.wake_run_id=r.id
+ OR (creative_agent_tool_tasks.wake_run_id IS NULL
+  AND creative_agent_tool_tasks.wake_skip_reason IS NULL
+  AND creative_agent_tool_tasks.model_key=r.model_key
+  AND creative_agent_tool_tasks.skill_version_id IS NOT DISTINCT FROM r.skill_version_id
+  AND EXISTS (SELECT 1 FROM creative_agent_runs src
+    WHERE src.account_id=$1 AND src.id=creative_agent_tool_tasks.source_run_id
+      AND src.cancel_requested_at IS NULL
+      AND (src.id=r.id OR src.state IN ('succeeded','partial'))))))`
+
 // pendingNoticesInTx are the conversation's notices no model request has
 // carried yet, oldest first.
-func pendingNoticesInTx(ctx context.Context, tx store.TxAccountScope, conversationID string) ([]ToolTask, error) {
+func pendingNoticesInTx(ctx context.Context, tx store.TxAccountScope, conversationID, runID string) ([]ToolTask, error) {
 	rows, err := tx.QueryPage(ctx, "creative_agent_tool_tasks", "id,mode,state,revision,result,finished_at,tool_key,source_run_id,tool_step_id",
-		"conversation_id=$2 AND notification_state='pending'", []store.OrderBy{{Column: "finished_at"}, {Column: "id"}}, maxNoticesPerRequest*4, 0, conversationID)
+		runNoticePredicate, []store.OrderBy{{Column: "finished_at"}, {Column: "id"}}, maxNoticesPerRequest*4, 0, conversationID, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +302,7 @@ const maxNoticesPerRequest = 20
 func (h *runtimeHandler) unseenNotices(ctx context.Context, seen map[string]bool, room int) ([]*schema.Message, error) {
 	var messages []*schema.Message
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		tasks, err := pendingNoticesInTx(ctx, tx, h.held.ConversationID)
+		tasks, err := pendingNoticesInTx(ctx, tx, h.held.ConversationID, h.held.RunID)
 		if err != nil {
 			return err
 		}
@@ -301,7 +377,7 @@ func noticesWithinInTx(ctx context.Context, q interface {
 	if err != nil || !found {
 		return false, err
 	}
-	rows, err := q.Query(ctx, "creative_agent_tool_tasks", "notification_message_id", "conversation_id=$2 AND notification_state='pending'", conversationID)
+	rows, err := q.Query(ctx, "creative_agent_tool_tasks", "notification_message_id", runNoticePredicate, conversationID, runID)
 	if err != nil {
 		return false, err
 	}

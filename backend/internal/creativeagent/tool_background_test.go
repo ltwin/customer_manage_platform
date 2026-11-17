@@ -35,10 +35,10 @@ func TestBackgroundArgument(t *testing.T) {
 		}
 	}
 	legacy := &runtimeHandler{legacyToolSchemas: true}
-	if _, _, err := legacy.backgroundArgument(`{"run_in_background":false}`); !errors.Is(err, errToolArguments) {
+	if _, _, err := legacy.backgroundArgument(t.Context(), `{"run_in_background":false}`); !errors.Is(err, errToolArguments) {
 		t.Fatalf("old definitions took run_in_background: %v", err)
 	}
-	if args, _, err := legacy.backgroundArgument(`{"node_id":"n"}`); err != nil || args != `{"node_id":"n"}` {
+	if args, _, err := legacy.backgroundArgument(t.Context(), `{"node_id":"n"}`); err != nil || args != `{"node_id":"n"}` {
 		t.Fatalf("old definitions: %s %v", args, err)
 	}
 }

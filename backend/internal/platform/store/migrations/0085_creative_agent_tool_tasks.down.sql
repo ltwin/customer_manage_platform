@@ -10,6 +10,7 @@ END $$;
 ALTER TABLE creative_agent_steps
  DROP COLUMN background_notification_through_ordinal,
  DROP COLUMN background_notification_ids;
+DROP TRIGGER creative_agent_background_run_notify ON creative_agent_runs;
 ALTER TABLE creative_agent_runs DROP COLUMN trigger_kind;
 DROP TRIGGER creative_scene_jobs_tool_task ON creative_scene_jobs;
 DROP TRIGGER creative_image_edit_renders_tool_task ON creative_image_edit_renders;

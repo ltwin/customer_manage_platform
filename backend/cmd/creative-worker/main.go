@@ -91,6 +91,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	agent.SetBackgroundTasksDisabled(os.Getenv("CREATIVE_AGENT_BACKGROUND_TASKS_DISABLED") == "1")
 	agent.SetLogger(slog.Default())
 	// A stop reaches the model call through the run's notifications.
 	agent.SetNotifier(db)

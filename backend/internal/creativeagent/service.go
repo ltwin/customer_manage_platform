@@ -224,7 +224,8 @@ type Service struct {
 	// and every copy should share one record.
 	unavailableLogged *sync.Map
 	// toolSources finish agent tool tasks by tool key (tool_task_finisher.go).
-	toolSources map[string]toolTaskSource
+	toolSources             map[string]toolTaskSource
+	backgroundTasksDisabled bool
 }
 
 // NewService takes the gateway as well as its catalog. The two must be the same
@@ -246,6 +247,10 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 
 // SetRuntime binds the queue used for same-transaction enqueue.
 func (s *Service) SetRuntime(runtime jobs.Runtime) { s.runtime = runtime }
+
+// SetBackgroundTasksDisabled is a rollout switch set before the service starts.
+// Existing work keeps its finisher and control surface.
+func (s *Service) SetBackgroundTasksDisabled(disabled bool) { s.backgroundTasksDisabled = disabled }
 
 // SetNotifier binds the realtime notifications a worker listens on for stops.
 func (s *Service) SetNotifier(notifier realtime.Notifier) { s.notifier = notifier }

@@ -22,6 +22,8 @@ import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
+import {notifyCanvasInvalidate} from '/src/creative-canvas/editor/canvasEvents.ts';
+window.__invalidateCanvas = notifyCanvasInvalidate;
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
 // 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
@@ -60,6 +62,8 @@ async function scene({ state = 'running', send, storage, cancel } = {}) {
     blocks: [],
     sends: [],
     runs: {},
+    notices: [],
+    extraConversations: [],
     run: {
       id: 'run',
       conversation_id: 'conversation',
@@ -130,6 +134,7 @@ async function scene({ state = 'running', send, storage, cancel } = {}) {
       block.revision = payload.revision
       if (payload.state) block.state = payload.state
       if (payload.finished_at) block.finished_at = payload.finished_at
+      if (payload.patch?.set) block.payload = payload.patch.set
     } else if (payload.state) {
       server.run = { ...server.run, state: payload.state }
       if (terminal.includes(payload.state)) server.run.finished_at = '2026-11-11T00:01:00Z'
@@ -166,32 +171,35 @@ async function scene({ state = 'running', send, storage, cancel } = {}) {
       const body = request.postDataJSON()
       const entry = { path, body, key: request.headers()['idempotency-key'], at: Date.now() }
       server.sends.push(entry)
-      if (path.endsWith('/cancel')) {
+      if (/\/agent-runs\/[^/]+\/cancel$/.test(path)) {
         if (cancel) return cancel({ json })
         await finish('cancelled')
         return json({ ...server.run })
       }
-      return (send ?? accepting)({ path, json, body, server, accept, accepting, index: server.sends.length - 1 })
+      return (send ?? accepting)({ path, json, body, server, accept, accepting, route, index: server.sends.length - 1 })
     }
     const other = /\/agent-runs\/([^/]+)$/.exec(path)
-    if (other && server.runs[other[1]]) return json({ ...server.runs[other[1]], blocks: [], snapshot_seq: '0' })
+    if (other && server.runs[other[1]]) return json({ ...server.runs[other[1]], blocks: [], snapshot_seq: server.runs[other[1]].last_event_seq })
     if (path.endsWith('/agent/catalog'))
       return json({
         limits: { attachments: 10, image_preview_count: 8 },
         models: [{ model_key: 'model', display_name: 'Test model', capability: { image_input: false }, available: true }],
         skills: [],
       })
-    if (path.endsWith('/conversations')) return json({ items: [{ id: 'conversation', title: '对话', title_source: 'manual', updated_at: '2026-11-11T00:00:00Z' }] })
+    if (path.endsWith('/conversations')) return json({ items: [{ id: 'conversation', title: '对话', title_source: 'manual', updated_at: '2026-11-11T00:00:00Z' }, ...server.extraConversations] })
     if (path.endsWith('/conversations/conversation/runs')) return json({ items: [...Object.values(server.runs).reverse(), server.run] })
+    if (path.endsWith('/conversations/other/messages')) return json({ items: [] })
     if (path.endsWith('/messages'))
       return json({
         items: [{
           id: 'message', ordinal: '1', role: 'user', status: 'complete', schema_version: 2,
           body: { blocks: [{ type: 'text', text: '帮我拆分镜' }] }, revision: '1', created_at: '2026-11-11T00:00:00Z',
-        }],
+        }, ...server.notices],
       })
     if (path.endsWith('/agent-runs/run'))
       return json({ ...server.run, last_event_seq: String(server.seq), blocks: server.blocks, snapshot_seq: String(server.seq) })
+    if (path.endsWith('/blocks/ccbk_bg/detail'))
+      return json({ block_id: 'ccbk_bg', step_id: 'step', tool_key: 'write_model', arguments: {} })
     return json({ items: [] })
   })
   await page.goto(url)
@@ -226,13 +234,19 @@ const only = process.env.AGENT_QUEUE_E2E_ONLY
 async function check(name, fn) {
   if (only && !name.includes(only)) return
   const started = Date.now()
+  let alarm
   try {
-    await Promise.race([fn(), sleep(60_000).then(() => Promise.reject(new Error('timed out after 60 s')))])
+    const deadline = new Promise((_, reject) => {
+      alarm = setTimeout(() => reject(new Error('timed out after 60 s')), 60_000)
+    })
+    await Promise.race([fn(), deadline])
     results.push({ name, ok: true })
     console.log(`ok   ${name} (${Date.now() - started} ms)`)
   } catch (error) {
     results.push({ name, ok: false })
     console.log(`FAIL ${name}\n     ${String(error?.stack ?? error).split('\n').slice(0, 6).join('\n     ')}`)
+  } finally {
+    clearTimeout(alarm)
   }
 }
 
@@ -269,6 +283,140 @@ try {
     // The same finished run seen again (a snapshot, a reconnect) sends nothing more.
     await s.emit('run.state_changed', { state: 'succeeded' })
     await sleep(500)
+    assert.equal(s.server.sends.length, 1)
+    await s.close()
+  })
+
+  await check('background busy: a queued head keeps its place, then sends once the automatic run ends', async () => {
+    const s = await scene({
+      send: async ({ json, server, accepting, ...args }) => {
+        if (server.sends.length > 1) return accepting({ json, server, ...args })
+        server.runs.automatic = {
+          ...server.run, id: 'automatic', state: 'running', trigger_kind: 'background_tool', trigger_message_id: 'notice',
+        }
+        delete server.runs.automatic.finished_at
+        server.notices.push({
+          id: 'notice', ordinal: '2', role: 'system', status: 'complete', schema_version: 2,
+          body: { blocks: [{ type: 'text', text: '后台任务已完成：生成图片' }] },
+          background_task: { handle: 'cctask_race', state: 'succeeded' },
+        })
+        return json({ error: { code: 'creative_agent_busy', message: '会话正忙', details: { active_run_id: 'automatic' } } }, 429)
+      },
+    })
+    await s.type('第一条')
+    await s.type('第二条')
+    await s.finish('succeeded')
+    await s.until(() => s.server.sends.length === 1, 'one attempt lost the slot')
+    await s.page.getByText('助手自动继续').waitFor()
+    assert.deepEqual((await s.queued()).map((text) => text.slice(0, 3)), ['第一条', '第二条'])
+    assert.equal(await s.page.getByRole('button', { name: '继续发送' }).count(), 0)
+    await s.editor().fill('仍在编辑')
+    s.server.runs.automatic = { ...s.server.runs.automatic, id: 'automatic', state: 'succeeded', last_event_seq: '1' }
+    await s.page.evaluate(() => window.__invalidateCanvas())
+    await s.until(() => s.server.sends.length === 2, 'first in queue sends when the slot returns')
+    assert.equal(s.server.sends[1].body.payload.instruction.instruction_segments[0].text, '第一条')
+    await s.queue.getByText('第二条').waitFor()
+    assert.equal(await s.editor().innerText(), '仍在编辑')
+    await s.close()
+  })
+
+  await check('background task: immediate feedback, failure recovery, history refresh and notification order', async () => {
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const initial = {
+      handle: 'cctask_9a8b7c6d-5e4f-4c3d-8e2f-1e0f9a8b7c6d', mode: 'foreground', state: 'running',
+      revision: '1', run_id: 'run', tool_step_id: 'step', tool_key: 'write_model',
+    }
+    const s = await scene({
+      send: async ({ json, server }) => {
+        if (server.sends.length === 1) {
+          await gate
+          return json({ error: { code: 'creative_run_state_conflict', message: '暂时无法转后台' } }, 409)
+        }
+        // The request committed but its response was lost. The panel must
+        // read the authoritative revision before potentially sending it again.
+        server.blocks[0].payload.task = { ...initial, mode: 'background', revision: '2' }
+        return json({ error: { code: 'internal', message: '连接中断' } }, 408)
+      },
+    })
+    const block = {
+      id: 'ccbk_bg', run_id: 'run', ordinal: '1', type: 'tool', state: 'running', revision: '1',
+      payload_version: 1, hidden: false, started_at: '2026-11-11T00:00:02Z',
+      payload: { title: '写入模型', tool_key: 'write_model', step_id: 'step', node_refs: [], task: initial },
+    }
+    await s.emit('block.created', block)
+    const card = s.page.locator('[data-block="ccbk_bg"]')
+    await card.getByRole('button', { name: '转后台' }).click()
+    await card.locator('[data-mode="background"]').getByText('正在转到后台').waitFor({ timeout: 400 })
+    const evidence = process.env.AGENT_TASK_SCREENSHOTS
+    if (evidence) await s.page.locator('.cc-agent-panel').screenshot({ path: `${evidence}/detach-pending.png` })
+    release()
+    await card.getByText('暂时无法转后台').waitFor()
+    await card.getByRole('button', { name: '转后台' }).click()
+    await card.getByText('后台运行中').waitFor()
+    await card.getByText('请保持创意空间页面打开。').waitFor()
+    assert.equal(s.server.sends.length, 2, 'snapshot resolved the unknown ack; no duplicate write')
+    await s.emit('block.updated', {
+      block_id: block.id, revision: '2', state: 'succeeded', finished_at: '2026-11-11T00:00:03Z',
+      patch: { set: s.server.blocks[0].payload },
+    })
+    await s.finish('succeeded')
+    await s.page.locator('.cc-agent-turn[data-state="succeeded"]').waitFor()
+    const done = { ...initial, mode: 'background', state: 'succeeded', revision: '3' }
+    s.server.blocks[0].payload.task = done
+    s.server.notices.push({
+      id: 'notice', ordinal: '2', role: 'system', status: 'complete', schema_version: 2,
+      body: { blocks: [{ type: 'text', text: '后台任务已完成：写入模型' }] }, background_task: done,
+    })
+    s.server.runs.automatic = {
+      ...s.server.run, id: 'automatic', state: 'succeeded', trigger_kind: 'background_tool', trigger_message_id: 'notice',
+    }
+    s.server.extraConversations.push({ id: 'other', title: '另一个对话', title_source: 'manual' })
+    await s.page.evaluate(() => window.__invalidateCanvas())
+    await card.getByText('已完成', { exact: true }).waitFor()
+    await s.page.getByText('助手自动继续').waitFor()
+    const ordered = await s.page.locator('.cc-agent-task-notice, .cc-agent-automatic').allInnerTexts()
+    assert.deepEqual(ordered, ['后台任务已完成：写入模型', '助手自动继续'])
+    if (evidence) {
+      await s.page.setViewportSize({ width: 390, height: 844 })
+      const overflow = await s.page.locator('.cc-agent-panel').evaluate((panel) => panel.scrollWidth > panel.clientWidth)
+      assert.equal(overflow, false, 'task card fits the narrow panel')
+      await s.page.locator('.cc-agent-panel').screenshot({ path: `${evidence}/task-completed-390px.png` })
+    }
+    await s.page.reload()
+    await card.getByText('已完成', { exact: true }).waitFor()
+    assert.equal(await s.page.getByText('后台任务已完成：写入模型').count(), 1)
+    const history = s.page.getByRole('combobox', { name: '历史对话' })
+    await history.click()
+    await s.page.getByText('另一个对话', { exact: true }).click()
+    await s.page.getByText('后台任务已完成：写入模型').waitFor({ state: 'detached' })
+    assert.equal(await card.count(), 0)
+    await s.close()
+  })
+
+  await check('background cancellation: keep the fee hint next to cancel and show the authoritative result', async () => {
+    const task = {
+      handle: 'cctask_498f65a2-9100-4b6d-9922-f1adf6c40464', mode: 'background', state: 'running',
+      revision: '1', run_id: 'run', tool_step_id: 'generation', tool_key: 'generate_node',
+    }
+    const s = await scene({
+      send: ({ path, body, json, server }) => {
+        assert(path.endsWith(`/agent-tool-tasks/${task.handle}/cancel`))
+        assert.deepEqual(body.payload, {})
+        assert.equal(server.sends[0].key, body.operation_id)
+        return json({ ...task, state: 'cancelled', revision: '2', result: { state: 'cancelled' } })
+      },
+    })
+    await s.emit('block.created', {
+      id: 'ccbk_bg_generation', run_id: 'run', ordinal: '1', type: 'tool', state: 'succeeded', revision: '1',
+      payload_version: 1, hidden: false, started_at: '2026-11-11T00:00:02Z',
+      payload: { title: '生成图片', tool_key: task.tool_key, step_id: task.tool_step_id, node_refs: [], task },
+    })
+    const card = s.page.locator('[data-block="ccbk_bg_generation"]')
+    await card.getByText('已发出的生成仍会扣费。').waitFor()
+    await card.getByRole('button', { name: '取消' }).click()
+    await card.getByText('已取消').waitFor()
+    assert.equal(await card.getByRole('button', { name: '取消' }).count(), 0)
     assert.equal(s.server.sends.length, 1)
     await s.close()
   })
@@ -457,6 +605,7 @@ try {
   await check('reload: the queue is still there after a reload', async () => {
     const s = await scene()
     await s.type('刷新前写的')
+    await s.queue.getByText('刷新前写的').waitFor()
     await s.page.reload()
     await s.queue.getByText('刷新前写的').waitFor()
     assert.equal(s.server.sends.length, 0)

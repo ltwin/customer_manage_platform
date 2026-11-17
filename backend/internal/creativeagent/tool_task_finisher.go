@@ -141,8 +141,10 @@ func (s *Service) RunToolTaskFinisher(ctx context.Context, db *store.Store) {
 			}
 		}
 		next := toolTaskFallbackScan
-		if at, err := db.NextToolTaskWake(ctx); err == nil && at != nil {
-			next = min(next, max(time.Until(*at), 50*time.Millisecond))
+		if !s.backgroundTasksDisabled {
+			if at, err := db.NextToolTaskWake(ctx); err == nil && at != nil {
+				next = min(next, max(time.Until(*at), 50*time.Millisecond))
+			}
 		}
 		timer.Reset(next)
 		select {
@@ -231,8 +233,15 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 			default:
 				gate = g
 			}
-		} else if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
-			return err
+		} else {
+			if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
+				return err
+			}
+			if peek.Mode == modeBackground {
+				if err := lockToolTaskRunInTx(ctx, tx, peek.SourceRunID); err != nil {
+					return err
+				}
+			}
 		}
 		// A worker that waited on these locks for another one finds the task
 		// already handled and does not settle the source a second time.

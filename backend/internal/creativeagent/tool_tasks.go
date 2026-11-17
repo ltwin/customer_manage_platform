@@ -142,10 +142,21 @@ func splitBackground(raw string) (string, bool, error) {
 // backgroundArgument is splitBackground for this run: a run on the old
 // definitions was never offered the field and refuses it like any unknown
 // argument.
-func (h *runtimeHandler) backgroundArgument(raw string) (string, bool, error) {
+func (h *runtimeHandler) backgroundArgument(ctx context.Context, raw string) (string, bool, error) {
 	args, background, err := splitBackground(raw)
 	if err == nil && h.legacyToolSchemas && args != raw {
 		return raw, false, errToolArguments
+	}
+	if err == nil && background && h.service != nil && h.service.backgroundTasksDisabled {
+		// Keep the tool schema stable for frozen checkpoints, and permit
+		// replay of accepted tasks while refusing new work before side effects.
+		accepted, err := h.scope.Exists(ctx, "creative_agent_tool_tasks", "tool_step_id=$2 AND mode='background'", toolStepFrom(ctx))
+		if err != nil {
+			return raw, false, err
+		}
+		if !accepted {
+			return raw, false, errToolArguments
+		}
 	}
 	return args, background, err
 }
@@ -310,9 +321,28 @@ func peekToolTask(ctx context.Context, tx store.TxAccountScope, handle string) (
 	return task, err
 }
 
-func emptyPayload(raw json.RawMessage) error {
+type toolTaskControlPayload struct {
+	Handle string `json:"handle"`
+}
+
+func validateBoundToolTask(raw json.RawMessage) error {
+	return creativeops.Decode(raw, &toolTaskControlPayload{})
+}
+
+// bindToolTaskCommand validates the empty public payload and includes the
+// path handle in the operation fingerprint.
+func bindToolTaskCommand(handle string, command creativeops.Command) (creativeops.Command, error) {
+	id, ok := strings.CutPrefix(handle, "cctask_")
+	parsed, err := uuid.Parse(id)
+	if !ok || err != nil || id != parsed.String() {
+		return command, creativeops.ErrValidation
+	}
 	var payload struct{}
-	return creativeops.Decode(raw, &payload)
+	if err := creativeops.Decode(command.Payload, &payload); err != nil {
+		return command, err
+	}
+	command.Payload, err = json.Marshal(toolTaskControlPayload{Handle: handle})
+	return command, err
 }
 
 // DetachToolTask ends the assistant's foreground wait on a long-running
@@ -321,7 +351,11 @@ func emptyPayload(raw json.RawMessage) error {
 // answers the call with its real result instead. A stopped run refuses.
 // Locks: operation, project, run (admitRun), source, task.
 func (s *Service) DetachToolTask(ctx context.Context, scope store.AccountScope, handle string, command creativeops.Command) (creativeops.Receipt, error) {
-	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.detach_tool_task", Capability: "creative_read", Validate: emptyPayload,
+	command, err := bindToolTaskCommand(handle, command)
+	if err != nil {
+		return creativeops.Receipt{}, err
+	}
+	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.detach_tool_task", Capability: "creative_read", Validate: validateBoundToolTask,
 		Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
 			task, err := peekToolTask(ctx, tx, handle)
 			if err != nil {
@@ -329,6 +363,9 @@ func (s *Service) DetachToolTask(ctx context.Context, scope store.AccountScope, 
 			}
 			if task.State != taskRunning || task.Mode != modeForeground {
 				return toolTaskReceipt(ctx, tx, handle)
+			}
+			if task.ToolKey == renderViewTool || s.backgroundTasksDisabled {
+				return creativeops.Outcome{}, ErrRunState
 			}
 			g, err := sceneWaiter{s: s}.admitRun(ctx, tx, task.SourceRunID)
 			if errors.Is(err, creativescene.ErrRunGate) {
@@ -388,7 +425,11 @@ func (s *Service) DetachToolTask(ctx context.Context, scope store.AccountScope, 
 // the foreground has no cancel (move it to the background first); one that
 // already ended keeps its result. Locks: operation, project, source, task.
 func (s *Service) CancelToolTask(ctx context.Context, scope store.AccountScope, handle string, command creativeops.Command) (creativeops.Receipt, error) {
-	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.cancel_tool_task", Capability: "manual_write", Validate: emptyPayload,
+	command, err := bindToolTaskCommand(handle, command)
+	if err != nil {
+		return creativeops.Receipt{}, err
+	}
+	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "agent.cancel_tool_task", Capability: "manual_write", Validate: validateBoundToolTask,
 		Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
 			task, err := peekToolTask(ctx, tx, handle)
 			if err != nil {
@@ -401,6 +442,9 @@ func (s *Service) CancelToolTask(ctx context.Context, scope store.AccountScope, 
 				return creativeops.Outcome{}, ErrRunState
 			}
 			if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, task.CanvasID); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if err := lockToolTaskRunInTx(ctx, tx, task.SourceRunID); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			outcome, err := s.cancelSourceInTx(ctx, tx, task)

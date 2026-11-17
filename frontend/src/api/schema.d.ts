@@ -789,6 +789,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/agent-tool-tasks/{handle}/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 将助手正在等待的任务转到后台
+         * @description 源任务已完成时返回原前台结果；回看截图仅支持前台。同一幂等键回放首个成功回执。
+         */
+        post: operations["detachCreativeAgentToolTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-tool-tasks/{handle}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 取消助手的后台任务
+         * @description 已发出的生成仍会扣费，且取消后不采用结果；已结束的任务返回原结果。同一幂等键回放首个成功回执。
+         */
+        post: operations["cancelCreativeAgentToolTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/agent-runs/{id}/close-reconciliation": {
         parameters: {
             query?: never;
@@ -4460,6 +4500,11 @@ export interface components {
             /** @description 由服务端从会话读出；客户端给的对不上也不采信。 */
             canvas_id: string;
             trigger_message_id: string;
+            /**
+             * @description 后台任务完成触发的自动运行；既有入口省略。
+             * @enum {string}
+             */
+            trigger_kind?: "background_tool";
             /** @description 运行准入时账号当前有效的外发同意（准入证据）；本次变更前创建的运行指向当时的会话级授权。 */
             egress_consent_id: string;
             model_key: string;
@@ -4477,7 +4522,7 @@ export interface components {
             settlement_state: "not_started" | "pending" | "settled" | "unknown";
             error_code?: string;
             waiting_token?: string;
-            /** @description 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。 */
+            /** @description 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）、tool_task（等待耗时工具）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。 */
             wait_reason?: string;
             source_run_id?: string;
             limits_version: string;
@@ -4531,6 +4576,24 @@ export interface components {
             /** Format: int64 */
             duration_ms: number;
         };
+        CreativeAgentToolTask: {
+            handle: string;
+            /** @enum {string} */
+            mode: "foreground" | "background";
+            /** @enum {string} */
+            state: "running" | "succeeded" | "failed" | "cancelled" | "expired";
+            revision: components["schemas"]["CreativeRevision"];
+            /** @description 终态时的领域工具结果；运行中省略。 */
+            result?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            finished_at?: string;
+            /** @enum {string} */
+            tool_key: "generate_node" | "compress_image" | "write_model" | "render_view" | "export_shots";
+            run_id: string;
+            tool_step_id: string;
+        };
         CreativeAgentToolPayload: {
             step_id: string;
             tool_key: string;
@@ -4544,6 +4607,7 @@ export interface components {
             detail_ref: string;
             node_refs: components["schemas"]["CreativeAgentNodeRef"][];
             error_code?: string;
+            task?: components["schemas"]["CreativeAgentToolTask"];
         };
         CreativeAgentNodeRef: {
             node_id: string;
@@ -4630,7 +4694,7 @@ export interface components {
             finished_at?: string;
             patch?: components["schemas"]["CreativeAgentBlockPatch"];
         };
-        /** @description 事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。 block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated； run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage。 */
+        /** @description 事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。 block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated； run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage； background_tool.completed 带 handle、message_id，提示重读对话。 */
         CreativeAgentRunEvent: {
             /** @enum {integer} */
             schema_version: 1;
@@ -4667,6 +4731,8 @@ export interface components {
             revision: components["schemas"]["CreativeRevision"];
             /** Format: date-time */
             created_at: string;
+            /** @description 仅后台任务完成的系统消息携带，必为终态。 */
+            background_task?: components["schemas"]["CreativeAgentToolTask"];
         };
         CreativeAgentMessagePage: {
             items: components["schemas"]["CreativeAgentMessage"][];
@@ -10686,6 +10752,80 @@ export interface operations {
                 };
             };
             /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    detachCreativeAgentToolTask: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentControlRequest"];
+            };
+        };
+        responses: {
+            /** @description 任务状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentToolTask"];
+                };
+            };
+            /** @description 请求失败；其他账号的任务不可见，任务状态冲突时回读卡片 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelCreativeAgentToolTask: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentControlRequest"];
+            };
+        };
+        responses: {
+            /** @description 任务状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentToolTask"];
+                };
+            };
+            /** @description 请求失败；其他账号的任务不可见，任务状态冲突时回读卡片 */
             default: {
                 headers: {
                     [name: string]: unknown;

@@ -40,7 +40,7 @@ func dueAt(t *testing.T, db *sql.DB, n string) sql.NullTime {
 	return due
 }
 
-// rollbackAgentToolTasks undoes 0084.
+// rollbackAgentToolTasks undoes 0085.
 func rollbackAgentToolTasks(t *testing.T, url string) {
 	t.Helper()
 	if err := store.MigrateDownOneForTest(url); err != nil {

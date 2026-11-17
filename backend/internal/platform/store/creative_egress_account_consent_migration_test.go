@@ -8,9 +8,17 @@ import (
 )
 
 // rollbackEgressAccountConsent undoes 0084 and then 0083.
-func rollbackEgressAccountConsent(t *testing.T, url string) {
+func rollbackGraphIdentityCreatedAt(t *testing.T, url string) {
 	t.Helper()
 	rollbackAgentToolTasks(t, url)
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("rollback creative-graph-identity-created-at", err)
+	}
+}
+
+func rollbackEgressAccountConsent(t *testing.T, url string) {
+	t.Helper()
+	rollbackGraphIdentityCreatedAt(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-egress-account-consent", err)
 	}
@@ -68,7 +76,7 @@ VALUES($1,'acct','platform','creative_assistance','ccco_x','{"mode":"account_lib
 		t.Fatal("malformed current_consent_id accepted")
 	}
 
-	rollbackAgentToolTasks(t, url)
+	rollbackGraphIdentityCreatedAt(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "account-level egress consents exist") {
 		t.Fatalf("lossy rollback accepted: %v", err)
 	}

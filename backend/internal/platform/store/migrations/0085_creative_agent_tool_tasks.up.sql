@@ -97,6 +97,10 @@ CREATE TRIGGER creative_agent_tool_tasks_notify AFTER INSERT OR UPDATE OF revisi
 -- An automatic run started by a background task's completion.
 ALTER TABLE creative_agent_runs
  ADD COLUMN trigger_kind TEXT CHECK(trigger_kind IS NULL OR trigger_kind='background_tool');
+CREATE TRIGGER creative_agent_background_run_notify AFTER INSERT ON creative_agent_runs
+ FOR EACH ROW WHEN (NEW.trigger_kind='background_tool')
+ EXECUTE FUNCTION notify_creative_canvas_changed('canvas');
+
 
 -- A model step keeps the notices it was assembled with (replay input, not a
 -- delivery record) and, on the final step, the conversation ordinal up to

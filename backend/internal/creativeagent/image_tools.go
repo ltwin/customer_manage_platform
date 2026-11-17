@@ -51,7 +51,7 @@ func (h *runtimeHandler) compressImageInfo() *schema.ToolInfo {
 }
 
 func (h *runtimeHandler) compressImage(ctx context.Context, canvasID, seed, raw string) (any, error) {
-	raw, background, err := h.backgroundArgument(raw)
+	raw, background, err := h.backgroundArgument(ctx, raw)
 	if err != nil {
 		return nil, err
 	}

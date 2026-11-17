@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +156,57 @@ func TestDueNoticeOpensAnAutomaticTurn(t *testing.T) {
 	}
 }
 
+func TestAutomaticTurnsKeepTheirOwnNoticeConfiguration(t *testing.T) {
+	f := setup(t)
+	source, first := finishedInBackground(t, f)
+	const otherModel = "deepseek-flash-thinking"
+	other := f.insertNotice(source.ConversationID, source.ID, otherModel, time.Now())
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		message, err := f.service.appendMessageInTx(t.Context(), tx, source.ConversationID,
+			newMessage{Role: "system", Status: "complete", Body: Body{Blocks: []Block{{Type: "text", Text: "另一项任务已完成"}}}})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Update(t.Context(), "creative_agent_tool_tasks", "notification_message_id=$3", "id=$2", other, message.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var inputs []string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+		inputs = append(inputs, requestText(r))
+		return scriptedResult(r), nil
+	}
+	f.dueNow(first, other)
+	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	initial := f.newestRun(source.ConversationID)
+	if initial.ModelKey != testModelKey || initial.TriggerKind != triggerBackgroundTool {
+		t.Fatalf("unexpected first turn %+v", initial)
+	}
+	if err := f.work(f.alice, initial.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != 1 || !strings.Contains(inputs[0], first) || strings.Contains(inputs[0], other) || f.notice(other) != "pending" {
+		t.Fatal("first automatic turn did not leave the other model's notice pending")
+	}
+	f.dueNow(other)
+	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	second := f.newestRun(source.ConversationID)
+	if second.ID == initial.ID || second.ModelKey != otherModel || second.TriggerKind != triggerBackgroundTool {
+		t.Fatalf("unexpected second turn %+v", second)
+	}
+	if err := f.work(f.alice, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != 2 || !strings.Contains(inputs[1], other) || f.notice(other) != "delivered" {
+		t.Fatal("second automatic turn did not carry its own pending notice")
+	}
+}
+
 // Five automatic turns in a row stop the chain; a photographer message
 // resets it.
 func TestAutomaticTurnsStopAfterFiveInARow(t *testing.T) {
@@ -180,6 +232,10 @@ func TestAutomaticTurnsStopAfterFiveInARow(t *testing.T) {
 	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET trigger_kind='background_tool' WHERE id = ANY($1)`, runs); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.db.Exec(`UPDATE creative_agent_messages SET role='system'
+		WHERE id IN (SELECT trigger_message_id FROM creative_agent_runs WHERE id = ANY($1))`, runs); err != nil {
+		t.Fatal(err)
+	}
 	again := f.insertNotice(run.ConversationID, run.ID, testModelKey, time.Now())
 	f.dueNow(again)
 	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
@@ -189,7 +245,23 @@ func TestAutomaticTurnsStopAfterFiveInARow(t *testing.T) {
 		t.Fatalf("chain not stopped: %q", f.skipReason(again))
 	}
 	_ = handle
-	// The photographer speaks: the count starts again.
+	// A photographer's follow-up inside the last automatic turn also resets
+	// the count. It does not have to create a new run to break the chain.
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		_, err := f.service.appendMessageInTx(t.Context(), tx, run.ConversationID,
+			newMessage{RunID: runs[len(runs)-1], Role: "user", Status: "complete", Body: Body{Blocks: []Block{{Type: "text", Text: "补充"}}}})
+		if err != nil {
+			return err
+		}
+		n, err := automaticRunsInARowInTx(t.Context(), tx, run.ConversationID)
+		if err == nil && n != 0 {
+			return fmt.Errorf("chain after a supplement: %d", n)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A photographer starting a new turn resets the count too.
 	if _, err := f.startRun(f.alice, run.ConversationID, consent.ID, InstructionSegment{Type: "text", Text: "好"}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,6 +283,15 @@ func TestAutomaticTurnsStopAfterFiveInARow(t *testing.T) {
 func TestNoticesThatDoNotWake(t *testing.T) {
 	f := setup(t)
 	run, handle := finishedInBackground(t, f)
+
+	// Rollback mode keeps completed work and notices, without opening a turn.
+	f.service.SetBackgroundTasksDisabled(true)
+	f.dueNow(handle)
+	if n, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil || n != 0 ||
+		f.notice(handle) != "pending" || f.newestRun(run.ConversationID).ID != run.ID {
+		t.Fatalf("rollback switch did not preserve the pending notice: %d %v", n, err)
+	}
+	f.service.SetBackgroundTasksDisabled(false)
 
 	// Busy: a run of the conversation is still open.
 	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='queued',lease_until=NULL,finished_at=NULL WHERE id=$1`, run.ID); err != nil {
@@ -237,10 +318,41 @@ func TestNoticesThatDoNotWake(t *testing.T) {
 		t.Fatalf("stopped source woke: %q", f.skipReason(handle))
 	}
 
-	// Consent withdrawn.
-	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='succeeded',finished_at=now() WHERE id=$1`, run.ID); err != nil {
+	// Stopping after some answer was delivered ends as partial, but must
+	// still never open another paid turn.
+	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='partial',cancel_requested_at=now() WHERE id=$1`, run.ID); err != nil {
 		t.Fatal(err)
 	}
+	partial := f.insertNotice(run.ConversationID, run.ID, testModelKey, time.Now())
+	f.dueNow(partial)
+	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if f.skipReason(partial) != skipSourceStopped || f.newestRun(run.ConversationID).ID != run.ID {
+		t.Fatalf("stopped source with a partial answer woke: %q", f.skipReason(partial))
+	}
+
+	// A conversation archived after the notice was published can't run; the
+	// notice stays readable and the worker does not keep retrying it.
+	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='succeeded',finished_at=now(),cancel_requested_at=NULL WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_agent_conversations SET archived_at=now() WHERE id=$1`, run.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	archived := f.insertNotice(run.ConversationID, run.ID, testModelKey, time.Now())
+	f.dueNow(archived)
+	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if f.skipReason(archived) != skipUnavailable || f.notice(archived) != "pending" {
+		t.Fatalf("archived conversation notice: %q", f.skipReason(archived))
+	}
+	if _, err := f.db.Exec(`UPDATE creative_agent_conversations SET archived_at=NULL WHERE id=$1`, run.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Consent withdrawn.
 	fresh := f.insertNotice(run.ConversationID, run.ID, testModelKey, time.Now())
 	f.withdraw(f.alice)
 	f.dueNow(fresh)

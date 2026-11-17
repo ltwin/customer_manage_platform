@@ -1,12 +1,12 @@
 {
   "uid": "32a22e30-4c4f-4fcb-b837-3b86b7ade489",
-  "revision": 6,
+  "revision": 8,
   "id": "agent-tool-background",
   "kind": "feature",
   "assurance": "governed",
   "state": "in-progress",
   "createdAt": "2026-11-11T12:39:58.970Z",
-  "updatedAt": "2026-11-16T03:37:12.957Z",
+  "updatedAt": "2026-11-17T07:54:52.522Z",
   "risk": {
     "factors": [
       "concurrency",
@@ -55,8 +55,34 @@
       ".lti/snapshots/5c95fadbd127f443152c97300e1b4ed5e9811694ab73051bd03c57b4b73ef763.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "Codex",
+      "at": "2026-11-17T07:54:52.226Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 LTI 配置 checks，按仓库 Make 门禁实跑并记录；供应商和浏览器接口使用测试替身，未部署生产或代替摄影师验收。"
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "concurrency",
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "阶段 4 完成；生成物、全量 Go/前端门禁、真实 PostgreSQL 路由和迁移、并发三轮及浏览器回归通过。逐项证据见 verification.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "15f2c1374c9c7f69b1c9628f716867d2d91458814a28c01052c125705bc59df2"
+      }
+    }
+  ],
   "checkRuns": [],
   "type": "feature",
-  "stage": "develop"
+  "stage": "verify"
 }

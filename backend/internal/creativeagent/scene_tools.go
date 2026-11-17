@@ -433,7 +433,7 @@ type writeModelArgs struct {
 
 func (h *runtimeHandler) writeModel(ctx context.Context, step, raw string) (any, error) {
 	var args writeModelArgs
-	raw, background, err := h.backgroundArgument(raw)
+	raw, background, err := h.backgroundArgument(ctx, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +502,7 @@ func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any
 		CameraObjectIDs []string `json:"camera_object_ids"`
 		Passes          []string `json:"passes"`
 	}
-	raw, background, err := h.backgroundArgument(raw)
+	raw, background, err := h.backgroundArgument(ctx, raw)
 	if err != nil {
 		return nil, err
 	}

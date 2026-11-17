@@ -15,7 +15,7 @@ created: 2026-09-10
 | 端口 | 深接口契约 |
 |---|---|
 | ConversationApplication | 创建/列举会话、分页消息、附件草稿、外发同意；绑定同账号project/canvas且验证对应关系 |
-| RunApplication | 创建、补充、采纳、取消、结束核实等待、恢复已记录步骤；负责HTTP幂等与状态机，不由Worker自行创建第二个run |
+| RunApplication | 创建、补充、采纳、取消、结束核实等待、恢复已记录步骤；HTTP 与后台通知唤醒使用共同的建运行事务 |
 | ContextBuilder | 将选区、上游、附件、历史及工具结果转为版本化输入清单、引用别名和真实读集合；返回范围/能力说明，超限显式失败 |
 | SkillRegistry | 按key/version/digest加载不可变平台包、校验输入与完成标准；运行固定快照，不自动升级；映射为Eino Skill Backend的List/Get |
 | ToolRegistry | 查询注册工具schema、影响级别、授权边界、版本；只分派白名单内的已校验请求 |
@@ -128,7 +128,11 @@ run_artifact保存pending/applied/discarded/expired状态、完整提案和前�
 Eino v0.9.19的具体适配、Checkpoint/context记录与同事务回执、恢复证据不足时的停止出口，统一见[Eino接入契约](../eino-adoption.md)。当前八项隔离实验只证明固定轨迹/接口接缝；不会把一段Runner.Query当作任意崩溃下安全重放。
 
 
-节点执行工具的受理不代表创作完成：持久关联execution_id，已知任务待完成期间父run转queued、保留slot并延期查询，节点Worker不重复取得Agent slot。取消/终态限制attached执行的结果自动应用。具体等待/发布/回执协议见[节点执行联动](../canvas-tooling.md#4-执行记录恢复与agent联动)，run状态机变更同步于data-model。
+耗时工具受理后，助手默认等结果，等待期间释放会话槽。生成和压缩由后台收尾器确认采用结果；场景前台任务仍在页面回传结果的事务里恢复。助手可让生成、压缩、建模和导出分镜在后台运行，摄影师也可在原工具卡片上点「转后台」让助手继续。回看截图只支持前台。后台建模和导出需要保持创意空间页面打开。
+
+停止助手不会停止已转后台的任务。后台任务可在原卡片取消：未派发的生成不计费，已经派发的生成仍按原规则扣费，但取消后不会采用结果。后台任务完成后在原对话留一条系统提示，供正在运行的助手或下一轮读取。
+
+对话空闲且条件允许时，助手自动继续处理完成通知，按模型用量计费。同一模型与 Skill 版本的通知在 2 秒静默窗口内合并，最长等 10 秒。摄影师没有发消息时最多连续唤醒 5 轮；来源已停止或失败时不唤醒。外发同意无效、积分不足或模型 / Skill 不可用时只留通知；助手正在等待补充时不会另开一轮。项目已归档或对话已删除时不写通知。
 
 attached节点输出成功但apply_state=pending仍按queued持有原slot等待；自动发布仅允许当前queued/running且slot归属匹配的父run。异步publish在同一事务记录父run效果、按自身回执承接execution_read_set并归入change_group_id；旧checkpoint不得覆盖已提交效果水位。完整状态分支与守卫见[画布工具化契约](../canvas-tooling.md)。
 

@@ -588,7 +588,7 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 		NodeID        string `json:"node_id"`
 		DraftRevision int64  `json:"draft_revision"`
 	}
-	raw, background, err := h.backgroundArgument(raw)
+	raw, background, err := h.backgroundArgument(ctx, raw)
 	if err != nil {
 		return nil, err
 	}

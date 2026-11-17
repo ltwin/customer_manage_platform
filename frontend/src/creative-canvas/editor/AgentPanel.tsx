@@ -83,6 +83,7 @@ import { SkillPanel, SkillTag, SlashMenu } from './AgentSkills.tsx'
 import { useSlashMenu } from './useSlashMenu.ts'
 import { RunTurn, TurnLoading, UserMessage } from './AgentBlocks.tsx'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
+import { onCanvasInvalidate } from './canvasEvents.ts'
 import { useAgentScroll } from './useAgentScroll.ts'
 import {
   joinLatest,
@@ -100,6 +101,8 @@ import {
   forgetRuns,
   freezeStopping,
   releaseStopping,
+  refreshTaskRuns,
+  refreshListedRuns,
   shownRun,
   useAgentRuns,
   type TurnContext,
@@ -144,7 +147,7 @@ type Reply = AgentRun | Conversation
 // One empty list, so an empty thread is the same value from render to render.
 const noMessages: Message[] = []
 // 一次发送的结局；skipped 是链没落盘、请求没有发出。
-type SendOutcome = ChainOutcome | { kind: 'skipped' }
+type SendOutcome = (ChainOutcome & { waitForAutomatic?: boolean }) | { kind: 'skipped' }
 
 // 队列只是这个标签页的便利：存储不可用时只留在内存里。
 function queueStorage(): Storage | null {
@@ -388,6 +391,7 @@ function AgentConversation({
     useShallow((store) => runs.map((run) => store.runs[run.id]?.usage)),
   )
   const live = runs.map((run, index) => followed[index] ?? run)
+    .filter((run) => run.conversation_id === conversation)
   const active = live.find(isActiveRun)
   const waiting = live.find((run) => run.state === 'waiting_input')
   const latest = active ?? waiting
@@ -552,6 +556,7 @@ function AgentConversation({
       .then(([page, apply]) => {
         if (abort.signal.aborted) return
         setRuns(page.items)
+        refreshListedRuns(page.items, abort.signal)
         setThreadWindow(apply)
         setThreadRead({ id: conversation, failed: false })
       })
@@ -568,6 +573,41 @@ function AgentConversation({
   useEffect(() => {
     for (const run of runs) followRun(run.id)
   }, [runs])
+  useEffect(() => {
+    // Runs outside the latest list can still have cards in the visible history.
+    for (const message of thread)
+      if (message.role === 'user' && message.run_id) followRun(message.run_id)
+  }, [thread])
+  useEffect(() => {
+    if (!conversation) return
+    const abort = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let reading = false
+    let requested = false
+    const refresh = () => {
+      if (reading || timer) {
+        requested = true
+        return
+      }
+      timer = setTimeout(() => {
+        timer = undefined
+        requested = false
+        reading = true
+        setThreadRefresh((value) => value + 1)
+        void refreshTaskRuns(conversation, abort.signal).then(() => {
+          reading = false
+          if (requested && !abort.signal.aborted) refresh()
+        })
+      }, 100)
+    }
+    const off = onCanvasInvalidate(refresh)
+    void refreshTaskRuns(conversation, abort.signal)
+    return () => {
+      clearTimeout(timer)
+      abort.abort()
+      off()
+    }
+  }, [conversation])
   // 每进入一个会话沿用一次它上次的模型；之后在本会话里改选的不再被刷新覆盖。
   // 待确认的草稿记着摄影师当时选的模型，以草稿为准。
   useEffect(() => {
@@ -697,6 +737,20 @@ function AgentConversation({
         (path, body, operation) =>
           api.send<Reply>(account, path, body, operation),
       )
+      let waitForAutomatic = false
+      if (queued && !input && outcome.kind === 'rejected' &&
+        outcome.error instanceof ApiError && outcome.error.code === 'creative_agent_busy') {
+        const details = outcome.error.details
+        const id = details && 'active_run_id' in details ? details.active_run_id : undefined
+        if (typeof id === 'string') {
+          const holder = await api.read<AgentRun>(
+            `/agent-runs/${encodeURIComponent(id)}`,
+            AbortSignal.timeout(3000),
+          ).catch(() => undefined)
+          waitForAutomatic = holder?.trigger_kind === 'background_tool' &&
+            holder.conversation_id === command.draft?.conversation
+        }
+      }
       if (queued && command.draft && (outcome.kind === 'done' || outcome.kind === 'lost'))
         updateQueue(agentQueueKey(account, command.draft.conversation), (q) =>
           removeQueued(q, queued),
@@ -725,7 +779,8 @@ function AgentConversation({
         forgetConsent(account)
         setError('发送前说明需要重新确认，这条消息没有发出')
       } else if (
-        !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped))
+        !(outcome.kind === 'rejected' && (stopOnStart.current || command.stopped ||
+          waitForAutomatic))
       ) {
         // 已经停了的那条被拒：没有运行要停，草稿照常放回，不再报错。
         setError(
@@ -751,7 +806,7 @@ function AgentConversation({
         outcome.kind === 'done' ? refreshAfterSend(command, outcome.reply) : 'all'
       if (reread === 'thread') setThreadRefresh((value) => value + 1)
       else if (reread === 'all') setRefresh((value) => value + 1)
-      return outcome
+      return waitForAutomatic ? { ...outcome, waitForAutomatic } : outcome
     } finally {
       performing.current = false
       stopOnStart.current = false
@@ -949,7 +1004,7 @@ function AgentConversation({
       draft: saved,
     })
   }
-  // 队首发出：没发出去或被拒，放回队首并暂停，等摄影师点「继续发送」。
+  // 抢不到会话槽时放回队首，等占槽运行结束。其他拒绝暂停，等摄影师处理。
   async function sendQueued(item: QueuedMessage) {
     showOutgoing(item.parts, false)
     const outcome = await sendMessage(item.send, {
@@ -958,7 +1013,7 @@ function AgentConversation({
     })
     if (outcome.kind === 'rejected' || outcome.kind === 'skipped')
       updateQueue(agentQueueKey(account, item.draft.conversation), (q) =>
-        putBack(q, item, true),
+        putBack(q, item, outcome.kind !== 'rejected' || !outcome.waitForAutomatic),
       )
   }
   // 插队：运行进行中走 steers，等补充时走 supplements。气泡同帧出现，
@@ -1022,7 +1077,7 @@ function AgentConversation({
     if (queued && saved.draft && outcome.kind === 'rejected') {
       updateQueue(agentQueueKey(account, saved.draft.conversation), (q) => {
         const item = q.items.find((other) => other.id === queued)
-        return item ? putBack(q, item, !input) : q
+        return item ? putBack(q, item, !input && !outcome.waitForAutomatic) : q
       })
       if (input)
         steerRefused(outcome, saved.steps[0]?.path.endsWith('/supplements') ?? false)
@@ -1042,7 +1097,7 @@ function AgentConversation({
     }
     let next: QueuedMessage | undefined
     updateQueue(queueKey, (q) => {
-      const resumed = resumeQueue(q)
+      const resumed = resumeQueue(q, newest?.id)
       next = resumed.send
       return resumed.queue
     })
@@ -1104,6 +1159,7 @@ function AgentConversation({
     () => ({
       canvas,
       account,
+      taskReadOnly: archivedView || !!canvas?.archived,
       titleOf: (revisionID) => titleRef.current(revisionID),
       retry:
         locked || archivedView
@@ -1122,7 +1178,14 @@ function AgentConversation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canvas, account, locked, archivedView, runs],
   )
-  const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
+  const knownRuns = useAgentRuns(useShallow((store) =>
+    Object.values(store.runs).flatMap((view) => view?.run.conversation_id === conversation ? [view.run] : []),
+  ))
+  const triggers = new Map(knownRuns.map((run) => [run.trigger_message_id, run.id]))
+  for (const run of live) {
+    if (!triggers.has(run.trigger_message_id))
+      triggers.set(run.trigger_message_id, run.id)
+  }
   const followedRuns = new Set(triggers.values())
   // 插队和补充的消息由运行里的 input 块画出，对话里不再单独画一遍。
   const inputMessages = useAgentRuns(
@@ -1607,6 +1670,16 @@ function AgentConversation({
                     {runID && steering?.run === runID && (
                       <UserMessage parts={steering.parts} sending />
                     )}
+                  </div>
+                )
+              if (message.role === 'system' && message.background_task)
+                return (
+                  <div className="cc-agent-exchange" key={message.id}>
+                    <p className="cc-agent-task-notice">
+                      <span aria-hidden="true" />
+                      {message.body.blocks.map((block) => block.text ?? '').join('')}
+                    </p>
+                    {runID && <RunTurn runID={runID} />}
                   </div>
                 )
               // Runs from before blocks existed have only their messages.
