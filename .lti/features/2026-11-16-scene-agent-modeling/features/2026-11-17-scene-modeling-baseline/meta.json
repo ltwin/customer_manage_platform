@@ -1,0 +1,92 @@
+{
+  "uid": "4f07ec97-d166-4a7e-8894-e32e61ae6414",
+  "revision": 6,
+  "id": "scene-modeling-baseline",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-agent-modeling",
+  "designBinding": {
+    "version": 1,
+    "uses": [
+      "design:评测与验证",
+      "design:关键机制",
+      "design:未决事项"
+    ],
+    "delivers": []
+  },
+  "state": "abandoned",
+  "createdAt": "2026-11-17T10:39:33.065Z",
+  "updatedAt": "2026-11-17T11:11:34.907Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-17T10:57:42.969Z",
+      "contentHash": "7bb0655c6c4a4ca8"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-17T11:04:37.147Z",
+      "contentHash": "f03d12a013968535"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "baseline": {
+    "commit": "7c24ad23aa828a7c5e7ef1316405441050205aef",
+    "at": "2026-11-17T11:04:49.435Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "d280d765dd4cde8e006b045aa0a422160518353b298c87784184d00fa6cdc20b"
+    },
+    "preExisting": [
+      ".lti/features/2026-11-11-agent-character-cards/contracts.md",
+      ".lti/features/2026-11-11-agent-character-cards/design.md",
+      ".lti/features/2026-11-11-agent-character-cards/meta.json",
+      ".lti/features/2026-11-11-agent-character-cards/proposal.md",
+      ".lti/features/2026-11-11-agent-character-cards/specs.md",
+      ".lti/features/2026-11-11-lens-style-presets/discovery/brainstorm.md",
+      ".lti/features/2026-11-11-lens-style-presets/meta.json",
+      ".lti/features/2026-11-15-scene-transparent-background/contracts.md",
+      ".lti/features/2026-11-15-scene-transparent-background/design.md",
+      ".lti/features/2026-11-15-scene-transparent-background/meta.json",
+      ".lti/features/2026-11-15-scene-transparent-background/proposal.md",
+      ".lti/features/2026-11-15-scene-transparent-background/specs.md",
+      ".lti/features/2026-11-15-scene-transparent-background/tasks.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/contracts.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/design.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/discovery/brainstorm.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/features/2026-11-17-scene-modeling-baseline/design.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/features/2026-11-17-scene-modeling-baseline/meta.json",
+      ".lti/features/2026-11-16-scene-agent-modeling/features/2026-11-17-scene-modeling-baseline/proposal.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/features/2026-11-17-scene-modeling-baseline/tasks.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/meta.json",
+      ".lti/features/2026-11-16-scene-agent-modeling/proposal.md",
+      ".lti/features/2026-11-16-scene-agent-modeling/roadmap.md",
+      ".lti/features/2026-11-17-scene-particle-system/contracts.md",
+      ".lti/features/2026-11-17-scene-particle-system/design.md",
+      ".lti/features/2026-11-17-scene-particle-system/discovery/brainstorm.md",
+      ".lti/features/2026-11-17-scene-particle-system/discovery/research/simulation-and-timeline-evolution.md",
+      ".lti/features/2026-11-17-scene-particle-system/meta.json",
+      ".lti/features/2026-11-17-scene-particle-system/proposal.md",
+      ".lti/features/2026-11-17-scene-particle-system/roadmap.md",
+      ".lti/snapshots/d280d765dd4cde8e006b045aa0a422160518353b298c87784184d00fa6cdc20b.json",
+      "docs/research/tripo3d-modeling.md",
+      "pelican.html"
+    ]
+  },
+  "verify": [],
+  "checkRuns": [],
+  "abandoned": {
+    "by": "samson",
+    "at": "2026-11-17T11:11:34.677Z",
+    "reason": "已批准的 M0 范围、执行设计、预算及已有评测草稿由 scene-modeling-baseline-worktree 承接；原子项在未绑定 worktree 时已进入实施，保留历史记录。"
+  },
+  "type": "feature",
+  "stage": "closed"
+}
