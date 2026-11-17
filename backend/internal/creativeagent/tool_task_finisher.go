@@ -202,6 +202,19 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 	var sceneRefusal *runGateRefused
 	var conclude func(context.Context, store.AccountScope) (toolTaskOutcome, error)
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var canvasID string
+		err := tx.QueryRow(ctx, "creative_agent_tool_tasks", "canvas_id", "id=$2", id).Scan(&canvasID)
+		if errors.Is(err, store.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := lockTaskProject(ctx, tx, canvasID); err != nil {
+			return err
+		}
+		// Detach and cancel take the same project lock. Read the current
+		// mode under it so a detached task always uses background publication.
 		peek, err := scanToolTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", toolTaskColumns, "id=$2", id))
 		if errors.Is(err, store.ErrNoRows) {
 			return nil
@@ -210,14 +223,14 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 			return err
 		}
 		source, ok := s.toolTaskSourceFor(peek.ToolKey)
-		if !ok {
+		if !ok || peek.State != taskRunning {
 			// Foreground scene tasks finish in the scene completion
 			// transaction; nothing here owns this task yet.
 			_, err = tx.Update(ctx, "creative_agent_tool_tasks", "next_check_at=NULL", "id=$2", id)
 			return err
 		}
 		var gate *sceneGate
-		if peek.Mode == modeForeground && peek.State == taskRunning {
+		if peek.Mode == modeForeground {
 			g, err := sceneWaiter{s: s}.admitRun(ctx, tx, peek.SourceRunID)
 			switch {
 			case errors.Is(err, creativescene.ErrRunGate):
@@ -225,23 +238,13 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 				// result, nothing continues the run.
 				sceneRefusal = &runGateRefused{runID: peek.SourceRunID, cause: err}
 				peek.RunGone = true
-				if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
-					return err
-				}
 			case err != nil:
 				return err
 			default:
 				gate = g
 			}
-		} else {
-			if err := lockTaskProject(ctx, tx, peek.CanvasID); err != nil {
-				return err
-			}
-			if peek.Mode == modeBackground {
-				if err := lockToolTaskRunInTx(ctx, tx, peek.SourceRunID); err != nil {
-					return err
-				}
-			}
+		} else if err := lockToolTaskRunInTx(ctx, tx, peek.SourceRunID); err != nil {
+			return err
 		}
 		// A worker that waited on these locks for another one finds the task
 		// already handled and does not settle the source a second time.
@@ -266,11 +269,6 @@ func (s *Service) finishToolTask(ctx context.Context, scope store.AccountScope, 
 		if task.State != taskRunning {
 			_, err = tx.Update(ctx, "creative_agent_tool_tasks", "next_check_at=NULL", "id=$2", id)
 			return err
-		}
-		if task.Mode != peek.Mode {
-			// Detached between the peek and the lock: the next pass locks
-			// for the new mode.
-			return nil
 		}
 		if !outcome.Done {
 			if outcome.Conclude != nil {

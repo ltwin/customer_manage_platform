@@ -49,6 +49,8 @@ type wakeTask struct {
 	FinishedAt                                                                 time.Time
 }
 
+const dueWakeTask = "id=$2 AND notification_state='pending' AND wake_skip_reason IS NULL AND wake_run_id IS NULL AND wake_after<=clock_timestamp()"
+
 const wakeTaskColumns = "id,conversation_id,canvas_id,source_run_id,model_key,notification_message_id,skill_version_id,finished_at"
 
 func scanWakeTask(row interface{ Scan(...any) error }) (wakeTask, error) {
@@ -134,12 +136,23 @@ func (s *Service) WakeDueToolTasks(ctx context.Context, db *store.Store, batch i
 // the task rows.
 func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id string) error {
 	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		task, err := scanWakeTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", wakeTaskColumns,
-			"id=$2 AND notification_state='pending' AND wake_run_id IS NULL AND wake_after IS NOT NULL AND wake_after<=clock_timestamp()", id))
+		task, err := scanWakeTask(tx.QueryRow(ctx, "creative_agent_tool_tasks", wakeTaskColumns, dueWakeTask, id))
 		if errors.Is(err, store.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
+			return err
+		}
+		if err := lockTaskProject(ctx, tx, task.CanvasID); err != nil {
+			return err
+		}
+		// A photographer's run can deliver the notice and finish while we
+		// wait on these locks. Recheck before choosing a trigger or reserving credits.
+		if _, _, err := lockConversationSlotInTx(ctx, tx, task.ConversationID); err != nil {
+			return err
+		}
+		due, err := tx.Exists(ctx, "creative_agent_tool_tasks", dueWakeTask, id)
+		if err != nil || !due {
 			return err
 		}
 		skip := func(ids []string, reason string) error {
@@ -169,8 +182,9 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 		var first *wakeTask
 		for i, t := range group {
 			var state string
+			var errorCode *string
 			var stoppedAt *time.Time
-			err := tx.QueryRow(ctx, "creative_agent_runs", "state,cancel_requested_at", "id=$2", t.SourceRunID).Scan(&state, &stoppedAt)
+			err := tx.QueryRow(ctx, "creative_agent_runs", "state,error_code,cancel_requested_at", "id=$2", t.SourceRunID).Scan(&state, &errorCode, &stoppedAt)
 			if errors.Is(err, store.ErrNoRows) {
 				unavailable = append(unavailable, t.ID)
 				continue
@@ -181,7 +195,7 @@ func (s *Service) wakeToolTask(ctx context.Context, scope store.AccountScope, id
 			switch {
 			case state == RunCancelled || stoppedAt != nil:
 				stopped = append(stopped, t.ID)
-			case state == RunFailed:
+			case state == RunFailed || (state == RunPartial && errorCode != nil && *errorCode != ""):
 				failed = append(failed, t.ID)
 			default:
 				eligible = append(eligible, t.ID)

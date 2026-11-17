@@ -59,7 +59,7 @@ func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	if !f.pending(t, render) {
 		t.Fatal("a queued candidate is not pending")
 	}
-	if _, err = f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, true); !errors.Is(err, creativeimageedit.ErrStillEncoding) {
+	if _, err = f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil); !errors.Is(err, creativeimageedit.ErrStillEncoding) {
 		t.Fatalf("concluded while encoding: %v", err)
 	}
 	if err = <-f.workInBackground(t.Context()); err != nil {
@@ -68,7 +68,7 @@ func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	if f.pending(t, render) {
 		t.Fatal("an encoded candidate is still pending")
 	}
-	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, true)
+	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	if err != nil || replayed != render {
 		t.Fatalf("replay accepted %s %v", replayed, err)
 	}
-	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, true)
+	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
 	if err != nil || again.State != creativeimageedit.AgentApplied || again.VersionID != got.VersionID {
 		t.Fatalf("replay %+v %v", again, err)
 	}
@@ -108,8 +108,12 @@ func TestAgentCompressStoppedLeavesTheNodeAlone(t *testing.T) {
 	if err = <-f.workInBackground(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, false)
-	if err != nil || got.State != creativeimageedit.AgentNotApplied || got.Quality != creativeimageedit.QualityDefault {
+	var checked bool
+	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, func(context.Context, store.TxAccountScope) (bool, error) {
+		checked = true
+		return false, nil
+	})
+	if !checked || err != nil || got.State != creativeimageedit.AgentNotApplied || got.Quality != creativeimageedit.QualityDefault {
 		t.Fatalf("result %+v %v", got, err)
 	}
 	if state := f.get(t, render).State; state != "discarded" {
@@ -122,7 +126,7 @@ func TestAgentCompressStoppedLeavesTheNodeAlone(t *testing.T) {
 		t.Fatal("node still busy after the stopped call:", err)
 	}
 	// Concluding again reports the discard instead of adopting.
-	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, true)
+	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
 	if err != nil || again.State != creativeimageedit.AgentNotApplied {
 		t.Fatalf("replay %+v %v", again, err)
 	}

@@ -20,3 +20,11 @@
 - 并发边界：源行更新后才标记任务；收尾器发布实时事件前按项目、来源运行、源行、任务行取锁，来源运行日志已清理时仍可独立收尾。相同操作号由 creativeops 锁定；通知与任务终态同事务写入，唤醒与手动发送共用会话槽。重跑命令：`cd backend && go test ./internal/creativeagent -run 'Test(StopAndDetach|DetachAfterTheSourceFinished|CancelBackgroundGeneration|ToolTaskFinishersDoNotSettleOneTaskTwice|AutomaticTurnsKeepTheirOwnNoticeConfiguration)$' -count=3`。
 
 最终本机门禁：`make generate-check`、`make check-frontend`（1121 个测试）、`make check-go GOTEST_P=2` 全部通过。此前四并行的 PostgreSQL 容器启动超时，减少同时启动的测试进程后原失败包在全量中通过；检查范围未减。独立存储包完整回归通过，HTTP 与并发指定用例连续三轮通过。浏览器队列与后台任务 19 项、停止 10 项、运行事件流场景均通过。
+
+## 审计回归复验
+
+- 停止先于采用时保留原图。`TestStopWinsBetweenCompressionReadinessAndAdoption` 把停止插在收尾读到 ready 与采用之间，`TestAgentCompressStoppedLeavesTheNodeAlone` 在 PostgreSQL 验证拒绝采用后候选丢弃、图片修订保持原值。
+- 快速压缩转后台发一条通知。`TestFastCompressDetachedBeforeAdoptionPublishesNotice` 在同步采用前转后台，核对工具应答、完成通知和实际送达。
+- 失败的 `partial` 不主动开轮。`TestNoticeFromPartialFailureWaitsForPhotographer` 核对 `source_failed` 和摄影师手动运行送达。
+- 等锁时通知已送达则不重复开轮。`TestWakeRechecksNoticeAfterWaitingForProject` 用 PostgreSQL 锁等待验证无额外运行和积分预留。
+- `make check-go GOTEST_P=1 PKG='./internal/creativeagent/... ./internal/creativeimageedit/...'` 通过全仓 Go 构建、限定包 lint 和测试。完整测试曾触发一处并行工具调用的顺序假设，改为按节点核对后重跑通过。

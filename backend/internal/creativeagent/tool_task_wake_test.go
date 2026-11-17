@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -153,6 +154,67 @@ func TestDueNoticeOpensAnAutomaticTurn(t *testing.T) {
 	}
 	if state, _ := f.delivery(handle); state != "delivered" {
 		t.Fatalf("notice %s", state)
+	}
+}
+
+func TestNoticeFromPartialFailureWaitsForPhotographer(t *testing.T) {
+	f := setup(t)
+	source, handle := finishedInBackground(t, f)
+	if _, err := f.db.Exec(`UPDATE creative_agent_runs SET state='partial',error_code='creative_tool_failing' WHERE id=$1`, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	consent := contextConsent(t, f, source.ConversationID)
+	f.dueNow(handle)
+	if _, err := f.service.WakeDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if f.skipReason(handle) != skipSourceFailed || f.notice(handle) != "pending" || f.newestRun(source.ConversationID).ID != source.ID {
+		t.Fatalf("partial failure: reason=%q notice=%s", f.skipReason(handle), f.notice(handle))
+	}
+	var seen string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+		seen = requestText(r)
+		return scriptedResult(r), nil
+	}
+	manual, err := f.startRun(f.alice, source.ConversationID, consent.ID, InstructionSegment{Type: "text", Text: "好了吗"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.work(f.alice, manual.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seen, handle) || f.notice(handle) != "delivered" {
+		t.Fatal("the photographer's run missed the notice from the partial failure")
+	}
+}
+
+func TestWakeRechecksNoticeAfterWaitingForProject(t *testing.T) {
+	f := setup(t)
+	source, handle := finishedInBackground(t, f)
+	f.dueNow(handle)
+	var stepID string
+	if err := f.db.QueryRow(`SELECT id FROM creative_agent_steps WHERE run_id=$1 AND kind='model' ORDER BY ordinal DESC LIMIT 1`, source.ID).Scan(&stepID); err != nil {
+		t.Fatal(err)
+	}
+	reservations := f.count("llm_usage_reservations", "TRUE")
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	if err := f.alice.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, f.canvasID); err != nil {
+			return err
+		}
+		go func() { done <- f.service.wakeToolTask(ctx, f.alice, handle) }()
+		waitRunLock(t, ctx, f, "SELECT % FROM creative_projects%FOR UPDATE", "transactionid")
+		return markNoticesDeliveredInTx(ctx, tx, stepID, []string{handle})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if f.notice(handle) != "delivered" || f.newestRun(source.ConversationID).ID != source.ID || f.count("llm_usage_reservations", "TRUE") != reservations {
+		t.Fatal("a delivered notice opened another run or reserved credits")
 	}
 }
 

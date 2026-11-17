@@ -17,12 +17,13 @@ import (
 // stubCompressor stands in for image editing; its own database tests cover
 // the candidate and the adoption.
 type stubCompressor struct {
-	mu        sync.Mutex
-	calls     []creativeimageedit.AgentCompress
-	pending   bool
-	adopts    []bool
-	discarded []string
-	conclude  creativeimageedit.AgentCompressResult
+	mu          sync.Mutex
+	calls       []creativeimageedit.AgentCompress
+	pending     bool
+	adopts      []bool
+	discarded   []string
+	conclude    creativeimageedit.AgentCompressResult
+	beforeAdopt func()
 }
 
 func (s *stubCompressor) AcceptAgentCompress(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress) (string, error) {
@@ -41,7 +42,18 @@ func (s *stubCompressor) AgentCompressPendingInTx(context.Context, store.TxAccou
 	return s.pending, time.Now().Add(10 * time.Minute), nil
 }
 
-func (s *stubCompressor) ConcludeAgentCompress(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress, render string, adopt bool) (creativeimageedit.AgentCompressResult, error) {
+func (s *stubCompressor) ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, render string, admit creativeimageedit.CompressAdmit) (creativeimageedit.AgentCompressResult, error) {
+	if s.beforeAdopt != nil {
+		s.beforeAdopt()
+	}
+	var adopt bool
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		adopt, err = admit(ctx, tx)
+		return err
+	}); err != nil {
+		return creativeimageedit.AgentCompressResult{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.adopts = append(s.adopts, adopt)
@@ -131,8 +143,14 @@ func TestAssistantCompressesAnImage(t *testing.T) {
 	if !strings.Contains(refused, "正在生成") || f.count("creative_agent_steps", "tool_key=$1 AND error_code='creative_tool_refused'", compressImageTool) != 1 {
 		t.Fatalf("refusal %q", refused)
 	}
-	if len(compressor.calls) != 2 || compressor.calls[0].Quality != 75 || compressor.calls[0].CanvasID != f.canvasID ||
-		compressor.calls[1].Quality != 0 || !strings.HasPrefix(compressor.calls[0].Seed, run.ID+"/ccst_") || compressor.calls[0].Seed == compressor.calls[1].Seed {
+	// Parallel tool calls can reach the compressor in either order.
+	calls := make(map[string]creativeimageedit.AgentCompress, len(compressor.calls))
+	for _, call := range compressor.calls {
+		calls[call.NodeID] = call
+	}
+	photo, busy := calls["cwnode_photo"], calls["cwnode_busy"]
+	if len(compressor.calls) != 2 || photo.Quality != 75 || photo.CanvasID != f.canvasID ||
+		busy.Quality != 0 || !strings.HasPrefix(photo.Seed, run.ID+"/ccst_") || !strings.HasPrefix(busy.Seed, run.ID+"/ccst_") || photo.Seed == busy.Seed {
 		t.Fatalf("calls %+v", compressor.calls)
 	}
 }
@@ -239,6 +257,69 @@ func TestStoppedCompressDiscardsTheCandidate(t *testing.T) {
 	}
 }
 
+// A stop after the finisher sees a ready candidate still wins before adoption.
+func TestStopWinsBetweenCompressionReadinessAndAdoption(t *testing.T) {
+	f := setup(t)
+	run, compressor, answers := startParkedCompress(t, f)
+	compressor.set(false)
+	compressor.beforeAdopt = func() {
+		if _, err := f.service.CancelRun(t.Context(), f.alice, command(t, map[string]any{"run_id": run.ID})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handle := f.sceneTasks(run.ID)[0].ID
+	f.markDue(handle)
+	if _, err := f.service.FinishDueToolTasks(t.Context(), f.st, 10); err != nil {
+		t.Fatal(err)
+	}
+	if task := f.sceneTasks(run.ID)[0]; task.State != taskCancelled || !slices.Equal(compressor.adopts, []bool{false}) {
+		t.Fatalf("task=%+v adopts=%v", task, compressor.adopts)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, run.ID); got.State != RunCancelled || len(*answers) != 0 {
+		t.Fatalf("stopped run moved: %s %v", got.State, *answers)
+	}
+}
+
+func TestFastCompressDetachedBeforeAdoptionPublishesNotice(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	compressor := &stubCompressor{}
+	f.service.SetImageCompressor(compressor)
+	c := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, c.ID)
+	var toolReply, nextRequest string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, call("a", 0, compressImageTool, `{"node_id":"cwnode_photo"}`)), nil
+		}
+		toolReply, nextRequest = toolResult(r, 0), requestText(r)
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "压缩一下"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handle string
+	compressor.beforeAdopt = func() {
+		handle = f.sceneTasks(run.ID)[0].ID
+		if _, err := f.service.DetachToolTask(t.Context(), f.alice, handle, command(t, map[string]any{})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if task := f.sceneTasks(run.ID)[0]; task.Mode != modeBackground || task.State != taskSucceeded {
+		t.Fatalf("task=%+v", task)
+	}
+	if !strings.Contains(toolReply, `"detached":true`) || !strings.Contains(nextRequest, noticePrefix) || !strings.Contains(nextRequest, `"state":"applied"`) {
+		t.Fatalf("tool reply %s, request %s", toolReply, nextRequest)
+	}
+	if n := f.count("creative_agent_messages", "conversation_id=$1 AND role='system'", c.ID); n != 1 || f.notice(handle) != "delivered" {
+		t.Fatalf("system messages=%d notice=%s", n, f.notice(handle))
+	}
+}
+
 // Each final candidate state reads the same way to the model and the task.
 func TestCompressOutcomes(t *testing.T) {
 	for state, want := range map[string]string{
@@ -248,8 +329,7 @@ func TestCompressOutcomes(t *testing.T) {
 		creativeimageedit.AgentFailed:      taskFailed,
 		creativeimageedit.AgentNotApplied:  taskFailed,
 	} {
-		c := &stubCompressor{conclude: creativeimageedit.AgentCompressResult{NodeID: "n", State: state}}
-		outcome, err := concludeCompress(t.Context(), c, store.AccountScope{}, creativeimageedit.AgentCompress{NodeID: "n"}, "r", true)
+		outcome, err := compressOutcome(creativeimageedit.AgentCompressResult{NodeID: "n", State: state}, true)
 		success := state == creativeimageedit.AgentApplied
 		if err != nil || !outcome.Done || outcome.State != want || !strings.Contains(outcome.Result, `"state":"`+state+`"`) ||
 			strings.Contains(outcome.Result, `"success":true`) != success {

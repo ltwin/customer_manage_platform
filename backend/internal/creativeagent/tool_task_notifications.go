@@ -266,7 +266,7 @@ const runNoticePredicate = `conversation_id=$2 AND notification_state='pending' 
   AND EXISTS (SELECT 1 FROM creative_agent_runs src
     WHERE src.account_id=$1 AND src.id=creative_agent_tool_tasks.source_run_id
       AND src.cancel_requested_at IS NULL
-      AND (src.id=r.id OR src.state IN ('succeeded','partial'))))))`
+      AND (src.id=r.id OR src.state='succeeded' OR (src.state='partial' AND coalesce(src.error_code,'')=''))))))`
 
 // pendingNoticesInTx are the conversation's notices no model request has
 // carried yet, oldest first.

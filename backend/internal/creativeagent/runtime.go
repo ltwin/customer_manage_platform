@@ -448,6 +448,19 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
 			return err
 		}
+		// A task can publish the result or the detach reply while this call
+		// is still unwinding. Return the journaled reply to the model.
+		if err := tx.QueryRow(ctx, "creative_agent_steps", "state,output", "id=$2", stepID).Scan(&state, &saved); err != nil {
+			return err
+		}
+		if state == "succeeded" || state == "failed" {
+			var out toolProjection
+			if err := json.Unmarshal(saved, &out); err != nil {
+				return err
+			}
+			projection = out.Result
+			return nil
+		}
 		var err error
 		projection, err = h.publishResultInTx(ctx, tx, publishedCall{StepID: stepID, CallID: callID, Name: name, Args: args, Result: result,
 			Failed: readErr != nil, Code: code, RecordedRetry: recordedRetry})

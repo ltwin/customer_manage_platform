@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -24,8 +25,8 @@ type ImageCompressor interface {
 	// is queued or encoding, recheck when it lapses unwritten.
 	AgentCompressPendingInTx(ctx context.Context, tx store.TxAccountScope, renderID string) (pending bool, recheck time.Time, err error)
 	// ConcludeAgentCompress finishes a candidate that stopped encoding:
-	// adopts a ready one, or discards it when adopt is false.
-	ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, renderID string, adopt bool) (creativeimageedit.AgentCompressResult, error)
+	// adopts a ready one if admitted, or discards it when adoption is refused.
+	ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, renderID string, admit creativeimageedit.CompressAdmit) (creativeimageedit.AgentCompressResult, error)
 	// DiscardAgentCompressInTx discards a candidate whatever its stage, for a
 	// background compress cancelled from its card; one adopted first stays.
 	DiscardAgentCompressInTx(ctx context.Context, tx store.TxAccountScope, in creativeimageedit.AgentCompress, renderID string) (creativeimageedit.AgentCompressResult, error)
@@ -64,9 +65,9 @@ func (h *runtimeHandler) compressImage(ctx context.Context, canvasID, seed, raw 
 		return nil, err
 	}
 	step := toolStepFrom(ctx)
-	task := newToolTask{StepID: step, ToolKey: compressImageTool, SourceID: render, Mode: modeForeground}
+	task := newToolTask{StepID: step, ToolKey: compressImageTool, SourceID: render, Mode: modeForeground, Due: true}
 	if background {
-		task.Mode, task.Due = modeBackground, true
+		task.Mode = modeBackground
 		return h.acceptBackground(ctx, task)
 	}
 	var pending bool
@@ -89,19 +90,14 @@ func (h *runtimeHandler) compressImage(ctx context.Context, canvasID, seed, raw 
 		// the answer back (agent-tool-background 1.5).
 		return nil, errParked{jobID: toolTaskID(step)}
 	}
-	// Already encoded (a fast encode, or a replay): conclude here.
-	outcome, err := concludeCompress(ctx, h.service.compressor, h.scope, in, render, true)
+	// Already encoded (a fast encode, or a replay): finish without waiting
+	// for the worker, using the same adoption guard and publication path.
+	ready := toolTask{ID: toolTaskID(step), CanvasID: canvasID, SourceRunID: h.held.RunID, SourceID: render}
+	outcome, err := h.service.concludeCompress(ctx, h.scope, in, ready)
 	if err != nil {
 		return nil, err
 	}
-	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		row, err := scanToolTask(tx.QueryRowForUpdate(ctx, "creative_agent_tool_tasks", toolTaskColumns, "tool_step_id=$2", step))
-		if err != nil {
-			return err
-		}
-		return finishTaskRow(ctx, tx, row, outcome)
-	})
-	if err != nil {
+	if err := h.service.finishToolTask(ctx, h.scope, ready.ID, &outcome); err != nil {
 		return nil, err
 	}
 	return json.RawMessage(outcome.Result), nil
@@ -129,12 +125,46 @@ func compressInput(canvasID, seed, raw string) (creativeimageedit.AgentCompress,
 
 // concludeCompress is the tool answer and task state for a candidate that
 // stopped encoding.
-func concludeCompress(ctx context.Context, c ImageCompressor, scope store.AccountScope, in creativeimageedit.AgentCompress, render string, adopt bool) (toolTaskOutcome, error) {
-	result, err := c.ConcludeAgentCompress(ctx, scope, in, render, adopt)
+func (s *Service) concludeCompress(ctx context.Context, scope store.AccountScope, in creativeimageedit.AgentCompress, task toolTask) (toolTaskOutcome, error) {
+	// RunGone classifies a candidate that already ended. The guard decides
+	// whether a ready candidate can be adopted using the current task mode.
+	adopt := !task.RunGone
+	result, err := s.compressor.ConcludeAgentCompress(ctx, scope, in, task.SourceID,
+		func(ctx context.Context, tx store.TxAccountScope) (bool, error) {
+			allowed, err := s.admitCompressInTx(ctx, tx, task)
+			if err == nil {
+				adopt = allowed
+			}
+			return allowed, err
+		})
 	if err != nil {
 		return toolTaskOutcome{}, err
 	}
 	return compressOutcome(result, adopt)
+}
+
+// The project lock serializes mode changes. If the task is still in the
+// foreground, hold the source run's admission locks through the image write.
+func (s *Service) admitCompressInTx(ctx context.Context, tx store.TxAccountScope, task toolTask) (bool, error) {
+	if err := lockTaskProject(ctx, tx, task.CanvasID); err != nil {
+		return false, err
+	}
+	var mode, state string
+	err := tx.QueryRow(ctx, "creative_agent_tool_tasks", "mode,state", "id=$2", task.ID).Scan(&mode, &state)
+	if errors.Is(err, store.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil || state != taskRunning {
+		return false, err
+	}
+	if mode == modeBackground {
+		return true, nil
+	}
+	_, err = (sceneWaiter{s: s}).admitRun(ctx, tx, task.SourceRunID)
+	if errors.Is(err, creativescene.ErrRunGate) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // compressOutcome is the tool answer and task state for a candidate's final
@@ -186,10 +216,7 @@ func (c compressionTaskSource) settle(ctx context.Context, tx store.TxAccountSco
 	if err != nil {
 		return toolTaskOutcome{}, err
 	}
-	// A stopped call's candidate is discarded, never adopted for it.
-	adopt := task.Mode == modeBackground || !task.RunGone
-	render := task.SourceID
 	return toolTaskOutcome{Conclude: func(ctx context.Context, scope store.AccountScope) (toolTaskOutcome, error) {
-		return concludeCompress(ctx, compressor, scope, in, render, adopt)
+		return c.s.concludeCompress(ctx, scope, in, task)
 	}}, nil
 }
