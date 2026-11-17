@@ -1,12 +1,26 @@
 {
   "uid": "32a22e30-4c4f-4fcb-b837-3b86b7ade489",
-  "revision": 11,
+  "revision": 12,
   "id": "agent-tool-background",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-11T12:39:58.970Z",
-  "updatedAt": "2026-11-17T09:01:37.269Z",
+  "updatedAt": "2026-11-17T09:16:49.965Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-17T09:16:49.861Z",
+    "summary": "合并提交 7fe9f6ea 已进入 develop。主检出 make check-merge GOTEST_P=2 通过，含构建、lint、生成物校验、前端 1137 项测试和全量 Go 测试。",
+    "method": "manual",
+    "limitations": "项目未配置 LTI checks，集成证据来自主检出实跑的仓库合并门禁；使用同一提交的干净检出登记。未部署生产。",
+    "sourceCommit": "891db6c7607631bdbad77621ad6e417fe6f6b7e6",
+    "targetCommit": "7fe9f6ea1fd9c6a7706f8483f838f6287a56571a",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "818f53537d58d8a35f526456b2771e9f4341293a520a4586e3d76f2a480187a2"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "concurrency",
