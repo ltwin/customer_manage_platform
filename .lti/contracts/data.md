@@ -433,10 +433,10 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 ## 场景客户端任务
 
 ### 用途与存储角色
-- **用途**：服务端派给创意空间页面（渲染端）执行的工作（烘焙模型、回看截图、导出），以及它的认领、租约、结果和关联的助手运行。
+- **用途**：服务端派给创意空间页面（渲染端）执行的工作（烘焙模型、回看截图、导出），以及它的认领、租约、结果和来源助手运行。
 - **存储**：新表 `creative_scene_jobs`（PostgreSQL）。
 - **角色**：权威主数据（任务状态）。产物本身在暂存上传或内容里，不在本表。
-- **所有权**：`creativescene` 创建、过期、取消；渲染端经认领、续租、完成接口推进；`creativeagent` 经 `creativescene` 的终态端口读取任务结果，并在任务终态时继续运行。
+- **所有权**：`creativescene` 创建、过期、取消；渲染端经认领、续租、完成接口推进；`creativeagent` 经 `creativescene` 的终态端口读取任务结果，并前台在终态时继续运行，后台按「助手耗时工具任务与完成通知」发布结果。
 
 ### 结构与身份
 
@@ -479,9 +479,9 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ### 访问模式与保证
 - **认领**：取最早的 `queued` 任务（指定场景时只在该场景内），用 `FOR UPDATE SKIP LOCKED` 改为 `claimed`，写入令牌、会话和租约。由数据库行锁保证同一任务只被一个会话认领（I5）。没有任务时只走索引、不加锁，渲染端在每次失效通知时都会调用。
-- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；`attempt` 达到 3 时改为 `failed`（`host_error`）。把超过 `deadline` 的非终态任务改为 `expired`。两者都经终态端口让关联运行继续。
-- **完成**：经终态端口复查关联运行（与助手写工具同一套准入：能力、deadline、Skill、consent）→ 校验令牌与租约 → 落产物 → 改终态 → 让运行继续，在同一事务里提交（design「客户端任务」）。复查不通过时运行按现有规则结束，任务随之取消。
-- **取消**：运行被取消时，在取消运行的同一事务里把它的非终态任务改为 `cancelled`，清空令牌。
+- **租约回收**：worker 周期扫描（复用 creative-worker 的维护循环），把 `claimed` 且租约已过期的任务改回 `queued`，`attempt` 加 1，清空令牌；`attempt` 达到 3 时改为 `failed`（`host_error`）。把超过 `deadline` 的非终态任务改为 `expired`。终态进入关联任务收尾，前台继续运行，后台生成完成通知。
+- **完成**：前台按既有能力、运行期限、Skill 与外发同意复查，验证令牌和租约，落产物并写终态；运行侧在同一事务里写耗时工具任务终态并续跑，不经收尾器。前台复查不通过时按原规则结束运行并取消任务。后台按受理时的账号、对话、目标和任务自身期限复查，仍检查创意能力、租约、令牌和领域写入条件，来源运行作为溯源；写回场景不是外发，不复核外发同意。后台准入拒绝时记录可解释的任务终态。后台任务的终态由源表触发器标记收尾，收尾器写完成通知。无耗时工具任务关联的存量场景任务沿用原终态端口。
+- **取消**：运行停止或终止时，同事务把属于前台的非终态场景任务改为 `cancelled` 并清空令牌。后台场景任务由对应后台句柄控制取消，和渲染端完成争同一源任务锁。
 - **通知**：表上安装提交后通知触发器，走账号级失效通道（`notify_creative_canvas_changed('account')`）。只在新建、回到 `queued` 和进入终态时通知（触发器 `WHEN` 条件），认领、续租和删除不通知。
 
 ### 生命周期与演进
@@ -1395,14 +1395,16 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 权威定义在 `docs/product/creative-canvas-system/data-model.md`「外发同意的资源边界」，本次整段改写为账号级规则。
 - 外发需要同时满足两点：
   - 账号有有效的外发同意（见「账号外发同意」）。
-  - 内容在本运行的读取范围内：当前画布节点持有的内容；本对话中、序号在触发消息之前或属于本运行的完整消息所引用的内容；同意允许检索素材库时，未进回收站的资产的当前修订。
+  - 内容在本运行的读取范围内：当前画布节点持有的内容；本对话中、序号在触发消息之前或属于本运行的完整消息所引用的内容；**本对话中后台任务完成通知（`role=system` 且关联后台任务）所引用的内容**；同意允许检索素材库时，未进回收站的资产的当前修订。
 - 各内容仍逐项校验：属于本账号且当前可用（`RequireUsable(display)`，含用途权利）；数据类别在同意范围内；图片要求运行模型能看图；派发前照常复核同意和可用性。
 - 摄影师新建消息、插队、补充时附带或 @ 引用的内容，都写在本运行的消息上，所以由上面第二条分支覆盖，不需要清单。
+- 完成通知单列一条分支，是因为运行中途送达的通知序号在触发消息之后，自动运行的触发消息本身也不满足「序号在之前」；通知不属于某次运行，按对话读取。
 - 删除的规则：
   - `selected_revisions` 清单（`creative_egress_consent_contents`）不再参与判断；
   - 「被本对话已撤回的授权列过的修订一律拒绝」这条规则不再存在。
 - 不变：工具返回的素材、助手检索得到的内容，仍按读取范围和逐项校验处理。
 - 素材库关闭后，本运行和本对话历史里素材库工具（`search_assets` 查账号素材库、`read_library`、`read_library_result`、整理/管理/回收站/恢复、`save_to_library`）返回的内容不再随之后的请求发出，换成一句占位说明；`read_history` 和压缩摘要的转录同样处理。请求组装时素材库还开着、派发事务提交前关了的，这次派发被拒绝，运行以 `creative_egress_library_closed` 结束（门禁上按缺少同意处理，只是结束原因单列，前端提示「素材库检索已关闭」而不是「发送前说明有更新」）。`read_asset` 读到的素材库内容属于本运行自己的会话引用，按「已有会话引用仍按原许可读取」继续可读，不在占位范围内。
+- 修订（agent-tool-background）：读取范围增加完成通知分支。
 
 ## 内置模型库
 
@@ -1538,3 +1540,47 @@ ID、`name`、`parent_id`、`order`、`transform`、`visible`、`locked` 与其�
 - 派生：`creative_nodes.created_at`（已存在列）改为由应用保证与身份行一致：节点行插入时一律写入身份行的 `created_at`：首次创建时同一次变更新建的对象共用一次 `clock_timestamp()`，节点行与身份行取同一值；撤销恢复时沿用身份行原值。读接口取 `creative_nodes.created_at`。
 - 迁移：`0084_creative_graph_identity_created_at`。加列（默认值 `clock_timestamp()` 是易变函数，加列时整表重写一次，同 0060、0072 的做法）后回填：`UPDATE creative_graph_identities i SET created_at = n.created_at FROM creative_nodes n WHERE n.account_id = i.account_id AND n.id = i.id`。从 0040 之前直接升级的库，节点在迁移结束后才由 `seedCreativeGraphIdentities` 补建身份行，补建时写入节点行的 `created_at`。已删除节点的身份行没有可回填的来源，保留迁移时刻；它们若在迁移后被撤销恢复，会排到最前（一次性、仅限上线前已删除且仍在撤销窗口内的节点）。`down` 删除该列。
 - 一致性：业务不变量「恢复的节点保持原创建时间」由 `persistObject` 保证；数据库只保证非空与默认值。
+
+## 助手耗时工具任务与完成通知
+
+### 用途与存储
+
+PostgreSQL `creative_agent_tool_tasks` 由 `creativeagent` 维护。每行代表一个已受理的耗时工具步骤，作为前后台归属、取消协调、结果发布和通知送达的权威记录。执行、费用、产物和采用事实分别由源领域持有。工具卡片和对话列表均是投影。
+
+### 字段与约束
+
+| 字段 | 类型 | 必须 | 语义 |
+|---|---|---|---|
+| `id` | text | 是 | `cctask_<uuid>`，主键，由步骤身份稳定派生 |
+| `account_id` | text | 是 | 账号作用域，所有访问通过 AccountScope |
+| `conversation_id`、`canvas_id` | text | 是 | 从来源运行解析并校验，受理后固定 |
+| `source_run_id`、`tool_step_id` | text | 是 | 来源运行和工具步骤，同账号归属由受理事务检查。唯一键 `(account_id, tool_step_id)` |
+| `tool_key` | text | 是 | `generate_node`、`compress_image`、`write_model`、`render_view`、`export_shots` |
+| `source_id` | text | 是 | 前两种分别关联 `creative_node_executions.id` 和 `creative_image_edit_renders.id`，后三种关联 `creative_scene_jobs.id`。对 `(account_id,tool_key,source_id)` 唯一 |
+| `mode` | text | 是 | `foreground` 或 `background`，应用只允许前者单向转换 |
+| `state` | text | 是 | `running`、`succeeded`、`failed`、`cancelled`、`expired`，应用只允许从运行态进入终态 |
+| `revision` | bigint | 是 | 从 1 开始，卡片可见事实变化时递增，以十进制字符串返回 |
+| `result` | jsonb | 终态必有 | 原工具的终态对象，类型见「耗时工具的等待参数与结果」。前后台复用结果构建器 |
+| `finished_at` | timestamptz | 终态必有 | 任务结果确定的服务端时间，用于计算同配置组的唤醒时间 |
+| `model_key`、`skill_version_id` | text | 模型必有 | 来源运行选定的模型和主 Skill 版本，无 Skill 为 null。记录选择以支持来源日志过期后的唤醒准入 |
+| `notification_state` | text | 是 | `none`、`pending`、`delivered`、`suppressed`。前台和未完成任务为 `none`，后台终态改为 `pending` 或 `suppressed` |
+| `notification_message_id` | text | 有通知必有 | 对话系统消息，账号内唯一，来源步骤与 role 唯一约束作为第二道去重 |
+| `delivery_model_step_id` | text | 已送达必有 | 首次派发携带该通知的模型步骤，与 dispatch intent 同事务提交。连同 `notification_state` 是唯一的送达依据 |
+| `wake_after` | timestamptz | 可空 | 同配置组的唤醒时间：`min(组内最后一条 finished_at + 2 秒, 第一条 finished_at + 10 秒)`，组内每多一条通知重算。null 表示由当前运行或摄影师后续输入送达，或无需再唤醒 |
+| `wake_skip_reason` | text | 可空 | 不自动开轮的原因：`source_stopped`、`source_failed`、`chain_limit`、`egress`、`credits`、`unavailable`。有值时 `wake_after` 为 null，通知只随摄影师下次输入送达 |
+| `wake_run_id` | text | 可空 | 已尝试自动运行的身份，同新运行的预算、槽和入队提交 |
+| `next_check_at`、`stop_requested_at` | timestamptz | 可空 | 待收尾或待撤回工作时间，null 表示无需处理。撤回意图用于停止后补扫 |
+| `created_at`、`updated_at` | timestamptz | 是 | 服务端时间，跟踪提交和修复 |
+
+数据库 CHECK 约束工具、模式、状态、正数版本、终态结果完整性和通知组合。应用确保关联实体同账号且属于同一来源，源键不可更换，禁止逆转终态及前后台模式。消息通过 `creative_message_content_refs` 持有可用结果修订。运行模型步骤另增可空的 `background_notification_ids` JSON 数组，保存按实际装配顺序提交的任务句柄，只作重放用的冻结输入，不作送达依据。`creative_agent_runs` 增加可空 `trigger_kind`，自动运行为 `background_tool`，省略表示既有入口。终局模型步骤另存可空的 `background_notification_through_ordinal` bigint，标记本轮续跑能够领取到的对话序号上界。已派发请求保存实际送出引用，重放使用冻结的步骤输入和引用，沿用原步骤保留期。
+
+### 访问与生命周期
+
+- 索引：worker 跨账号扫描走全局部分索引 `(next_check_at, id) WHERE next_check_at IS NOT NULL` 和 `(wake_after, id) WHERE wake_after IS NOT NULL`，按批 `FOR UPDATE SKIP LOCKED`，每项按行上的 `account_id` 建 AccountScope 处理。对话待送达项走 `(account_id, conversation_id, finished_at, id) WHERE notification_state = 'pending'`。打开历史卡片用来源步骤唯一键读任务。
+- 源状态触发器：`creative_node_executions`（`state`、`apply_state`）、`creative_image_edit_renders`（`state`）、`creative_scene_jobs`（`state`）上的 `AFTER UPDATE` 触发器，值变化时把对应运行中任务的 `next_check_at` 置为 `now()`，命中行时 `pg_notify('creative_agent_tool_tasks', '')`。触发器不读写运行、会话和消息，不抛异常；没有任务行时什么都不做。creative-worker 用专用 LISTEN 连接接收，另每 5 秒兜底扫描。
+- `source_failed` 包含以 `failed` 结束的来源运行，以及带错误码的 `partial`。自动运行取得项目锁和会话槽锁后复查待送达通知，再决定开轮和预留积分。
+- 模式、工具步骤结论、卡片投影和必要的运行续跑原子提交。终态通知和系统消息原子提交。只有完成时的后台任务可以进入通知待送达。前台场景任务在完成事务里由运行侧同时写任务终态并续跑，不经收尾器。
+- 任务在创建源任务时登记。既有前台场景任务由无对应关联的旧路径继续处理。升级前已启动的生成、压缩运行走旧检查点兼容路径。
+- 对话存在期间保留系统消息、终态卡片的最小投影及待送达任务。关闭或删除对话后抑制尚未写出的通知，任务源按照自身期限结束。对话永久删除时按账号和对话清理完成消息的引用及终态关联，仍在执行的任务留下结算和执行所需字段，终态后由维护扫描清除。运行、源记录或执行事件到期不会删除仍由对话持有的终态卡片与消息。
+- 迁移增加表、索引、源状态触发器和可空字段，无存量回填。回滚先撤回后台入口和自动唤醒，让兼容 worker 完成任务与停止清理。已有任务及通知随数据保留，反向迁移在有这些记录时拒绝破坏性删除，保留 schema 并前向修复。
+- 访问例：同账号两次收到一个执行的终态信号，收尾第一次提交 `succeeded + pending + notification_message_id`，第二次读取既有结果。若运行在 dispatch intent 前被停止，新的人工运行仍按对话查到 `pending`。

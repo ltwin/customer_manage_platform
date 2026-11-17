@@ -920,7 +920,7 @@ Content-Type: application/json
 ## 完成场景客户端任务
 
 ### 用途与调用
-- **用途**：渲染端提交任务结果（成功或失败）。服务端在同一事务里落结果、改终态、让关联运行继续。
+- **用途**：渲染端提交任务结果（成功或失败）。服务端在同一事务里落结果、改终态并登记助手任务收尾条件。
 - **调用**：`POST /api/v1/creative/scene-jobs/{job_id}/complete`，`Idempotency-Key` 必填，外层为公共约定。
 - **权限**：任务属于当前账号，`claim_token` 匹配，且租约未过期。
 
@@ -947,12 +947,12 @@ Content-Type: application/json
 |---|---|---|---|
 | 400 | `validation_failed` | 请求外形不对：缺少与 kind 对应的结果字段、错误码非法、`export.shots` 与任务请求的摄像机和导出方式不一致。任务不变 | 修正 |
 | 404 | `not_found` | 任务不存在或不属于当前账号 | 放弃 |
-| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效；或关联运行的复查不通过（运行已结束，任务已取消） | 丢弃产物；任务会被重新认领、已过期或已取消 |
+| 409 | `creative_state_conflict` | 任务已不是 `claimed`、令牌不匹配或租约已失效；或前台关联运行复查不通过（运行已结束，任务已取消） | 丢弃产物；任务会被重新认领、已过期或已取消 |
 | 409 | `creative_upload_unavailable` | 暂存上传不存在、已过期或已被消费 | 租约仍有效时重新上传，用新的 operation id 重试 |
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
 ### 交互规则
-- **原子性**：结果落库、任务终态、运行继续在同一事务里。场景写入和导出的画布放置在保存点内执行，冲突、结果不合规或无法放置时回滚到保存点，任务记为 `failed`（带原因），运行照常继续，助手据此重做。导出的节点只在任务成功时创建。
+- **原子性**：结果落库与任务终态在同一事务里。前台在同一事务记录助手工具任务终态并续跑，存量任务沿用原有续跑路径。后台在同一事务标记待收尾，随后由收尾器发布完成通知。场景写入和导出的画布放置在保存点内执行，冲突、结果不合规或无法放置时回滚到保存点，任务记为 `failed`（带原因），前台运行或后台通知随后将结果送给助手。导出的节点只在任务成功时创建。
 - **幂等**：沿用公共约定。网络中断后用同一 key 重试或查回执。
 
 ### 调用示例
@@ -991,6 +991,7 @@ Content-Type: application/json
 
 ### 兼容与变更
 首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。修订 v8（C4 起草时）：`export` 由 `{export_operation_id}` 改为 `{scene_revision, shots}`，导出节点在完成事务里创建，不再经 `api: 导出分镜`。C3 只做了占位（服务端对 `export` 结果直接拒绝，没有调用方），不需要兼容。修订 v13（C5b）：`bake` 增加可选的 `faces`；旧渲染端烘焙时不带 `faces`，等于全部作废，服务端照常写入。
+- 本次扩展后台任务的完成准入和收尾。后台任务在本账号内核对已受理的对话、目标、任务期限和租约，来源运行可已终止；不复核外发同意。前台任务的完成事务照旧续跑运行。后台任务归属、终态和通知语义见「助手耗时工具任务与完成通知」。
 
 ## 列出场景客户端任务
 
@@ -2521,3 +2522,115 @@ Content-Type: application/json
 ```
 
 - 兼容性：只增字段；`CreativeCanvasNode` 是 `additionalProperties: false`，所有生成物（Go、TS、助手工具 schema）随 `make generate` 同步。前端未确认节点排在同级已确认节点之前，彼此按本地入队时间倒序、同值按 ID 升序；确认后以服务端创建时间为准（见 design「排序」）。
+
+## 耗时工具的等待参数与结果
+
+### 用途与输入
+
+`generate_node`、`compress_image`、`write_model`、`export_shots` 四个工具新增可选 `run_in_background`，布尔类型且不可为 null，省略等同于 `false`。`render_view` 不支持后台：截图是给助手当场看的，它的前台等待同样停靠、释放会话槽位。其余字段沿用各工具既有定义。未声明该字段的工具（含 `render_view`）携带该字段返回现有工具参数错误，源业务操作未提交。
+
+| 工具 | 已受理任务 | 前台结果的内容 |
+|---|---|---|
+| `generate_node` | 画布生成执行 | `AgentGenerationResult`，含节点、执行、生成状态、采用状态、错误和已登记作品修订 |
+| `compress_image` | 图片压缩候选与固定源修订 | `AgentCompressResult`，含候选、真实大小与尺寸、质量、结果状态及已采用版本 |
+| `write_model` | 场景烘焙 | `sceneToolResult` 的烘焙分支，成功含对象和内容修订，失败含原因或冲突 |
+| `render_view`（仅前台） | 场景截图 | `sceneToolResult` 的截图分支，成功含截图修订、所见场景修订和尺寸等事实 |
+| `export_shots` | 场景导出 | `sceneToolResult` 的导出分支，成功含创建节点和所见场景修订 |
+
+- 前台在任务和采用有结论后返回。同步参数拒绝及无需启动任务的直接结果走既有工具结果。后台受理后立即返回 `{"task_handle":"cctask_5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f","state":"running"}`。原工具调用已转后台时，用相同结构返回并附 `"detached":true`。
+- 工具重放沿用同一受理身份。前台等待及后台通知使用同一领域结果。取消时前后台都报 `state: "cancelled"`。**语义变化**：生成被取消时前台原来报 `failed`，本次改为 `cancelled`；消费者只有助手模型和本仓库前端卡片，同版本上线。生成 `succeeded` 不等于采用成功，只有 `apply_state:"applied"` 表明画布采用了结果。
+- 可用示例：`generate_node({"node_id":"ccnd_example","draft_revision":4,"run_in_background":true})`。错误示例：`search_web({"query":"镜头","run_in_background":true})` 返回工具参数错误。
+
+## 转后台与取消后台任务
+
+### 用途与调用
+
+| 方法与路径 | operationId | 用途 |
+|---|---|---|
+| POST `/api/v1/creative/agent-tool-tasks/{handle}/detach` | `detachCreativeAgentToolTask` | 摄影师让助手结束对这项工具的前台等待 |
+| POST `/api/v1/creative/agent-tool-tasks/{handle}/cancel` | `cancelCreativeAgentToolTask` | 摄影师取消一项已在后台运行的任务 |
+
+消费者为创意空间助手面板。登录账号、任务、来源运行及目标关系必须匹配。转后台需要 `agent_start` 和来源运行仍可前台等待。取消需要相应的任务控制与领域权限，经句柄定位真实源任务后执行；取消生成的规则见「后台任务取消画布生成」。
+
+### 请求
+
+| 字段 | 位置 | 类型 | 必传 / 可空 | 约束 |
+|---|---|---|---|---|
+| `handle` | path | string | 是 / 否 | `cctask_<uuid>` |
+| `Idempotency-Key` | header | uuid | 是 / 否 | 与 `operation_id` 一致 |
+| `operation_id` | body | uuid | 是 / 否 | 重试保留原值 |
+| `client_created_at` | body | RFC 3339 datetime | 是 / 否 | 创意操作既有时间窗口 |
+| `payload` | body | 空对象 | 是 / 否 | 拒绝额外字段 |
+
+### 成功响应
+
+200 返回 `CreativeAgentToolTask`，同一结构用于原工具块的可选 `task` 字段。
+
+| 字段 | 类型 | 必返 / 可空 | 含义 |
+|---|---|---|---|
+| `handle` | string | 是 / 否 | 任务句柄 |
+| `mode` | enum | 是 / 否 | `foreground`、`background` |
+| `state` | enum | 是 / 否 | `running`、`succeeded`、`failed`、`cancelled`、`expired` |
+| `revision` | CreativeRevision | 是 / 否 | 任务版本，合并时按版本排序 |
+| `result` | JSON object | 终态必返 / 否 | 与 tool_key 匹配的终态工具结果，执行中省略 |
+| `finished_at` | RFC 3339 datetime | 终态必返 / 否 | 服务端确定结果时间 |
+| `tool_key` | enum | 是 / 否 | 对应五个工具；`render_view` 只会以前台出现 |
+| `run_id` | string | 是 / 否 | 来源运行 |
+| `tool_step_id` | string | 是 / 否 | 对应原工具卡片 |
+
+转后台发现源已完成时返回 `foreground` 和终态，助手得到真实结果。重复转后台保持已有结果。取消操作以领域终态为准，成功取消返回 `cancelled`，已结束的任务返回既有终态。已送往供应商的费用按原规则结算。成功回执由 creativeops 原样重放。更新过的状态由快照取得。
+
+### 错误与示例
+
+| HTTP | 错误码 | 触发与处理 |
+|---|---|---|
+| 400 | `validation_failed` | 键、句柄或信封不合法。修正请求 |
+| 401 / 403 | 认证或创意权限错误 | 会话失效或账号能力不足，重新登录或恢复权限 |
+| 404 | `not_found` | 句柄缺失或属于其他账号，放弃本次操作 |
+| 409 | `creative_run_state_conflict` | 来源运行已停止且任务仍为前台，或取消对象尚未转后台。重读卡片 |
+| 409 | `idempotency_conflict` / `creative_operation_expired` | 键用于另一请求或回执超期，按创意操作公共约定处理 |
+| 5xx | 通用服务错误 | 重读卡片或以同一信封重放 |
+
+请求示例：
+
+```http
+POST /api/v1/creative/agent-tool-tasks/cctask_5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f/detach
+Idempotency-Key: 4c6f28c0-9122-4e84-a1e8-aa1e40a7b211
+Content-Type: application/json
+
+{"operation_id":"4c6f28c0-9122-4e84-a1e8-aa1e40a7b211","client_created_at":"2026-11-13T10:05:12Z","payload":{}}
+```
+
+转后台成功与另一账号请求失败的响应示例：
+
+```json
+{"handle":"cctask_5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f","mode":"background","state":"running","revision":"2","tool_key":"generate_node","run_id":"ccrn_8b54a8c0-f1a2-4b84-90e8-144b1f6c2425","tool_step_id":"ccst_9b54a8c0-f1a2-4b84-90e8-144b1f6c2425"}
+```
+
+```json
+{"error":{"code":"not_found","message":"任务不存在"}}
+```
+
+新增入口沿用 creativeops 写入和回执约定。并发以项目、账号范围、来源和任务事实决定，无分页。版本协商沿用现有客户端和服务端发布顺序。
+
+## 助手后台任务的快照和事件
+
+- `CreativeAgentBlock` 工具块 payload 新增可选 `task: CreativeAgentToolTask`。同一块通过 `block.updated.patch.set` 更新。任务状态由 `task.state` 表示，工具日志的 block state 仍表示助手是否收到工具调用结果。
+- `CreativeAgentMessage` 新增可选 `background_task: CreativeAgentToolTask`。只在后台任务的 `role=system` 完成通知出现，必为终态。原消息接口的权限、顺序与分页沿用既有规则。消息 `body` 提供纯文字提示，任务字段提供结构化结果。助手自动运行可引用该消息作 trigger，系统消息仍只有一行。
+- `CreativeAgentRun` 新增可选 `trigger_kind:"background_tool"`，省略表示既有入口。终态会话运行的事件流仍关闭。运行流新增 `background_tool.completed`，`payload` 形如 `{"handle":"cctask_5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f","message_id":"ccms_8b54a8c0-f1a2-4b84-90e8-144b1f6c2425"}`，触发增量重读。通用事件信封版本仍为 1。
+- `waiting_client` 的原 `client_job`、`slot_busy` 原因保持可读。新增 `tool_task` 表示等待持久化的耗时工具任务。停靠释放槽位，真正续跑时重新取得。
+- 画布失效通知由现有通道发送，触发相同账号和画布的读快照。新字段均为扩展，刷新和断线后以快照恢复。
+
+## 助手图片压缩的无人值守采用
+
+- `compress_image` 拆成两步：候选受理（固定源修订、质量参数，派生创建、采用、丢弃三个 operation ID），以及采用。工具调用内不再每 2 秒轮询，也去掉 90 秒等待上限。
+- 候选 ready 后走统一收尾，调用图片编辑面板也使用的同步 apply。快速完成的候选可以由当前工具调用直接进入收尾。收到提交回执或读回候选确认已采用后报告 `applied`。这取代 `docs/product/creative-canvas-system/modules/image-editing-backend.md` §5.3 第 2、4 条（「等待上限 90 秒」「取消 / 进程崩溃后没有后台自动采用者」），该文档同步修订。
+- 在 apply 事务内复核任务归属和当前模式，前台同时复核运行执行权。沿用源修订和画布写入检查、非内容版本冲突的有界重试及回执核实。apply 已发出而响应未知时按原操作回执核实，不误报未应用。
+- 不采用的情况：来源运行停止时任务仍为前台；卡片取消；候选失败或过期。这些情况丢弃候选，任务结果为 `not_applied`（取消为 `cancelled`）。
+- 摄影师在编辑面板发起的压缩和裁切不变，仍由前端等 ready 后自己调用 apply。
+
+## 后台任务取消画布生成
+
+- 2026-10-09 起摄影师不能取消生成类执行（`CancelPhotographerExecution`）：供应商受理后照样扣费，取消省不了钱。本次开一个局部例外：助手发起、**已在后台**的生成，可以经 `POST /api/v1/creative/agent-tool-tasks/{handle}/cancel` 取消。画布命令 `cancel_execution` 对摄影师照旧拒绝生成；前台等待中的生成没有取消入口（先转后台）。
+- 实现：按句柄定位执行，调用内部 `CancelNodeExecution`。未派发的请求撤回、不计费；已派发的照常跑完并扣费，结果不采用（`apply_state=discarded`）。任务进入 `cancelled` 并发完成通知。
+- 卡片在取消按钮旁写明「已发出的生成仍会扣费」。

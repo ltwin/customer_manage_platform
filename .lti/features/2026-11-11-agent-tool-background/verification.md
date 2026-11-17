@@ -28,3 +28,5 @@
 - 失败的 `partial` 不主动开轮。`TestNoticeFromPartialFailureWaitsForPhotographer` 核对 `source_failed` 和摄影师手动运行送达。
 - 等锁时通知已送达则不重复开轮。`TestWakeRechecksNoticeAfterWaitingForProject` 用 PostgreSQL 锁等待验证无额外运行和积分预留。
 - `make check-go GOTEST_P=1 PKG='./internal/creativeagent/... ./internal/creativeimageedit/...'` 通过全仓 Go 构建、限定包 lint 和测试。完整测试曾触发一处并行工具调用的顺序假设，改为按节点核对后重跑通过。
+
+同步 `develop` 后，`make generate-check` 通过。Go 定向回归覆盖四条审计用例、图片采用拒绝、后台任务路由、0085 任务表及 0084 图身份迁移。合并冲突只涉及迁移回退链，保留 0084 的测试入口，并在回退 0084 前先回退 0085。已核对契约整节替换项，场景任务续跑、回收及外发范围的既有规则随本次增量一起保留。生产环境的后台受理延迟和真实供应商调用未纳入本机验证。
