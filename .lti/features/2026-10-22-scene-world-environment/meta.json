@@ -1,11 +1,11 @@
 {
   "uid": "2f6c1440-f443-47c6-89da-7910ef412f88",
-  "revision": 15,
+  "revision": 17,
   "id": "scene-world-environment",
   "title": "世界环境系统：物理天空（首版），天气、云层与地表效果（远期）",
   "createdAt": "2026-10-22T07:27:55.155Z",
-  "updatedAt": "2026-10-23T16:56:07.204Z",
-  "state": "active",
+  "updatedAt": "2026-11-17T07:56:03.225Z",
+  "state": "accepted",
   "designBaselines": [
     {
       "version": 1,
@@ -1481,8 +1481,73 @@
     "at": "2026-10-22T08:34:11.502Z",
     "docHash": "d1be10ea454403cab14a65adf52a48abc959e187caa96621e56f13bb62f7cc50"
   },
-  "verifications": [],
+  "verifications": [
+    {
+      "at": "2026-11-17T07:54:36.396Z",
+      "summary": "W1-W5 五个子项均已验收归档并合入 develop，8 项目标契约全部交付。基于各子项的定向单测、双后端/GPU e2e 及 owner 视口实测记录汇总验证。",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，W5 合入后未重跑全 Epic 组合 GPU e2e。保留已记录的限制与后续事项：W2 拖动时刻滑杆 React 重渲染、程序化天空光照复用 RT 与 7 个城市中文名核对；W5 AC-W5-9 未在隐藏标签页单独复现，scene-precompile-flaky 与 scene-gi-box-room-mirror 另由 issue 跟踪。"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e33e29015f0811ce70d65c4d5b14e30eac40356b5578804781347165d7bbf2bf"
+      }
+    }
+  ],
+  "finalAcceptance": {
+    "by": "samson",
+    "at": "2026-11-17T07:56:02.736Z",
+    "summary": "owner 2026-11-16 确认归档：W1-W5（白模固定工作室光与 AgX、物理天空与摄像机曝光、夜空与环境测光、空气透视、体积物件）全部交付并合入 develop，8 项目标契约已交付；遗留限制与后续项沿用各子项验收记录。",
+    "docHash": "ac8755c5f4177f1e8b9e62964f4bcaba3d82b542abba04cfcafee5855ad22c76",
+    "integrationEvidence": "W1-W5 五个子项均已验收归档并合入 develop，8 项目标契约全部交付。基于各子项的定向单测、双后端/GPU e2e 及 owner 视口实测记录汇总验证。",
+    "verification": {
+      "at": "2026-11-17T07:54:36.396Z",
+      "summary": "W1-W5 五个子项均已验收归档并合入 develop，8 项目标契约全部交付。基于各子项的定向单测、双后端/GPU e2e 及 owner 视口实测记录汇总验证。",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未在 .lti/config.yaml 配置 checks，W5 合入后未重跑全 Epic 组合 GPU e2e。保留已记录的限制与后续事项：W2 拖动时刻滑杆 React 重渲染、程序化天空光照复用 RT 与 7 个城市中文名核对；W5 AC-W5-9 未在隐藏标签页单独复现，scene-precompile-flaky 与 scene-gi-box-room-mirror 另由 issue 跟踪。"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e33e29015f0811ce70d65c4d5b14e30eac40356b5578804781347165d7bbf2bf"
+      }
+    },
+    "children": [
+      {
+        "uid": "10672724-36fa-4e3e-b860-84a7c5e6bccd",
+        "changeId": "scene-display-look",
+        "outcome": "closed"
+      },
+      {
+        "uid": "188beed6-152e-49c5-ab86-602f1e946382",
+        "changeId": "scene-physical-sky",
+        "outcome": "closed"
+      },
+      {
+        "uid": "fc2a7e5d-507b-4cd6-b76d-33023b09cbde",
+        "changeId": "scene-night-sky",
+        "outcome": "closed"
+      },
+      {
+        "uid": "b6da8241-71c0-4091-9d33-f69541b54db3",
+        "changeId": "scene-aerial-perspective",
+        "outcome": "closed"
+      },
+      {
+        "uid": "47e54703-f35f-43e1-a4a1-d9d19ff7d7bc",
+        "changeId": "scene-volumes",
+        "outcome": "closed"
+      }
+    ]
+  },
   "resolutions": [],
   "type": "epic",
-  "stage": "develop"
+  "stage": "closed"
 }

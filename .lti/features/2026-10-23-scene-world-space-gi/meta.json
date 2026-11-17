@@ -1,11 +1,11 @@
 {
   "uid": "0bd5bbb1-9ba2-468a-b64c-ffa40133324b",
-  "revision": 11,
+  "revision": 13,
   "id": "scene-world-space-gi",
   "title": "实时 GI 的屏幕外光照与反射：仿 Lumen 的世界空间追踪层的方案与工作量",
   "createdAt": "2026-10-23T14:06:06.412Z",
-  "updatedAt": "2026-11-03T11:03:36.135Z",
-  "state": "active",
+  "updatedAt": "2026-11-17T07:57:26.206Z",
+  "state": "accepted",
   "designBaselines": [
     {
       "version": 1,
@@ -626,8 +626,65 @@
     "at": "2026-10-23T14:50:53.991Z",
     "docHash": "cc72ff3d475d462b4a6479269b8966c39aa8ab51cbb44aa9cae0d2e7e95c9ceb"
   },
-  "verifications": [],
+  "verifications": [
+    {
+      "at": "2026-11-17T07:55:16.264Z",
+      "summary": "S0-S2 三个子项均已验收归档并合入 develop，3 项目标契约全部交付。基于 S0-S2 定向测试、GPU e2e 与 owner 接受决定汇总验证；部分性能与重绘对照按 S2 决定延期。",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "项目未配置 checks，合并后未整体重跑性能基准与全量 e2e。保留 S1/S2 已记录的未达标与延期项：AC-3/AC-S2-2 cornell 立方体 +21%（scene-probe-thin-wall-bias）、AC-4/AC-S2-3 关聚光灯收敛超 24 帧（scene-probe-light-off-settle）、AC-5/AC-S2-4 重复导出差异（scene-trace-export-repeat）、AC-11/AC-S1-8 就绪停顿（scene-trace-ready-stall）；S2 性能（AC-7/AC-S2-6..8）与 AC-8（AC-S2-9）重绘对照延期。",
+        "followUp": "机器空闲时由 owner 或助手执行 S2 任务 5.5 性能复测（SCENE_E2E_TRACE_PERF 等）；owner 在后续使用中完成 AC-8 重绘对照；已知差距由对应 issue 跟踪。"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "6f076ce7fa68674a694575cf599a846e6dd0f7626313168b12f240da2d33d2d8"
+      }
+    }
+  ],
+  "finalAcceptance": {
+    "by": "samson",
+    "at": "2026-11-17T07:57:25.711Z",
+    "summary": "owner 2026-11-16 确认归档：S0-S2（技术穿刺、光追底座与屏幕外反射、探针 GI）全部交付并合入 develop，3 项目标契约已交付；S2 延期的性能复测与重绘对照及已知问题按既有记录跟踪。",
+    "docHash": "24d0444457e8fbb4696594f69b6c82fe1dbb2ebcb9cd36bbc6b3aaee7521e519",
+    "integrationEvidence": "S0-S2 三个子项均已验收归档并合入 develop，3 项目标契约全部交付。基于 S0-S2 定向测试、GPU e2e 与 owner 接受决定汇总验证；部分性能与重绘对照按 S2 决定延期。",
+    "verification": {
+      "at": "2026-11-17T07:55:16.264Z",
+      "summary": "S0-S2 三个子项均已验收归档并合入 develop，3 项目标契约全部交付。基于 S0-S2 定向测试、GPU e2e 与 owner 接受决定汇总验证；部分性能与重绘对照按 S2 决定延期。",
+      "assessment": {
+        "method": "deferred",
+        "limitations": "项目未配置 checks，合并后未整体重跑性能基准与全量 e2e。保留 S1/S2 已记录的未达标与延期项：AC-3/AC-S2-2 cornell 立方体 +21%（scene-probe-thin-wall-bias）、AC-4/AC-S2-3 关聚光灯收敛超 24 帧（scene-probe-light-off-settle）、AC-5/AC-S2-4 重复导出差异（scene-trace-export-repeat）、AC-11/AC-S1-8 就绪停顿（scene-trace-ready-stall）；S2 性能（AC-7/AC-S2-6..8）与 AC-8（AC-S2-9）重绘对照延期。",
+        "followUp": "机器空闲时由 owner 或助手执行 S2 任务 5.5 性能复测（SCENE_E2E_TRACE_PERF 等）；owner 在后续使用中完成 AC-8 重绘对照；已知差距由对应 issue 跟踪。"
+      },
+      "result": "pass",
+      "problems": [],
+      "runs": [],
+      "snapshotRef": {
+        "version": 2,
+        "digest": "6f076ce7fa68674a694575cf599a846e6dd0f7626313168b12f240da2d33d2d8"
+      }
+    },
+    "children": [
+      {
+        "uid": "fa8a5415-fa2a-4fd8-ba13-5bf72fa67830",
+        "changeId": "scene-trace-spike",
+        "outcome": "closed"
+      },
+      {
+        "uid": "679ca314-5a9a-49ef-bb72-691f46cd716b",
+        "changeId": "scene-offscreen-reflections",
+        "outcome": "closed"
+      },
+      {
+        "uid": "10a75e36-fde5-4cc7-84e4-8894d7979371",
+        "changeId": "scene-probe-gi",
+        "outcome": "closed"
+      }
+    ]
+  },
   "resolutions": [],
   "type": "epic",
-  "stage": "develop"
+  "stage": "closed"
 }
