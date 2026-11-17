@@ -1,0 +1,337 @@
+{
+  "uid": "79f8daf3-aad7-4fa9-9d58-1be3920202a6",
+  "revision": 15,
+  "id": "canvas-node-outline",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "closed",
+  "createdAt": "2026-11-16T04:07:29.766Z",
+  "updatedAt": "2026-11-16T10:04:18.964Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-16T10:04:18.738Z",
+    "summary": "经 Samson Lee 授权，画布节点树已合入 develop。make check-merge 通过，包含构建、lint、生成物校验、前端 1133 项测试和全量 Go 测试。保留源分支合并祖先。",
+    "method": "manual",
+    "limitations": "项目未配置 LTI checks。合并门禁在与 develop 合并提交内容一致的独立工作树执行，前端全量测试采用串行和测试完成后退出选项，Go 测试并发为 2。",
+    "sourceCommit": "24610355149d1fedd4443ad125a8aed2ce289d49",
+    "targetCommit": "8560a22c7b135b047eaa58470e5713f624a9b536",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "d1ab58970c934fa88eb316a9672b47cfb23dd623e468836fe186d9778ab3d208"
+    },
+    "runs": []
+  },
+  "risk": {
+    "factors": [
+      "data-migration"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-16T06:16:26.733Z",
+      "contentHash": "330065717ba355e6"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-16T06:40:21.129Z",
+      "contentHash": "5d7ccd73fbc70fa2",
+      "deltaHash": "5fa10bc0167504e0"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [
+    {
+      "at": "2026-11-16T06:21:30.506Z",
+      "summary": "调查撤销链发现撤销删除会重置节点行创建时间：新增 creative_graph_identities.created_at 列与回填迁移（0084），风险面加 data-migration；范围与验收不变",
+      "contentHash": "33d0111815737b09",
+      "added": [
+        "data-migration"
+      ],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T06:47:59.272Z",
+      "summary": "更正事实：clock_timestamp() 为易变默认值，加列会整表重写一次（原写不重写）；方案与范围不变",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T07:00:32.987Z",
+      "summary": "实施细节：新节点的节点行与身份行显式共用一次数据库时间（各取默认值相差 1–2ms，撤销恢复后不相等）；契约语义不变",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T07:06:35.093Z",
+      "summary": "挂载点：nodeKind.tsx 拆为 nodeKind.ts 与 KindIcon.tsx（fast-refresh 规则要求组件单独成文件）",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T07:20:40.201Z",
+      "summary": "实施细节：资产库任务期间不显示标签（保留原任务标题）；角色卡行用类型图标；画布与节点树重命名靠失焦自然收尾；新增 viewport.ts:nodeRect",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-16T08:43:34.094Z",
+      "summary": "代码审计修正：0040 前升级的种子身份行写入节点 created_at；助手 read_canvas 节点投影带 created_at（契约消费者描述同步）；排序改为微秒精度，本地意图记 stagedAt 使同批节点确认前后不跳位；角色卡行恢复封面（按 proposal，经内容修订缓存）；窄屏单击行先收起抽屉再定位；画布选中只在选中变化时展开祖先；Shift 锚点被隐藏时不定位；改名行被删除时结束改名；筛选菜单焦点修正；测试去掉 as 断言与忽略的错误",
+      "contentHash": "dc39462a0c25a5e0",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "5544ee354107530c4d39b48857880abea8374fbf",
+    "at": "2026-11-16T06:47:03.932Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "eebd82a2b1d5fc48d717d4eba62a1bc6dc8bf5a4b4266e01c921d25f007199d2"
+    },
+    "preExisting": [
+      ".lti/snapshots/eebd82a2b1d5fc48d717d4eba62a1bc6dc8bf5a4b4266e01c921d25f007199d2.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "Codex",
+      "at": "2026-11-16T09:45:43.343Z",
+      "assessment": {
+        "method": "checks",
+        "coverage": [
+          {
+            "criterionId": "AC-23be937b6caf",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline；单测 groups nest 用确切六节点断言层级及计数，浏览器 structure 核对渲染与折叠。"
+          },
+          {
+            "criterionId": "AC-83f0f47b6d83",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:Thumb、KindIcon.tsx:KindIcon；浏览器 structure 验证图片、角色卡封面及文本图标路径；源码核对音频、链接、场景、分组使用类型图标，视频有缩略图时使用封面。"
+          },
+          {
+            "criterionId": "AC-e257a80f1919",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline；单测 creation order 核对位置、层叠、同值 ID 和微秒精度。"
+          },
+          {
+            "criterionId": "AC-4c6279676f57",
+            "status": "verified",
+            "evidence": "后端 graph_state.go:persistObject 与前端 outline.ts:buildOutline；PostgreSQL 集成测试 TestNodeCreatedAtSurvivesEditsAndUndoRemove 对比删除、撤销、重做后的原 UTC 时间；排序单测验证稳定排行。"
+          },
+          {
+            "criterionId": "AC-31393bf1cd1c",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:pendingNodes、queue.ts:stageIntent、outline.ts:buildOutline；单测 unconfirmed nodes 对比多批本地投影与服务端确认排序。同批临时 ID 替换、并发新建的例外见 design。"
+          },
+          {
+            "criterionId": "AC-e145eb245828",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:NodeOutline；单测 empty canvas，浏览器补测 0 节点、搜索、筛选及清除后恢复。"
+          },
+          {
+            "criterionId": "AC-3ba02190dda7",
+            "status": "verified",
+            "evidence": "useCanvasSnapshot.ts:useCanvasSnapshot → WorkspacePage.tsx:view → NodeOutline.tsx:NodeOutline；模拟服务端事件更新快照，树原地反映新增、改标题、移进分组。"
+          },
+          {
+            "criterionId": "AC-1dae35947174",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline 用 NFKC 归一，仅匹配显示标题；单测 search matches 验证 2 / 13 与 ＤＳＣ / dsc，浏览器 search 核对显示。"
+          },
+          {
+            "criterionId": "AC-168c15022d1a",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline 区分命中和路径；单测 type filter 与浏览器 search。"
+          },
+          {
+            "criterionId": "AC-c4e04e74162d",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:clearFilters 清空搜索和类型并将焦点还给搜索框；单测 no hits、浏览器 search 和空画布补测。"
+          },
+          {
+            "criterionId": "AC-39342286ed01",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:toggle 和 outline.ts:buildOutline；浏览器 search 从折叠状态开始，清除筛选后验证折叠保留。"
+          },
+          {
+            "criterionId": "AC-5a5efd949d72",
+            "status": "verified",
+            "evidence": "CanvasView.tsx:revealRef、viewport.ts:revealViewport；浏览器 reveal 验证视口外节点与组内节点，单测验证保留倍率、缩小下限及面板遮挡。"
+          },
+          {
+            "criterionId": "AC-edb150a3a3f2",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:NodeOutline 按首个选中 ID 或列表变更滚动；同一列表结构下曾只高亮不滚动，修正前复现，修正后浏览器 canvas-scroll 通过。canvas-sync 另外验证选中折叠组成员时展开祖先、此后仍能手动折叠。"
+          },
+          {
+            "criterionId": "AC-58eccfd0beb2",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:click 与 WorkspacePage.tsx:onSelection；浏览器 multi 验证 Cmd/Ctrl、Shift 范围和筛掉锚点的退化行为。"
+          },
+          {
+            "criterionId": "AC-8ec6aa606b6b",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:startRename、InlineNodeTitle、WorkspacePage.tsx:graphActions；浏览器 rename 直接按 Cmd/Ctrl+Z，readonly 验证归档拒绝进入编辑。"
+          },
+          {
+            "criterionId": "AC-731e1e0285fa",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:togglePanel、LibraryDrawer.tsx；浏览器 tabs 验证切标签时抽屉保持打开。"
+          },
+          {
+            "criterionId": "AC-ad3375dd4902",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:openLibraryTask、CanvasView.tsx:onOpenLibrary；浏览器 tabs 验证填充，资产库浏览器回归验证放置，源码核对选参考沿用同一入口。"
+          },
+          {
+            "criterionId": "AC-025923be9235",
+            "status": "verified",
+            "evidence": "library.css、WorkspacePage.tsx:onSelect；浏览器 mobile 实测页面滚动宽度和收起抽屉后节点边界。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests"
+      ],
+      "summary": "技术验收通过：18 条标准逐项核对，框选滚动修正后浏览器 10/10，通过 Go 门禁、生成物校验及串行前端 1133/1133。全量默认命令与资产库历史异常已对照并记录；迁移 0084 通过 PostgreSQL up/down 集成验证。详见 acceptance-report.md，待 owner 接受。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "bf73675ba3996385cd000c3450cddfe7ad747d0b2de8799f3f3dc9f8bf3e32ec"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-16T09:49:16.401Z",
+      "assessment": {
+        "method": "checks",
+        "coverage": [
+          {
+            "criterionId": "AC-23be937b6caf",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline；单测 groups nest 用确切六节点断言层级及计数，浏览器 structure 核对渲染与折叠。"
+          },
+          {
+            "criterionId": "AC-83f0f47b6d83",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:Thumb、KindIcon.tsx:KindIcon；浏览器 structure 验证图片、角色卡封面及文本图标路径；源码核对音频、链接、场景、分组使用类型图标，视频有缩略图时使用封面。"
+          },
+          {
+            "criterionId": "AC-e257a80f1919",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline；单测 creation order 核对位置、层叠、同值 ID 和微秒精度。"
+          },
+          {
+            "criterionId": "AC-4c6279676f57",
+            "status": "verified",
+            "evidence": "后端 graph_state.go:persistObject 与前端 outline.ts:buildOutline；PostgreSQL 集成测试 TestNodeCreatedAtSurvivesEditsAndUndoRemove 对比删除、撤销、重做后的原 UTC 时间；排序单测验证稳定排行。"
+          },
+          {
+            "criterionId": "AC-31393bf1cd1c",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:pendingNodes、queue.ts:stageIntent、outline.ts:buildOutline；单测 unconfirmed nodes 对比多批本地投影与服务端确认排序。同批临时 ID 替换、并发新建的例外见 design。"
+          },
+          {
+            "criterionId": "AC-e145eb245828",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:NodeOutline；单测 empty canvas，浏览器补测 0 节点、搜索、筛选及清除后恢复。"
+          },
+          {
+            "criterionId": "AC-3ba02190dda7",
+            "status": "verified",
+            "evidence": "useCanvasSnapshot.ts:useCanvasSnapshot → WorkspacePage.tsx:view → NodeOutline.tsx:NodeOutline；模拟服务端事件更新快照，树原地反映新增、改标题、移进分组。"
+          },
+          {
+            "criterionId": "AC-1dae35947174",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline 用 NFKC 归一，仅匹配显示标题；单测 search matches 验证 2 / 13 与 ＤＳＣ / dsc，浏览器 search 核对显示。"
+          },
+          {
+            "criterionId": "AC-168c15022d1a",
+            "status": "verified",
+            "evidence": "outline.ts:buildOutline 区分命中和路径；单测 type filter 与浏览器 search。"
+          },
+          {
+            "criterionId": "AC-c4e04e74162d",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:clearFilters 清空搜索和类型并将焦点还给搜索框；单测 no hits、浏览器 search 和空画布补测。"
+          },
+          {
+            "criterionId": "AC-39342286ed01",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:toggle 和 outline.ts:buildOutline；浏览器 search 从折叠状态开始，清除筛选后验证折叠保留。"
+          },
+          {
+            "criterionId": "AC-5a5efd949d72",
+            "status": "verified",
+            "evidence": "CanvasView.tsx:revealRef、viewport.ts:revealViewport；浏览器 reveal 验证视口外节点与组内节点，单测验证保留倍率、缩小下限及面板遮挡。"
+          },
+          {
+            "criterionId": "AC-edb150a3a3f2",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:NodeOutline 按首个选中 ID 或列表变更滚动；同一列表结构下曾只高亮不滚动，修正前复现，修正后浏览器 canvas-scroll 通过。canvas-sync 另外验证选中折叠组成员时展开祖先、此后仍能手动折叠。"
+          },
+          {
+            "criterionId": "AC-58eccfd0beb2",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:click 与 WorkspacePage.tsx:onSelection；浏览器 multi 验证 Cmd/Ctrl、Shift 范围和筛掉锚点的退化行为。"
+          },
+          {
+            "criterionId": "AC-8ec6aa606b6b",
+            "status": "verified",
+            "evidence": "NodeOutline.tsx:startRename、InlineNodeTitle、WorkspacePage.tsx:graphActions；浏览器 rename 直接按 Cmd/Ctrl+Z，readonly 验证归档拒绝进入编辑。"
+          },
+          {
+            "criterionId": "AC-731e1e0285fa",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:togglePanel、LibraryDrawer.tsx；浏览器 tabs 验证切标签时抽屉保持打开。"
+          },
+          {
+            "criterionId": "AC-ad3375dd4902",
+            "status": "verified",
+            "evidence": "WorkspacePage.tsx:openLibraryTask、CanvasView.tsx:onOpenLibrary；浏览器 tabs 验证填充，资产库浏览器回归验证放置，源码核对选参考沿用同一入口。"
+          },
+          {
+            "criterionId": "AC-025923be9235",
+            "status": "verified",
+            "evidence": "library.css、WorkspacePage.tsx:onSelect；浏览器 mobile 实测页面滚动宽度和收起抽屉后节点边界。"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests"
+      ],
+      "summary": "Samson Lee 批准通过 18 项验收，接受迁移 0084 重写画布对象身份表一次的修订。本地 PostgreSQL 升级和回滚通过，生产锁表时长尚未实测。沿用同一快照的技术验收证据，详见 acceptance-report.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "bf73675ba3996385cd000c3450cddfe7ad747d0b2de8799f3f3dc9f8bf3e32ec"
+      }
+    }
+  ],
+  "checkRuns": [],
+  "closed": {
+    "at": "2026-11-16T09:49:23.798Z",
+    "incomplete": false
+  },
+  "type": "feature",
+  "stage": "closed"
+}

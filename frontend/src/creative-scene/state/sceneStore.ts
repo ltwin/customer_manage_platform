@@ -103,6 +103,7 @@ export type EditorUI = {
   /** The free view the camera view was entered from: 0 again goes back to it, navigating by hand drops it. */
   viewBack: CameraView | null
   guides: Guide[]
+  showOverlays: boolean
   /** A camera waiting for a click on the object to focus on. */
   pickFocus: string | null
   /** The export dialog is open. */
@@ -178,6 +179,7 @@ export function createEditorStore(device: DevicePreference, saved: SavedView | n
     lastCamera: saved?.lastCamera ?? null,
     viewBack: null,
     guides: saved?.guides ?? [],
+    showOverlays: saved?.showOverlays ?? true,
     pickFocus: null,
     exporting: false,
     dofPreview: false,

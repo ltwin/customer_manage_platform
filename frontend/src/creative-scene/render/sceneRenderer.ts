@@ -991,7 +991,8 @@ export class SceneRenderer {
     while (!this.disposed && !this.gpu.isLost() && !buildPasses(this.gpu.renderer, built)) await builds(this.gpu.renderer)
   }
 
-  render(camera: Camera, frame: Frame) {
+  /** True only when this call drew the canvas; captures must skip shader warm-up frames. */
+  render(camera: Camera, frame: Frame): boolean {
     const started = performance.now()
     if (camera !== this.camera) throw new Error('SceneRenderer 只画构造时的摄像机')
     const renderer = this.gpu.renderer
@@ -1093,7 +1094,7 @@ export class SceneRenderer {
           this.stats = { draws: 0, triangles: 0, cpuMs: performance.now() - started }
           this.gpu.holdCanvas()
           this.redraw?.()
-          return
+          return false
         }
       }
       if (shading !== null) this.shading = shading
@@ -1140,6 +1141,7 @@ export class SceneRenderer {
       }
       // The probes' kernels refused on this device: likewise, the layer off for good (S2 design「能力与显存」).
       if (probes && this.gpu.computeFailed()) this.trace().fail(true)
+      return !!built
     } finally {
       renderer.toneMappingExposure = exposure
       preExposure.value = 1

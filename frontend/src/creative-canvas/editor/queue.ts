@@ -161,6 +161,7 @@ export class SaveQueue {
       id: crypto.randomUUID(),
       canvasID,
       state: 'pending',
+      stagedAt: new Date().toISOString(),
     }
     const merged = coalesce(this.outbox, next)
     const done = new Promise<Receipt>((resolve, reject) => {

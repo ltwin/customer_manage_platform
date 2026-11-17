@@ -5,6 +5,12 @@ import type { Intent } from './outbox.ts'
 export const previewID = (intent: string, index: number, source = 'group') =>
   `pending:${intent}:${index}:${source}`
 
+// 未确认节点的创建时间：同一次修改建的节点共用一个时间，和服务端一致，
+// 节点树里的先后在确认前后不变。旧草稿没有记录时间，按最早处理。
+export function localCreatedAt(intent: Pick<Intent, 'stagedAt'>): string {
+  return intent.stagedAt ?? '1970-01-01T00:00:00Z'
+}
+
 // Receipt aliases never enter API requests. The editor emits one group action
 // per intent; duplicate receipts map each original node to its new identity.
 export function previewAliases(intent: Intent): Record<string, string> {
@@ -124,6 +130,7 @@ export function structuralPreview(
       ...base,
       id,
       parent_id: parent,
+      created_at: localCreatedAt(intent),
       content: undefined,
       prompt: null,
       metadata: {
@@ -216,6 +223,7 @@ export function structuralPreview(
       .map((n): CanvasNode => ({
         ...n,
         id: idFor(n.id),
+        created_at: localCreatedAt(intent),
         parent_id:
           n.parent_id && closure.has(n.parent_id)
             ? idFor(n.parent_id)

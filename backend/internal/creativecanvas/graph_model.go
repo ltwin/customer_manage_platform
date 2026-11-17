@@ -168,12 +168,12 @@ func ReadSetFor(c Canvas) []ObjectRead {
 	return r
 }
 
-const nodeColumns = "id,type_key,title,x,y,width,height,placement_revision,data_revision,content_id,content_revision_id,parent_id,type_version,z_order,intent,config,selected_version_id,document_id,status_revision,active_execution_id,latest_execution_id"
+const nodeColumns = "id,type_key,title,x,y,width,height,placement_revision,data_revision,content_id,content_revision_id,parent_id,type_version,z_order,intent,config,selected_version_id,document_id,status_revision,active_execution_id,latest_execution_id,created_at"
 
 func scanNode(row store.Row) (Node, error) {
 	var n Node
 	var p, d, s int64
-	err := row.Scan(&n.ID, &n.TypeKey, &n.Title, &n.X, &n.Y, &n.Width, &n.Height, &p, &d, &n.ContentID, &n.ContentRevisionID, &n.ParentID, &n.TypeVersion, &n.ZOrder, &n.Intent, &n.Config, &n.SelectedVersionID, &n.DocumentID, &s, &n.ActiveExecutionID, &n.LatestExecutionID)
+	err := row.Scan(&n.ID, &n.TypeKey, &n.Title, &n.X, &n.Y, &n.Width, &n.Height, &p, &d, &n.ContentID, &n.ContentRevisionID, &n.ParentID, &n.TypeVersion, &n.ZOrder, &n.Intent, &n.Config, &n.SelectedVersionID, &n.DocumentID, &s, &n.ActiveExecutionID, &n.LatestExecutionID, &n.CreatedAt)
 	n.PlacementRevision = creativeops.Revision(p)
 	n.DataRevision = creativeops.Revision(d)
 	n.StatusRevision = creativeops.Revision(s)

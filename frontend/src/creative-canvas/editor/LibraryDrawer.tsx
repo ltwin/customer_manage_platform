@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Maximize, Minimize, PanelLeftClose, X } from 'lucide-react'
 import * as api from './api.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
@@ -34,6 +34,8 @@ export type LibraryTask =
     }
   | { kind: 'pick'; nodeID: string; title: string; allowCharacter: boolean }
 type Menu = { at: Point; items: CanvasMenuItem[]; label: string }
+/** 左侧面板的两个标签：画布节点树与资产库。 */
+export type PanelTab = 'canvas' | 'assets'
 
 const NARROW = 344
 const WIDE = 760
@@ -59,6 +61,9 @@ export default function LibraryDrawer({
   onWidth,
   onAssets,
   onCatalog,
+  tab = 'assets',
+  onTab,
+  outline,
 }: {
   hidden: boolean
   /** 画布侧写入了资产库（如存入节点）时变化，抽屉随之重读。 */
@@ -72,13 +77,22 @@ export default function LibraryDrawer({
   onWidth: (width: number) => void
   onAssets: (assets: api.Asset[]) => void
   onCatalog: (catalog: Catalog) => void
+  /** 有画布时显示「画布 | 资产」标签；outline 是画布标签的内容。 */
+  tab?: PanelTab
+  onTab?: (tab: PanelTab) => void
+  outline?: ReactNode
 }) {
   const account = api.currentAccount() ?? ''
   const [query, setQuery] = useState<LibraryQuery>(blank)
   const [own, setOwn] = useState(0)
   const refresh = tick + own
   const reload = () => setOwn((n) => n + 1)
-  const [wide, setWide] = useState(false)
+  const [wideAssets, setWide] = useState(false)
+  // 资产库任务（填充、选参考）进行中照旧只显示任务标题，不能切到节点树。
+  const tabs = !!outline && !task
+  const assetsShown = !tabs || tab === 'assets'
+  // 宽模式只属于资产标签；节点树始终是窄面板。
+  const wide = wideAssets && assetsShown
   const width = wide ? WIDE : NARROW
   useEffect(() => onWidth(width), [width, onWidth])
   const [selection, setSelection] = useState<Selection>({
@@ -298,13 +312,21 @@ export default function LibraryDrawer({
         className={`cc-library cl-drawer${wide ? ' is-wide' : ''}${task ? ` is-${task.kind}` : ''}`}
         style={{ width }}
         tabIndex={-1}
-        aria-label="个人资产库"
+        aria-label={assetsShown ? '个人资产库' : '画布节点树'}
         aria-busy={actions.busy}
         data-scope-group={query.group}
         hidden={hidden}
         // 和独立页一样：Esc 取消选择（没有选择时收起），⌘A 全选已加载的，数字键评分。
         onKeyDown={(e) => {
           const target = e.target instanceof Element ? e.target : null
+          if (!assetsShown) {
+            // 节点树自己处理按键；没处理的 Esc 收起面板。
+            if (e.key === 'Escape' && !e.defaultPrevented) {
+              e.preventDefault()
+              onClose()
+            }
+            return
+          }
           if (
             e.defaultPrevented ||
             e.nativeEvent.isComposing ||
@@ -344,164 +366,211 @@ export default function LibraryDrawer({
         }}
       >
         <header className="cl-head">
-          <h2>{title}</h2>
+          {tabs ? (
+            <div className="cl-tabs" role="tablist" aria-label="左侧面板">
+              <button
+                type="button"
+                role="tab"
+                id="cl-tab-canvas"
+                aria-selected={tab === 'canvas'}
+                aria-controls="cl-pane-canvas"
+                onClick={() => onTab?.('canvas')}
+              >
+                画布
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="cl-tab-assets"
+                aria-selected={tab === 'assets'}
+                aria-controls="cl-pane-assets"
+                onClick={() => onTab?.('assets')}
+              >
+                资产
+              </button>
+            </div>
+          ) : (
+            <h2>{title}</h2>
+          )}
           <span className="cl-grow" />
-          {!task && importer.button()}
+          {assetsShown && !task && importer.button()}
+          {assetsShown && (
+            <button
+              type="button"
+              className="cl-icon"
+              aria-label={wide ? '收窄资产库' : '加宽资产库'}
+              title={wide ? '收窄' : '加宽并显示资料库'}
+              onClick={() => setWide(!wide)}
+            >
+              {wide ? <Minimize size={15} /> : <Maximize size={15} />}
+            </button>
+          )}
           <button
             type="button"
             className="cl-icon"
-            aria-label={wide ? '收窄资产库' : '加宽资产库'}
-            title={wide ? '收窄' : '加宽并显示资料库'}
-            onClick={() => setWide(!wide)}
-          >
-            {wide ? <Minimize size={15} /> : <Maximize size={15} />}
-          </button>
-          <button
-            type="button"
-            className="cl-icon"
-            aria-label="收起资产库"
+            aria-label={assetsShown ? '收起资产库' : '收起节点树'}
             title="收起"
             onClick={onClose}
           >
             <PanelLeftClose size={16} />
           </button>
         </header>
-        <div className="cl-body">
-          {wide && (
-            <LibraryTree
-              query={query}
+        {tabs && (
+          <div
+            className="cl-pane"
+            id="cl-pane-canvas"
+            role="tabpanel"
+            aria-labelledby="cl-tab-canvas"
+            hidden={tab !== 'canvas'}
+          >
+            {outline}
+          </div>
+        )}
+        <div
+          className="cl-pane"
+          id="cl-pane-assets"
+          role={tabs ? 'tabpanel' : undefined}
+          aria-labelledby={tabs ? 'cl-tab-assets' : undefined}
+          // 切走时只隐藏：筛选、滚动位置和选择都保留。
+          hidden={!assetsShown}
+        >
+          <div className="cl-body">
+            {wide && (
+              <LibraryTree
+                query={query}
+                catalog={catalog}
+                error={catalogError}
+                facets={list.facets}
+                onView={(v) => go(enter(query, v))}
+                onGroup={(id) => go(enter(query, 'all', id))}
+                onTag={(id) =>
+                  go({
+                    ...query,
+                    tags: query.tags.includes(id)
+                      ? query.tags.filter((t) => t !== id)
+                      : [...query.tags, id],
+                  })
+                }
+                {...tree}
+                blocked={actions.blocked}
+              />
+            )}
+            <AssetBrowser
+              drawer
+              views={!wide}
+              query={effective}
               catalog={catalog}
-              error={catalogError}
-              facets={list.facets}
+              list={list}
+              prefs={PREFS}
+              selected={selection.ids}
+              importBlocked={
+                !!task ||
+                actions.blocked ||
+                importer.open ||
+                !!viewer ||
+                !!menu ||
+                !!organization.popup ||
+                !!organization.confirm
+              }
+              onImportFiles={importer.files}
+              onQuery={(q) =>
+                go(task?.kind === 'fill' ? { ...q, kind: query.kind } : q)
+              }
               onView={(v) => go(enter(query, v))}
               onGroup={(id) => go(enter(query, 'all', id))}
-              onTag={(id) =>
-                go({
-                  ...query,
-                  tags: query.tags.includes(id)
-                    ? query.tags.filter((t) => t !== id)
-                    : [...query.tags, id],
+              onPrefs={() => {}}
+              onSelect={pick}
+              onBox={(ids) =>
+                task?.kind !== 'fill' &&
+                setSelection({ ids, anchor: ids[0] ?? null })
+              }
+              onMenu={assetMenu}
+              onOpen={(asset) =>
+                setViewer({
+                  items: list.page?.items ?? [asset],
+                  initialID: asset.id,
                 })
               }
-              {...tree}
-              blocked={actions.blocked}
+              onRetry={reload}
+              onCardDrag={dragCard}
             />
-          )}
-          <AssetBrowser
-            drawer
-            views={!wide}
-            query={effective}
-            catalog={catalog}
-            list={list}
-            prefs={PREFS}
-            selected={selection.ids}
-            importBlocked={
-              !!task ||
-              actions.blocked ||
-              importer.open ||
-              !!viewer ||
-              !!menu ||
-              !!organization.popup ||
-              !!organization.confirm
-            }
-            onImportFiles={importer.files}
-            onQuery={(q) =>
-              go(task?.kind === 'fill' ? { ...q, kind: query.kind } : q)
-            }
-            onView={(v) => go(enter(query, v))}
-            onGroup={(id) => go(enter(query, 'all', id))}
-            onPrefs={() => {}}
-            onSelect={pick}
-            onBox={(ids) =>
-              task?.kind !== 'fill' &&
-              setSelection({ ids, anchor: ids[0] ?? null })
-            }
-            onMenu={assetMenu}
-            onOpen={(asset) =>
-              setViewer({
-                items: list.page?.items ?? [asset],
-                initialID: asset.id,
-              })
-            }
-            onRetry={reload}
-            onCardDrag={dragCard}
-          />
-        </div>
-        {task?.kind === 'fill' ? (
-          <footer className="cl-foot is-task">
-            <span>
-              点一份{kindLabel[task.mediaKind]}填进「{task.title}」
-            </span>
-            <span className="cl-grow" />
-            <button type="button" className="btn" onClick={onClose}>
-              取消
-            </button>
-          </footer>
-        ) : task?.kind === 'pick' ? (
-          <footer className="cl-foot is-task">
-            <span>
-              为「{task.title}」选参考
-              {selected.length ? ` · 已选 ${selected.length}` : ''}
-            </span>
-            <span className="cl-grow" />
-            <button type="button" className="btn" onClick={onClose}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!usable(selected).filter(canPickReference).length}
-              onClick={() => onPick(usable(selected).filter(canPickReference))}
-            >
-              添加{selected.length ? ` ${selected.length} 项` : ''}
-            </button>
-          </footer>
-        ) : selected.length ? (
-          <footer
-            className="cl-foot is-task"
-            role="toolbar"
-            aria-label="批量操作"
-          >
-            <span>已选 {selected.length} 项</span>
-            <span className="cl-grow" />
-            <button
-              type="button"
-              className="btn"
-              aria-label="更多操作"
-              disabled={blocked}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect()
-                assetMenu(selected[0]!, { x: r.left, y: r.top - 8 })
-              }}
-            >
-              整理…
-            </button>
-            {placeable && selected.some(isCanvasAsset) && (
+          </div>
+          {task?.kind === 'fill' ? (
+            <footer className="cl-foot is-task">
+              <span>
+                点一份{kindLabel[task.mediaKind]}填进「{task.title}」
+              </span>
+              <span className="cl-grow" />
+              <button type="button" className="btn" onClick={onClose}>
+                取消
+              </button>
+            </footer>
+          ) : task?.kind === 'pick' ? (
+            <footer className="cl-foot is-task">
+              <span>
+                为「{task.title}」选参考
+                {selected.length ? ` · 已选 ${selected.length}` : ''}
+              </span>
+              <span className="cl-grow" />
+              <button type="button" className="btn" onClick={onClose}>
+                取消
+              </button>
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!usable(selected).filter(isCanvasAsset).length}
-                onClick={() => place(selected)}
+                disabled={!usable(selected).filter(canPickReference).length}
+                onClick={() => onPick(usable(selected).filter(canPickReference))}
               >
-                放入画布
+                添加{selected.length ? ` ${selected.length} 项` : ''}
               </button>
-            )}
-            <button
-              type="button"
-              className="cl-icon"
-              aria-label="取消选择"
-              onClick={clear}
+            </footer>
+          ) : selected.length ? (
+            <footer
+              className="cl-foot is-task"
+              role="toolbar"
+              aria-label="批量操作"
             >
-              <X size={15} />
-            </button>
-          </footer>
-        ) : (
-          <footer className="cl-foot">
-            {placeable
-              ? '拖进画布放置 · 双击查看 · ⌘ 点击多选'
-              : '双击查看 · ⌘ 点击多选 · 拖入文件即导入'}
-          </footer>
-        )}
+              <span>已选 {selected.length} 项</span>
+              <span className="cl-grow" />
+              <button
+                type="button"
+                className="btn"
+                aria-label="更多操作"
+                disabled={blocked}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  assetMenu(selected[0]!, { x: r.left, y: r.top - 8 })
+                }}
+              >
+                整理…
+              </button>
+              {placeable && selected.some(isCanvasAsset) && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!usable(selected).filter(isCanvasAsset).length}
+                  onClick={() => place(selected)}
+                >
+                  放入画布
+                </button>
+              )}
+              <button
+                type="button"
+                className="cl-icon"
+                aria-label="取消选择"
+                onClick={clear}
+              >
+                <X size={15} />
+              </button>
+            </footer>
+          ) : (
+            <footer className="cl-foot">
+              {placeable
+                ? '拖进画布放置 · 双击查看 · ⌘ 点击多选'
+                : '双击查看 · ⌘ 点击多选 · 拖入文件即导入'}
+            </footer>
+          )}
+        </div>
       </aside>
       {importer.overlays}
       {menu && (

@@ -99,3 +99,16 @@
   .cl-picker { height: 86vh; }
   .cl-picker .cl-foot.is-task { flex-wrap: nowrap; }
 }
+
+/* 「画布 | 资产」标签：有画布时取代页眉标题。两个面板切换时只隐藏，不卸载。 */
+.cl-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.cl-pane[hidden] { display: none; }
+.cl-tabs { display: flex; gap: 2px; min-width: 0; margin-left: -6px; }
+.cl-tabs button {
+  height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: none;
+  color: var(--fg-2); font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 160px;
+}
+.cl-tabs button:hover:not(:disabled) { color: var(--fg); }
+.cl-tabs button[aria-selected='true'] { background: var(--s3); color: var(--fg); font-weight: 500; }
+.cl-tabs button:disabled { cursor: default; opacity: 0.45; }

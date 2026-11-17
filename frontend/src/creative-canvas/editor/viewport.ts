@@ -1,4 +1,5 @@
 import type { CanvasNode } from './api.ts'
+import { worldPoint } from './graph.ts'
 
 export type Viewport = { x: number; y: number; zoom: number }
 export type Rect = { x: number; y: number; width: number; height: number }
@@ -54,13 +55,54 @@ export function fitViewport(
   }
 }
 
+// 单个节点的世界坐标矩形（分组内节点坐标相对父组），含卡片外的标签；节点不在时为 null。
+export function nodeRect(nodes: CanvasNode[], id: string): Rect | null {
+  const n = nodes.find((v) => v.id === id)
+  if (!n) return null
+  const p = worldPoint(nodes, id)
+  return {
+    x: p.x,
+    y: p.y - labelHeight,
+    width: n.metadata.width,
+    height: n.metadata.height + labelHeight,
+  }
+}
+
+// 把视口带到一个节点（节点树点击）：放得下就保持倍率只平移居中；
+// 放不下才缩小到刚好放下，不低于最小倍率，也从不放大。
+export function revealViewport(
+  rect: Rect,
+  stage: { width: number; height: number },
+  insets: Insets,
+  current: Viewport,
+): Viewport {
+  const w = Math.max(1, stage.width - insets.left - insets.right)
+  const h = Math.max(1, stage.height - insets.top - insets.bottom)
+  const fit = Math.min(
+    w / Math.max(1, rect.width),
+    h / Math.max(1, rect.height),
+  )
+  const zoom =
+    fit >= current.zoom ? current.zoom : Math.max(zoomLimits.min, fit)
+  return {
+    zoom,
+    x: insets.left + w / 2 - (rect.x + rect.width / 2) * zoom,
+    y: insets.top + h / 2 - (rect.y + rect.height / 2) * zoom,
+  }
+}
+
+// 窄屏布局（与 library.css、workspace.css 的断点一致）：抽屉改为底部浮层。
+export const narrowWidth = 760
+export const narrowLayout = `(max-width: ${narrowWidth}px)`
+
 // 面板占位：资产库在左、助手在右，读实际 DOM 位置；窄屏用固定边距。
 export function panelInsets(
   stage: DOMRect,
   library: DOMRect | null,
   agent: DOMRect | null,
 ): Insets {
-  if (stage.width <= 760) return { left: 16, right: 16, top: 72, bottom: 80 }
+  if (stage.width <= narrowWidth)
+    return { left: 16, right: 16, top: 72, bottom: 80 }
   return {
     left: library ? Math.max(80, library.right - stage.left + 16) : 80,
     right: agent ? Math.max(40, stage.right - agent.left + 16) : 40,

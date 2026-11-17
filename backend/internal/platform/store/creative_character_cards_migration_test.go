@@ -7,7 +7,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackCharacterCards undoes 0083 and then 0082.
+// rollbackCharacterCards undoes 0084, 0083 and then 0082.
 func rollbackCharacterCards(t *testing.T, url string) {
 	t.Helper()
 	rollbackEgressAccountConsent(t, url)

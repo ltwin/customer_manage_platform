@@ -1231,9 +1231,10 @@
   color: var(--warning);
 }
 .cc-agent-ring-panel {
+  --ring-panel-gap: 8px;
   position: absolute;
   right: -40px;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + var(--ring-panel-gap));
   z-index: 4;
   width: 248px;
   padding: 10px 12px;
@@ -1243,6 +1244,13 @@
   color: var(--fg-2);
   font-size: 12px;
   line-height: 1.6;
+}
+/* 让鼠标从小环穿过间隙移入浮层时，仍停留在同一悬停区域。 */
+.cc-agent-ring-panel::after {
+  position: absolute;
+  inset: 100% 0 auto;
+  height: var(--ring-panel-gap);
+  content: '';
 }
 .cc-agent-ring-head {
   margin: 0 0 6px;

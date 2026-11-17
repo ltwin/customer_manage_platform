@@ -3980,6 +3980,11 @@ export interface components {
         CreativeCanvasNode: {
             id: string;
             parent_id: string | null;
+            /**
+             * Format: date-time
+             * @description 只读：节点第一次出现在画布上的时间（UTC）。移动、改名、换内容、换分组不变；删除后被撤销恢复保持原值；复制产生的新节点取新时间。
+             */
+            readonly created_at: string;
             metadata: components["schemas"]["CreativeNodeMetadata"];
             data: components["schemas"]["CreativeNodeData"];
             status: components["schemas"]["CreativeNodeStatus"];

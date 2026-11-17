@@ -62,6 +62,8 @@ try { localStorage.setItem('creative-scene:first-run-seen', '1') } catch {}
 window.__invalidate = notifyCanvasInvalidate;
 window.__context = () => sceneContext.getState();
 window.__closed = 0;
+window.__screenshots = [];
+const placeScreenshot = (file) => { if (window.__screenshotReject) throw new Error('画布暂不可编辑'); window.__screenshots.push(file); };
 // Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
 // 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
 // ?host=1 mounts the page's job launcher too, as WorkspacePage does, and hands it to the editor.
@@ -78,7 +80,7 @@ function Editor({host}) {
   const group = React.createElement('select', {name:'group'}, React.createElement('option', {value:''}, '不归类'), React.createElement('option', {value:'cgrp_qa'}, '柱子'));
   return open
     ? React.createElement(React.Fragment, null,
-        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, libraryTick: tick} : {})}),
+        React.createElement(SceneEditor, {documentID:'${DOC}', host, onClose:()=>{window.__closed++; setOpen(false)}, ...(query.has('export') ? {canvasID:'ccv_qa', sceneNodeID:'cwnode_qa'} : {}), ...(query.has('library') ? {onSaveModel: setSaving, libraryTick: tick} : {}), ...(query.has('screenshot') ? {onPlaceScreenshot: placeScreenshot} : {})}),
         saving && React.createElement(SaveModelDialog, {key: saving.target.objectID, request: saving, groupField: group, groupName: () => '柱子', onSaved: (n) => { setNotice(n); setTick((t) => t + 1) }, onClose: () => setSaving(null)}),
         notice && React.createElement('p', {id:'notice'}, notice))
     : React.createElement('p', {id:'closed'}, 'closed');
@@ -914,6 +916,178 @@ async function clayThumbnail(page) {
 }
 
 const pngSize = (bytes) => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) })
+
+for (const gpu of ['', '&gpu=forceWebGL']) await check(`viewport screenshot: PNG preview, download, retry, focus and canvas handoff ${gpu || 'default'}`, async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server, { query: `?screenshot=1${gpu}` })
+  try {
+    await addBox(page, server)
+    await saved(page)
+    const count = server.commands.length
+    const trigger = page.getByRole('button', { name: '视口截图', exact: true })
+    await trigger.click()
+    const dialog = page.getByRole('dialog', { name: '视口截图', exact: true })
+    const preview = dialog.getByRole('img', { name: '当前 3D 视口截图' })
+    await preview.waitFor()
+    const picture = await preview.evaluate(async (img) => {
+      await img.decode()
+      const bytes = await (await fetch(img.src)).arrayBuffer()
+      const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight
+      const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0)
+      const pixels = ctx.getImageData(0, 0, c.width, c.height).data
+      const colors = new Set()
+      for (let i = 0; i < pixels.length; i += 64) colors.add(`${pixels[i]},${pixels[i+1]},${pixels[i+2]}`)
+      return { bytes: Array.from(new Uint8Array(bytes)), width: c.width, height: c.height, colors: colors.size }
+    })
+    assert.ok(picture.colors > 20, `real rendered picture, not blank: ${picture.colors} colors`)
+    const canvasSize = await page.locator('.cc-scene-editor canvas').evaluate(c => ({ width: c.width, height: c.height }))
+    assert.deepEqual(pngSize(Buffer.from(picture.bytes)), canvasSize)
+    const downloading = page.waitForEvent('download')
+    await dialog.getByRole('link', { name: '下载 PNG' }).click()
+    const download = await downloading
+    assert.equal(download.suggestedFilename(), '棚拍布景-视口截图.png')
+    assert.deepEqual(readFileSync(await download.path()), Buffer.from(picture.bytes))
+    await page.keyboard.press('KeyG')
+    assert.equal(server.commands.length, count, 'dialog keys do not edit the scene')
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    assert.equal(await trigger.evaluate(el => el === document.activeElement), true)
+    // Hold the old PNG callback, close, change the viewport, and reopen before it arrives.
+    await page.locator('.cc-scene-editor canvas').evaluate(canvas => {
+      const original = canvas.toBlob.bind(canvas)
+      canvas.toBlob = (done, type) => {
+        canvas.toBlob = original
+        original(blob => { window.__releaseScreenshot = () => done(blob) }, type)
+      }
+    })
+    await trigger.click()
+    await page.waitForFunction(() => !!window.__releaseScreenshot)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    await page.setViewportSize({ width: 390, height: 820 })
+    await trigger.click()
+    await page.evaluate(() => window.__releaseScreenshot())
+    await preview.waitFor()
+    const reopenedSize = await preview.evaluate(async img => { await img.decode(); return { width: img.naturalWidth, height: img.naturalHeight } })
+    assert.deepEqual(reopenedSize, await page.locator('.cc-scene-editor canvas').evaluate(c => ({ width: c.width, height: c.height })), 'reopening captures the new viewport, not the old delayed PNG')
+    const box = await dialog.boundingBox()
+    assert.ok(box.x >= 0 && box.x + box.width <= 390)
+    await page.waitForTimeout(300)
+    await shot(page, `viewport-screenshot${gpu ? '-webgl' : ''}`)
+    await page.evaluate(() => { window.__screenshotReject = true })
+    await dialog.getByRole('button', { name: '导出到画布' }).click()
+    await dialog.getByRole('alert').waitFor()
+    assert.equal(await preview.count(), 1, 'failure retains the PNG')
+    await page.evaluate(() => { window.__screenshotReject = false })
+    await dialog.getByRole('button', { name: '导出到画布' }).click()
+    await page.locator('#closed').waitFor()
+    assert.deepEqual(await page.evaluate(() => window.__screenshots.map(f => ({ name: f.name, type: f.type, nonempty: f.size > 100 }))), [{ name: '棚拍布景-视口截图.png', type: 'image/png', nonempty: true }])
+    assert.deepEqual(errors, [])
+  } finally { await context.close() }
+})
+
+await check('viewport screenshot: actual workspace import uploads and fills a new image beside the scene', async () => {
+  const server = new SceneServer()
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', e => errors.push(e.message))
+  const node = (id, type, title, x, y) => ({
+    id, parent_id: null,
+    metadata: { type_key: type, type_version: 1, title, intent: '', x, y, width: 300, height: 240, z_order: 0 },
+    prompt: null, capabilities: { actions: ['move', 'resize', 'rename', 'remove', 'edit', 'maximize', 'reference'], prompt_mode: 'draft', disabled_reason: null },
+    status: { content_state: 'empty', generation_state: 'idle', active_execution_id: null, latest_execution_id: null, apply_state: null, error: null, status_revision: '1' },
+    placement_revision: '1', data_revision: '1', data: { schema_version: 1, config: {}, content_id: null, content_revision_id: null, selected_version_id: null, document_id: null },
+  })
+  const source = node('cwnode_scene', 'core.scene', '棚拍布景', 100, 100)
+  source.data.document_id = DOC
+  source.status.content_state = 'ready'
+  source.document_summary = { type_key: 'scene', title: '棚拍布景', summary: '布景', revision: '1' }
+  const canvas = { id: 'qa', project_id: 'qa-project', project_name: '截图验收', project_revision: '1', revision: '1', topology_revision: '1', archived: false, nodes: [source], edges: [], node_inputs: [], changes: [], object_states: [] }
+  const actions = []
+  let failUpload = true
+  await page.addInitScript(() => {
+    window.__sceneTest = true
+    localStorage.setItem('creative-scene:first-run-seen', '1')
+    const fetch = window.fetch.bind(window)
+    window.fetch = (input, init) => String(input).endsWith('/canvases/qa/events')
+      ? Promise.resolve(new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('event: invalidate\ndata: {}\n\n')) } }), { headers: { 'Content-Type': 'text/event-stream' } }))
+      : fetch(input, init)
+  })
+  await route(page, server)
+  await routeFiles(page, server)
+  await page.route('**/api/v1/**', async r => {
+    const path = new URL(r.request().url()).pathname
+    const json = body => r.fulfill({ json: body })
+    if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa-token', token_type: 'Bearer', expires_in: 600 })
+    if (path.endsWith('/me')) return json({ id: 'qa-screenshot', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
+    if (path.endsWith('/canvases/qa')) return json(canvas)
+    if (path.endsWith('/uploads') && r.request().method() === 'POST' && failUpload) {
+      failUpload = false
+      return r.fulfill({ status: 422, json: { error: { code: 'qa_upload', message: '截图上传失败，请重试' } } })
+    }
+    if (path.endsWith('/canvases/qa/commands')) {
+      const body = r.request().postDataJSON()
+      const created = []
+      for (const action of body.payload.actions ?? []) {
+        actions.push(action)
+        if (action.type === 'add_node') {
+          created.push(action.node_id)
+          canvas.nodes.push(node(action.node_id, action.type_key, action.title, action.x, action.y))
+        }
+        if (action.type === 'fill_from_upload') {
+          const upload = server.uploads.get(action.upload_id)
+          const target = canvas.nodes.find(n => n.id === action.node_id)
+          const rev = upload.content_revision_id
+          target.content = server.imageAsset(rev, target.metadata.title).content
+          target.content.media[0].role = 'original'
+          Object.assign(target.content.media[0], pngSize(server.uploadBytes.get(upload.id)))
+          target.data.content_id = target.content.content_id
+          target.data.content_revision_id = rev
+          target.data_revision = '2'
+          target.status.content_state = 'ready'
+        }
+      }
+      canvas.revision = String(Number(canvas.revision) + 1)
+      canvas.topology_revision = canvas.revision
+      return json({ operation_id: body.operation_id, change_id: `change_${canvas.revision}`, result_revision: canvas.revision, result_topology_revision: canvas.topology_revision, object_results: [], created_ids: created, omitted_reference_ids: [], replayed: false })
+    }
+    if (/\/(documents|uploads|upload-candidates|media-access-tickets|media-capabilities)\//.test(path) || /\/(uploads|media-access-tickets|media-capabilities)$/.test(path)) return r.fallback()
+    if (path.endsWith('/generation/catalog')) return json({ models: [], disabled_reason: '未配置' })
+    if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
+    return json({ items: [], next_cursor: '', total_count: 0, library_revision: '1', revision: '1', hierarchy_revision: '1', asset_counts: {} })
+  })
+  try {
+    await page.goto(`${base}/creative/canvases/qa`)
+    await page.locator('[data-id="cwnode_scene"]').dblclick()
+    await viewportReady(page)
+    await page.getByRole('button', { name: '视口截图', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '视口截图', exact: true })
+    const preview = dialog.getByRole('img')
+    await preview.waitFor()
+    const png = await preview.evaluate(async img => Array.from(new Uint8Array(await (await fetch(img.src)).arrayBuffer())))
+    await page.waitForTimeout(350)
+    await shot(page, 'viewport-screenshot-workspace')
+    await dialog.getByRole('button', { name: '导出到画布' }).click()
+    await page.locator('.cc-scene-editor').waitFor({ state: 'hidden' })
+    await page.getByText('截图上传失败，请重试', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '重试上传：棚拍布景-视口截图.png', exact: true }).click()
+    await waitFor(() => actions.some(a => a.type === 'fill_from_upload'), 'image filled from uploaded screenshot', 15_000)
+    assert.deepEqual(actions.map(a => a.type), ['add_node', 'fill_from_upload'])
+    assert.equal(canvas.nodes.length, 2)
+    const added = canvas.nodes[1]
+    assert.equal(added.metadata.type_key, 'core.image')
+    assert.equal(added.metadata.x, 440)
+    assert.equal(added.metadata.y, 100)
+    assert.equal(added.metadata.title, '棚拍布景-视口截图')
+    assert.deepEqual(server.uploadBytes.values().next().value, Buffer.from(png))
+    const placedImage = page.locator(`[data-id="${added.id}"]`).getByRole('img', { name: '棚拍布景-视口截图', exact: true })
+    await placedImage.waitFor()
+    await placedImage.evaluate(img => img.decode())
+    await page.locator(`[data-id="${added.id}"] .cc-local-media`).waitFor({ state: 'hidden' })
+    assert.deepEqual(errors, [])
+  } finally { await context.close() }
+})
 
 await check('C6 save to library: the model with its materials, the card thumbnail in them; the same materials are filed, others a new asset; materials changed meanwhile are confirmed first', async () => {
   const server = new SceneServer()
@@ -2639,6 +2813,80 @@ async function sharpness(page, png, rect) {
 
 const cameraObject = (id, name, order, camera, position = [0, 1.6, 8]) => ({ id, kind: 'camera', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false, camera })
 const emptyObject = (id, name, order, position) => ({ id, kind: 'group', name, parent_id: null, order, transform: { ...identity(), position }, visible: true, locked: false })
+
+await check('viewport overlays: toggle helpers, capture the clean view and restore the preference', async () => {
+  const server = new SceneServer()
+  server.external([{ op: 'add_objects', objects: [
+    cameraObject(objectID('cam'), '机位', 1, {}),
+    emptyObject(objectID('empty'), '空物件', 2, [-2, 1, 0]),
+    { ...emptyObject(objectID('light'), '面光源', 3, [2, 3, 0]), kind: 'light', light: { type: 'area' } },
+  ] }])
+  const { context, page, errors } = await open(server)
+  try {
+    const toggle = page.getByRole('button', { name: '显示叠加层', exact: true })
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
+    await addBox(page, server)
+    await page.getByRole('button', { name: '移动', exact: true }).click()
+    await page.getByRole('button', { name: '最终渲染', exact: true }).click()
+    const final = page.getByRole('button', { name: '最终渲染', exact: true })
+    const area = () => page.evaluate(() => window.__sceneGPU.areaFaces())
+    await waitFor(async () => (await area()).lights.length === 1 && (await area()).outlines.length === 1, 'light and its helper are drawn')
+    const canvas = page.locator('.cc-scene-viewport canvas')
+    const clip = await canvas.boundingBox()
+    const before = await settledShot(page, clip)
+    const count = server.commands.length
+    await toggle.focus()
+    await page.keyboard.press('Space')
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+    assert.equal(await final.getAttribute('aria-pressed'), 'true')
+    await waitFor(async () => (await area()).outlines.length === 0, 'light helper gone')
+    assert.equal((await area()).lights.length, 1, 'the light still illuminates the scene')
+    const clean = await settledShot(page, clip)
+    assert.ok(await pixelDiff(page, before, clean, 12) > 0.005, 'viewport pixels change')
+    await page.getByRole('button', { name: '视口截图', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '视口截图', exact: true })
+    const preview = dialog.getByRole('img', { name: '当前 3D 视口截图' })
+    const bytes = await preview.evaluate(async (img) => Array.from(new Uint8Array(await (await fetch(img.src)).arrayBuffer())))
+    assert.ok(await pixelDiff(page, clean, Buffer.from(bytes), 12) < 0.001, 'PNG matches the clean viewport')
+    await page.keyboard.press('Escape')
+
+    await page.getByRole('treeitem', { name: /机位/ }).click()
+    await page.keyboard.press('Digit0')
+    const guides = page.getByRole('button', { name: '构图辅助线' })
+    const frame = page.locator('.cc-scene-camframe')
+    await frame.waitFor()
+    assert.equal(await guides.count(), 0)
+    await toggle.click()
+    await guides.click()
+    await page.getByRole('menu').getByLabel('三分线').check()
+    assert.equal(await frame.locator('line').count(), 4)
+    await toggle.click()
+    assert.equal(await frame.locator('line').count(), 0)
+    await toggle.click()
+    assert.equal(await frame.locator('line').count(), 4, 'the chosen guides come back')
+    await toggle.click()
+    await page.getByRole('button', { name: '还原节点' }).click()
+    await page.locator('#closed').waitFor()
+    await page.evaluate(() => window.__reopen())
+    await viewportReady(page)
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+    assert.equal(server.commands.length, count, 'display preferences are not scene edits')
+    await page.setViewportSize({ width: 390, height: 820 })
+    const button = await toggle.boundingBox()
+    assert.ok(button.x >= 0 && button.x + button.width <= 390)
+    await toggle.click()
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
+    await page.setViewportSize({ width: 1024, height: 820 })
+    await page.evaluate(() => {
+      const panel = document.createElement('aside')
+      panel.className = 'cc-agent-panel'
+      document.getElementById('root').appendChild(panel)
+    })
+    const header = page.locator('.cc-scene-editor > header')
+    assert.ok(await header.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'the toolbar fits beside the assistant')
+    assert.deepEqual(errors, [])
+  } finally { await context.close() }
+})
 
 await check('Add > 摄像机 stands at the view; 0 looks through it in a frame with guides; 1 leaves', async () => {
   const server = new SceneServer()

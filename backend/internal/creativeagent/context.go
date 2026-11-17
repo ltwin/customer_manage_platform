@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
@@ -478,6 +479,8 @@ type canvasNodeContext struct {
 	Width    float64 `json:"width"`
 	Height   float64 `json:"height"`
 	Revision *string `json:"content_revision_id,omitempty"`
+	// CreatedAt is when the node first appeared; undoing its removal keeps it.
+	CreatedAt time.Time `json:"created_at"`
 	// Text is the start of a text node's body; read_asset reads all of it.
 	Text   string         `json:"text,omitempty"`
 	Prompt *promptContext `json:"prompt,omitempty"`
@@ -549,7 +552,7 @@ func canvasView(c creativecanvas.Canvas, offset, limit int) canvasContext {
 	for _, n := range page {
 		on[n.ID] = true
 		node := canvasNodeContext{ID: n.ID, Title: n.Title, Type: strings.TrimPrefix(n.TypeKey, "core."), Parent: n.ParentID, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height,
-			Revision: n.ContentRevisionID, Generation: n.Status.GenerationState, Error: n.Status.Error}
+			Revision: n.ContentRevisionID, CreatedAt: n.CreatedAt.UTC(), Generation: n.Status.GenerationState, Error: n.Status.Error}
 		if n.Content != nil && n.Content.Payload.Body != nil && n.TypeKey == "core.text" {
 			node.Text = utf8Prefix(*n.Content.Payload.Body, textPreviewBytes)
 		}

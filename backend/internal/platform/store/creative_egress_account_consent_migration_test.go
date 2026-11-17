@@ -7,15 +7,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackEgressAccountConsent undoes 0084 and then 0083.
-func rollbackGraphIdentityCreatedAt(t *testing.T, url string) {
-	t.Helper()
-	rollbackAgentToolTasks(t, url)
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal("rollback creative-graph-identity-created-at", err)
-	}
-}
-
+// rollbackEgressAccountConsent rolls back through 0083.
 func rollbackEgressAccountConsent(t *testing.T, url string) {
 	t.Helper()
 	rollbackGraphIdentityCreatedAt(t, url)

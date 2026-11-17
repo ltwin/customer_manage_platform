@@ -24,6 +24,8 @@ export type SavedView = {
   /** The camera 0 goes to; views saved before cameras had it lack it. */
   lastCamera?: string | null
   guides?: Guide[]
+  /** Views saved before the overlay switch show helpers by default. */
+  showOverlays?: boolean
   /** The shading; views saved before C5 lack it and the scene's render.mode decides. */
   display?: DisplayMode | null
   wireBack?: DisplayMode
@@ -67,6 +69,7 @@ export function parseView(v: unknown): SavedView | null {
     history: o.history,
     lastCamera: typeof o.lastCamera === 'string' ? o.lastCamera : null,
     guides: Array.isArray(o.guides) ? allGuides.filter((g) => (o.guides as unknown[]).includes(g)) : [],
+    showOverlays: o.showOverlays !== false,
     display: displayMode(o.display),
     wireBack: displayMode(o.wireBack) ?? 'solid',
   }
@@ -100,14 +103,28 @@ export class ViewSaver {
     this.view = initial
   }
 
-  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'sidebarTab' | 'history' | 'lastCamera' | 'guides' | 'display' | 'wireBack'>) {
+  ui(s: Pick<EditorUI, 'selection' | 'tool' | 'toolbar' | 'sidebar' | 'sidebarTab' | 'history' | 'lastCamera' | 'guides' | 'showOverlays' | 'display' | 'wireBack'>) {
     const v = this.view
     if (
       v.selection === s.selection && v.tool === s.tool && v.toolbar === s.toolbar && v.sidebar === s.sidebar && (v.sidebarTab ?? 'outliner') === s.sidebarTab && v.history === s.history &&
-      v.lastCamera === s.lastCamera && v.guides === s.guides && (v.display ?? null) === s.display && (v.wireBack ?? 'solid') === s.wireBack
+      v.lastCamera === s.lastCamera && v.guides === s.guides && (v.showOverlays ?? true) === s.showOverlays &&
+      (v.display ?? null) === s.display && (v.wireBack ?? 'solid') === s.wireBack
     )
       return
-    this.view = { ...v, selection: s.selection, tool: s.tool, toolbar: s.toolbar, sidebar: s.sidebar, sidebarTab: s.sidebarTab, history: s.history, lastCamera: s.lastCamera, guides: s.guides, display: s.display, wireBack: s.wireBack }
+    this.view = {
+      ...v,
+      selection: s.selection,
+      tool: s.tool,
+      toolbar: s.toolbar,
+      sidebar: s.sidebar,
+      sidebarTab: s.sidebarTab,
+      history: s.history,
+      lastCamera: s.lastCamera,
+      guides: s.guides,
+      showOverlays: s.showOverlays,
+      display: s.display,
+      wireBack: s.wireBack,
+    }
     this.later()
   }
 

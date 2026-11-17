@@ -8950,12 +8950,18 @@ components:
       - capabilities
       - placement_revision
       - data_revision
+      - created_at
       properties:
         id:
           type: string
         parent_id:
           type: string
           nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 只读：节点第一次出现在画布上的时间（UTC）。移动、改名、换内容、换分组不变；删除后被撤销恢复保持原值；复制产生的新节点取新时间。
         metadata:
           $ref: '#/components/schemas/CreativeNodeMetadata'
         data:
