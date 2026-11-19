@@ -77,7 +77,11 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 				if runtime.carriesLibrary() && !libraryOpen(consent, true) {
 					return ErrLibraryClosed
 				}
-				return markInputsDeliveredInTx(ctx, tx, held.RunID, runtime.delivery())
+				if err := markInputsDeliveredInTx(ctx, tx, held.RunID, runtime.delivery()); err != nil {
+					return err
+				}
+				step, _ := current.get()
+				return markNoticesDeliveredInTx(ctx, tx, step, runtime.carriedNotices())
 			},
 		},
 		// Streamed so the photographer sees the answer form; the framework still
@@ -89,7 +93,7 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 		// the request it already paid for instead of buying a second one.
 		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
 			previous, _ := current.get()
-			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition(), runtime.delivery()...)
+			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition(), runtime.carriedNotices(), runtime.delivery()...)
 			if err != nil {
 				return "", err
 			}
@@ -163,6 +167,15 @@ func (e *runExecution) consumeInTx(ctx context.Context, tx store.TxAccountScope,
 	if err := h.service.writeToolBlocksForModelStepInTx(ctx, tx, h.held.RunID, stepID); err != nil {
 		return err
 	}
+	if len(result.ToolCalls) == 0 {
+		// The final answer's watermark: notices up to here are this run's to
+		// answer, later ones the next run's.
+		if _, err := tx.Update(ctx, "creative_agent_steps",
+			"background_notification_through_ordinal=(SELECT next_message_ordinal-1 FROM creative_agent_conversations WHERE account_id=$1 AND id=$3)",
+			"id=$2", stepID, h.held.ConversationID); err != nil {
+			return err
+		}
+	}
 	e.outcome.Delivered = e.outcome.Delivered || delivered
 	return nil
 }
@@ -207,6 +220,14 @@ func (e *runExecution) run(ctx context.Context) (turnOutcome, error) {
 		if err != nil {
 			runErr = err
 			break
+		}
+		if !pending {
+			// A background result that arrived before the final answer was
+			// recorded is answered by this run as well.
+			if pending, err = noticesWithinInTx(ctx, h.scope, h.held.RunID, h.held.ConversationID); err != nil {
+				runErr = err
+				break
+			}
 		}
 		if !pending {
 			break

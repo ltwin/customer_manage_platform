@@ -296,7 +296,7 @@ Agent initial_llm_reservation_id 按同账号/受信调用方关联初始预留�
 
 外发同意的资源边界（2026-11-13 改为账号级，change `egress-consent-account-level`）：外发同意是账号对「发送前说明」某个版本的同意，按账号记在服务端（`creative_egress_consents` 中 `conversation_id` 为空的行，`creative_egress_consent_states` 每账号一行指向当前同意）。数据类别固定为 text、image_preview、media_metadata、canvas_metadata；是否允许检索素材库是单独的选择（`account_library` 允许，`selected_revisions` 且不带清单表示不允许）。修改素材库选择写新行、旧行盖章 `superseded_at`；撤回给当前行盖章 `revoked_at` 并清空当前同意，本账号所有压缩摘要随之失效。说明版本升级与撤回走同一条规则：同意失效后不能开始新运行，已有运行在下一次派发时被拒，摄影师下次发送时重新同意。
 
-不再有逐消息、逐修订的授权清单。运行能读的内容只由三条分支决定：当前画布节点持有的修订；本对话中序号在触发消息之前、或属于本运行（触发消息、插队、补充）的完整消息引用的修订；同意允许检索素材库时，未进回收站的资产当前修订。工具返回的素材只在落在这三条分支内时可读。每次读取和外发仍逐项校验归属、当前可用与用途权利（`RequireUsable(display)`）、数据类别与模型看图能力。原「被某条撤回授权列过的修订在本对话永久拒读」的规则随逐条授权一起取消（owner 2026-11-13 确认）。
+不再有逐消息、逐修订的授权清单。运行能读的内容由四条分支决定：当前画布节点持有的修订；本对话中序号在触发消息之前、或属于本运行（触发消息、插队、补充）的完整消息引用的修订；本对话中与后台任务关联的完成通知所引用的修订（系统消息）；同意允许检索素材库时，未进回收站的资产当前修订。工具返回的素材只在落在这些分支内时可读。每次读取和外发仍逐项校验归属、当前可用与用途权利（`RequireUsable(display)`）、数据类别与模型看图能力。原「被某条撤回授权列过的修订在本对话永久拒读」的规则随逐条授权一起取消（owner 2026-11-13 确认）。
 
 run.egress_consent_id 记录运行准入时账号的当前同意（准入证据）；每次派发前在记录派发意图的同一事务里，以共享锁读状态行核对同意仍然有效、且准入时的说明版本仍是当前版本——先提交的撤回一定阻止外发，之后撤回则如实地太迟了。本次变更前的会话级授权记录和 `creative_egress_consent_contents` 只作历史证据保留，不参与任何判断；那时创建的运行在下一次派发时以 `creative_egress_required` 结束。同意不能反向保留文件，源修订已不可用时发送失败。
 
@@ -318,16 +318,18 @@ run.egress_consent_id 记录运行准入时账号的当前同意（准入证据�
 
 ### 运行状态机（唯一权威）
 
-run.state 只允许 queued、running、waiting_input、waiting_apply、reconciling、succeeded、partial、failed、cancelled。recoverable 仅表示可恢复条件，不是状态；取消请求只写 cancel_requested_at，不增加 cancel_requested 状态。step.state 的 prepared/dispatched/succeeded/failed/unknown 独立于运行状态，不能相互混填。
+run.state 只允许 queued、running、waiting_input、waiting_apply、waiting_client、reconciling、succeeded、partial、failed、cancelled。recoverable 仅表示可恢复条件，不是状态；取消请求只写 cancel_requested_at，不增加 cancel_requested 状态。step.state 的 prepared/dispatched/succeeded/failed/unknown 独立于运行状态，不能相互混填。
 
-queued/running/reconciling 占所属会话的写槽位；waiting_input/waiting_apply 和终态不占。进入/离开上述集合须与 slot claim/release 同事务，按 run_id/claim_token 匹配。槽位与 worker 租约独立：排队或等待外部核实时可以没有正在工作的 worker。deadline_at 是本次运行的有界执行期限，等待/恢复不自动延长；超期后不再发模型请求或应用写工具。
+queued/running/reconciling 占所属会话的写槽位；waiting_input/waiting_apply/waiting_client 和终态不占。进入/离开上述集合须与 slot claim/release 同事务，按 run_id/claim_token 匹配。槽位与 worker 租约独立：排队或等待外部核实时可以没有正在工作的 worker。deadline_at 是本次运行的有界执行期限，等待/恢复不自动延长；超期后不再发模型请求或应用写工具。
 
 | 当前状态 → 下一状态 | 触发方与条件 | 原子动作及恢复规则 |
 |---|---|---|
 | 创建 → queued | API；输入、用途、外发同意、额度通过 | 保存输入、消息、预算预留、取得 slot、入队；任一步失败整体回滚 |
 | queued → running | worker；未取消、未超期 | 接管时 epoch + 1，轮换 claim_token 并取得 lease；同一 run 不创建另一份写运行 |
 | running → running | 当前 worker 的有界步骤 | 每次效果提交检查 epoch/lease/cancel/前置条件；效果与 step/operation 回执同事务 |
-| running → queued | ExecuteNode已受理、目标执行状态已知且需要等待（含输出succeeded但应用pending） | 保存pending_execution_id/wait_reason=node_execution与兼容Eino checkpoint，失效当前Worker lease/epoch，保留本run slot，同事务入队有界延期查询；节点Worker使用独立执行权，不重新取得Agent slot。接管后查询同execution，未完成继续延期，不新发模型/工具调用；只有实际外部结果未知才reconciling；取消/到期与原规则相同 |
+| running → waiting_client | 发起前台生成、图片压缩或场景工具，结果尚未确定 | 保存检查点与等待原因（`tool_task` / `client_job`），使当前租约失效并释放会话槽。生成成功但采用仍在等待时，工具仍未完成 |
+| waiting_client → queued | 工具终态已确定或摄影师转后台 | 记录工具结果或后台句柄；当前批次的前台等待全部完成后再抢槽和入队。抢槽失败保留等待、记 `slot_busy` |
+| 创建 → queued | 后台完成通知到期且会话空闲 | 以通知为触发消息，标记 `trigger_kind=background_tool`；同摄影师发消息一样检查权限、模型、Skill、外发同意和积分，并原子取得槽位、冻结输入和入队 |
 | running → waiting_input / waiting_apply | worker；需要补充或采纳且没有未知外部调用 | 保存缺项/提案、失效旧 lease/epoch 并释放 slot；不挂住 worker |
 | waiting_input → queued | 摄影师提交补充且仍在执行期限内 | 校验目标和输入、重新取得 slot、补充输入记录并入队；槽位忙则保持等待 |
 | waiting_apply → queued | 摄影师授权继续执行剩余步骤且未超期 | 固定采纳指令/前置条件并重新取得 slot 入队；worker 用同一幂等命令应用提案 |
@@ -337,13 +339,15 @@ queued/running/reconciling 占所属会话的写槽位；waiting_input/waiting_a
 | reconciling → queued | 对账 worker；结果已记录，或供应商可靠证明未受理；未取消且未超期 | 保存结论/用量/步骤事实并入队；已知成功结果从已完成步骤继续，只有明确未受理才可重新发送 |
 | reconciling → reconciling | 对账 worker；仍未知且未收到关闭请求、未超期 | 有界退避并显示待核实；不得盲重试、释放未知预算或占用持续忙等的 worker |
 | queued/running → reconciling | 取消或到期处理；存在尚未核实的外部调用 | 记录取消/到期原因，失效旧执行权，保留 slot 后只做核实；到期则按下方关闭规则结束执行 |
-| queued/running/waiting_input/waiting_apply → cancelled / partial | 摄影师取消；没有未知外部调用 | 置取消标记并失效 epoch，停止后续写入；无已交付效果为 cancelled，否则 partial；释放本 run 槽位和可释放预留 |
-| queued/running/waiting_input/waiting_apply → failed / partial | worker/到期扫描；失败或到期且没有未知外部调用 | 无已交付效果为 failed，否则 partial；保存原因，释放槽位和可释放预留 |
+| queued/running/waiting_input/waiting_apply/waiting_client → cancelled / partial | 摄影师取消；没有未知外部调用 | 置取消标记并失效 epoch，停止后续写入；无已交付效果为 cancelled，否则 partial；释放本 run 槽位和可释放预留 |
+| queued/running/waiting_input/waiting_apply/waiting_client → failed / partial | worker/到期扫描；失败或到期且没有未知外部调用 | 无已交付效果为 failed，否则 partial；保存原因，释放槽位和可释放预留 |
 | running → succeeded / partial | worker；已完成既定任务或部分交付后结束，外部结果均已核实 | 保存结果、终态、finished_at，结算费用并释放槽位 |
 | reconciling → cancelled / failed / partial | 对账已完成且有取消/到期，或摄影师选择结束，或执行期限到达 | 取消且无效果为 cancelled；无取消且无效果为 failed；有已交付效果为 partial。结果仍未知时标记 settlement_state=unknown，保留必要对账资料/预留，失效 epoch 后释放执行 slot |
 | 任一终态 → 无出边 | 服务端 | 不恢复原运行；显式重试依照本节来源/步骤承接契约新建 run，不重复已应用命令；迟到结果仅核实费用/保存诊断，不能再改画布 |
 
 取消 API 在同一事务置 cancel_requested_at 并废止当前执行 epoch；不等待供应商 HTTP 中断成功才生效。上表的“已交付效果”以实际命令/消息/产物记录为准，不把单纯已计费视为已交付。未知结果下关闭运行必须展示费用尚待核实；终态不等于结算完成，Gateway maintenance 对账仍可更新 settlement_state，但不得重开运行。没有供应商查询能力时由摄影师明确结束或到期关闭，不无限占 slot。等待态不得带有未知外部调用；发现违反该不变量时隔离运行、阻止后续写入并报告一致性异常。
+
+助手耗时任务（`creative_agent_tool_tasks`）按账号和工具步骤唯一。任务行记录前后台归属、版本和用于卡片的终态结果。真实执行及写入结果分别由生成执行、图片压缩候选、场景任务持有。后台终态与对应的系统消息同事务发布；归档项目或已删除对话抑制通知。任务行的 `notification_state` 与 `delivery_model_step_id` 是送达依据；模型步骤只冻结输入以供重放，只有实际登记派发的通知标为已送达。
 
 写工具回执丢失先按 operation_id 查同事务记录；不可把“HTTP 超时”直接当失败重做。对账结果已知但续跑需重新授权/补充的，先 queued 由 worker 校验后进入等待；绝不跳过外发同意检查。
 

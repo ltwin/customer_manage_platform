@@ -1,0 +1,50 @@
+{
+  "uid": "11145675-5d4c-4fdd-b139-2b59b867d183",
+  "revision": 5,
+  "id": "scene-transparent-background",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-11-16T06:29:06.433Z",
+  "updatedAt": "2026-11-17T13:37:26.880Z",
+  "risk": {
+    "factors": [
+      "broad-impact",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "Samson Lee",
+      "at": "2026-11-17T09:39:26.471Z",
+      "contentHash": "787f01d524d53444"
+    },
+    "design": {
+      "by": "Samson Lee",
+      "at": "2026-11-17T13:37:26.630Z",
+      "contentHash": "8514beb22d1b8693",
+      "deltaHash": "e3b78e83e4fe5ee7"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [
+    {
+      "at": "2026-11-17T12:35:17.503Z",
+      "summary": "按 2026-11-17 S0 方案评审修订：false 落库省略与前向修复发布策略；export_shots 新增独立于场景开关的 transparent_background 参数及 based_on 过时规则；明确玻璃与有色体积对外部换底的 source-over 近似边界；补齐透明模式 SMAA/TRAA alpha 识别与 Pass context 编译隔离；8K 方图景深改 R8 第二附件并前置实测；WebP 改为校验解码像素透明度、对话框按所选通道展示提示并修正白模/材质预览视口底色表述",
+      "contentHash": "2811f86ec310594b",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-11-17T12:49:10.098Z",
+      "summary": "落实复审：隔离 GI 背景开关与半透明队列，明确 TRAA 和透射采样的本地 TSL 接入，校验新旧页面导出回报，收紧历史修订兼容及出图后过时语义",
+      "contentHash": "10711a6211cd96de",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

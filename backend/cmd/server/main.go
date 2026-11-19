@@ -322,6 +322,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)
 	}
+	creativeAgent.SetBackgroundTasksDisabled(os.Getenv("CREATIVE_AGENT_BACKGROUND_TASKS_DISABLED") == "1")
 	creativeAgent.SetLogger(logger)
 	creativeAgent.SetImageReader(creativeMedia)
 	// A completed scene job resumes the run that parked on it.

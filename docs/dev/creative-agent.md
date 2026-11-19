@@ -621,10 +621,18 @@ Skill 索引按最近使用顺序保留能放下的条目。命令消息（`/com
 **未送达**：运行结束时仍为 `pending` 的块由 `settleBlocksInTx` 记为 `interrupted`。`sweepRun` 发现已交付回答却还有未送达输入时，以 `creative_steer_undelivered` 结束为 `partial`。
 
 **前端**：队列状态机在 `agentQueue.ts`（`nextQueueAction`、`recoverQueue` 等），按对话存 `sessionStorage`（`creative-agent-queue:<account>:<conversation>`）。
-面板（`AgentPanel.tsx`）运行中有内容时发送键为「加入排队」；最新一轮 `succeeded` 时发出队首，`cancelled` / `failed` / `partial` 时暂停，点「继续发送」恢复。
+面板（`AgentPanel.tsx`）运行中有内容时发送键为「加入排队」；摄影师发起的运行 `succeeded` 时发出队首，`cancelled` / `failed` / `partial` 时暂停，点「继续发送」恢复。后台自动运行正常结束或失败时沿用队列已有的暂停状态；摄影师主动停止仍会暂停。
 队首发出、插队与补充都走待确认链（`draft.queueItem`）：条目送达才移出队列，链待确认期间仍在队列里但不显示；明确被拒（含「重新发送」时被拒）放回队首，不碰输入框。
 停止请求失败时，队列随乐观停止记下的暂停和 `settledRun` 一起复原。
 插队的乐观气泡在运行视图的 `seq` 达到回执的 `last_event_seq` 时撤掉。
 已知边界：只有正在看的那个对话会自动发出队首；插队不能带 Skill 或命令。
 
 **验证**：`steer_test.go`（截止点两种顺序、续跑、引用归属与撤销、未送达显示）、`scripts/creative-agent.test.ts`（队列状态机与交接恢复）、`scripts/agent-queue.e2e.mjs`（`AGENT_QUEUE_E2E_ONLY` 单用例过滤）。
+
+## 2026-11-16：耗时工具与自动唤醒
+
+- `creative_agent_tool_tasks` 保存任务归属、终态结果和通知送达记录；真实结果仍从各源领域取。源表触发器只标记到期并通知收尾器。worker 通过 LISTEN 唤醒、5 秒扫描兜底；前台场景完成继续走原事务。任务状态变化和自动运行创建通过同一账号、同一画布的失效通道通知页面。
+- `POST /api/v1/creative/agent-tool-tasks/{handle}/detach` 与 `/cancel` 使用创意操作信封、空 `payload` 和幂等键。回执绑定操作、任务句柄和原信封，保留首次成功状态。面板按任务版本合并回执、实时事件与快照；结果未知先回读，再按原键确认。历史运行的事件流关闭后，页面继续用画布失效回读仍有任务的卡片。
+- 完成通知是对话里的系统消息。模型装配冻结本请求实际携带的通知，网关派发事务才登记送达；前端以一条系统提示展示，再在其后显示自动运行。队首输给自动运行时保持原顺序，等占槽运行结束后再次发出。
+- 运营排查以 `creative_agent_tool_tasks` 为准：`next_check_at` 看待收尾条数和最老年龄；`notification_state='pending'` 看待送达；按 `wake_skip_reason` 分组区分来源停止、失败、连锁上限、授权、额度和可用性。排查日志无需读取结果正文或媒体地址。
+- 上线先执行迁移 `0085_creative_agent_tool_tasks`，再一起升级 API、creative-worker 和前端。紧急停止接收后台任务时，给 API 和 creative-worker 进程都注入 `CREATIVE_AGENT_BACKGROUND_TASKS_DISABLED=1` 后重启。该开关拒绝新的后台受理和转后台，并暂停自动唤醒；现有任务继续收尾，后台取消和完成通知仍能使用。等任务排空后再处理版本回退；已有任务、通知或自动运行时反向迁移会拒绝删除，保留数据并做前向修复。

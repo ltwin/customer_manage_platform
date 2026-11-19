@@ -28,8 +28,6 @@ type AgentGeneration struct {
 	// DraftRevision 是助手写入或读到的提示词版本；节点上的提示词已被改动时拒绝，
 	// 避免助手花钱生成了别人的版本却以为是自己的。
 	DraftRevision int64
-	// Wait 是提交后等待结果的最长时间；到时仍未完成则返回进行中。
-	Wait time.Duration
 	// Admit 可选，在受理事务里（网关预留之后、锁画布之前）复核发起方仍可提交；
 	// 返回错误则不受理。助手用它让停止与受理互斥，停止后不会再有新的生成落库。
 	Admit func(context.Context, store.TxAccountScope) error
@@ -38,7 +36,7 @@ type AgentGeneration struct {
 type AgentGenerationResult struct {
 	NodeID      string `json:"node_id"`
 	ExecutionID string `json:"execution_id"`
-	// State 取 succeeded / failed / running，只说生成本身。
+	// State 取 succeeded / failed / cancelled / running，只说生成本身。
 	State string `json:"state"`
 	// ApplyState 说结果有没有放到节点上：pending 还没放；applied 已切换显示；
 	// conflicted / discarded / expired 没有采用（期间节点被改动、清空或删除）。
@@ -51,7 +49,7 @@ type AgentGenerationResult struct {
 
 // Adopted 表示结果已经放到节点上，或者仍可能放上去；生成失败和没有采用的结果都不算。
 func (r AgentGenerationResult) Adopted() bool {
-	return r.State != "failed" && (r.ApplyState == "" || r.ApplyState == "pending" || r.ApplyState == "applied")
+	return r.State != "failed" && r.State != "cancelled" && (r.ApplyState == "" || r.ApplyState == "pending" || r.ApplyState == "applied")
 }
 
 // Refusal 是可以原样告诉模型的拒绝原因，不是系统故障。
@@ -83,7 +81,13 @@ func agentOperation(seed, step string) string {
 }
 
 func agentExecution(scope store.AccountScope, seed string) string {
-	return "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(scope.AccountID()+"/"+agentOperation(seed, "generate"))).String()
+	return AgentExecutionID(scope.AccountID(), seed)
+}
+
+// AgentExecutionID 是账号内 Seed 那次调用的执行 ID，提交前就能算出，助手用它在
+// 受理事务里登记耗时工具任务。
+func AgentExecutionID(accountID, seed string) string {
+	return "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(accountID+"/"+agentOperation(seed, "generate"))).String()
 }
 
 // StopAgentGeneration 在摄影师停止助手时，终止 Seed 那次调用发起、还没发给供应商
@@ -142,57 +146,55 @@ func (p *Product) DraftParameters(modelKey, nodeType string, given map[string]an
 	return json.Marshal(out)
 }
 
-// GenerateNode 走与摄影师点「生成」相同的入口：按节点当前的提示词提交，然后在
-// Wait 内等待结果。节点的创建与编辑由画布工具负责，这里只生成。
-func (p *Product) GenerateNode(ctx context.Context, scope store.AccountScope, in AgentGeneration) (AgentGenerationResult, error) {
-	operation := agentOperation(in.Seed, "generate")
+// SubmitAgentGeneration 走与摄影师点「生成」相同的入口：按节点当前的提示词提交，
+// 返回执行 ID。同一 Seed 重放时执行已经存在，不再提交，也不再扣费。节点的创建与
+// 编辑由画布工具负责，这里只生成；结论由调用方在执行变化后用 AgentGenerationInTx
+// 读取，不在这里等待（agent-tool-background）。
+func (p *Product) SubmitAgentGeneration(ctx context.Context, scope store.AccountScope, in AgentGeneration) (string, error) {
 	execution := agentExecution(scope, in.Seed)
-	result := AgentGenerationResult{NodeID: in.NodeID, ExecutionID: execution, State: "running", ApplyState: "pending"}
 	target := creativecanvas.ExecutionTarget{CanvasID: in.CanvasID, ExecutionID: execution}
-	// 重放时执行已经存在，只等结果。
 	if _, err := creativecanvas.GetNodeExecution(ctx, scope, target); errors.Is(err, creativecanvas.ErrNotFound) {
-		if err = p.submitNode(ctx, scope, in, operation); err != nil {
-			return AgentGenerationResult{}, AgentRefusal(err)
+		if err = p.submitNode(ctx, scope, in, agentOperation(in.Seed, "generate")); err != nil {
+			return "", AgentRefusal(err)
 		}
 	} else if err != nil {
-		return AgentGenerationResult{}, err
+		return "", err
 	}
-	deadline := time.Now().Add(in.Wait)
-	for {
-		e, err := creativecanvas.GetNodeExecution(ctx, scope, target)
-		if err != nil {
-			return result, err
-		}
-		// 生成成功只是一半：结果还要落到节点上，等到采用有了结论。
-		if e.State == "failed" || e.State == "cancelled" || (e.State == "succeeded" && e.ApplyState != "pending") {
-			result.State, result.ApplyState, result.Error = e.State, e.ApplyState, e.Error
-			if e.State == "cancelled" {
-				result.State = "failed"
-			}
-			break
-		}
-		if e.State == "succeeded" {
-			result.State = e.State
-		}
-		if !time.Now().Before(deadline) {
-			return result, nil
-		}
-		select {
-		case <-ctx.Done():
-			return result, ctx.Err()
-		case <-time.After(2 * time.Second):
-		}
-	}
-	versions, err := creativecanvas.ListNodeVersions(ctx, scope, in.CanvasID, in.NodeID)
+	return execution, nil
+}
+
+// AgentGenerationInTx 在调用方的事务里读一次助手生成的结论并锁住执行；done 表示
+// 生成和采用都有了结论。生成成功只是一半：结果还要落到节点上，等到采用有了结论。
+// 被取消时 State 为 cancelled，前台等待和后台通知看到的相同。
+func AgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, executionID string) (AgentGenerationResult, bool, error) {
+	result := AgentGenerationResult{NodeID: nodeID, ExecutionID: executionID, State: "running", ApplyState: "pending"}
+	e, err := creativecanvas.NodeExecutionInTx(ctx, tx, creativecanvas.ExecutionTarget{CanvasID: canvasID, ExecutionID: executionID})
 	if err != nil {
-		return result, err
+		return result, false, err
 	}
-	for _, v := range versions.Items {
-		if v.ExecutionID != nil && *v.ExecutionID == execution {
-			result.ContentRevisionIDs = append(result.ContentRevisionIDs, v.ContentRevisionID)
-		}
+	if e.State == "succeeded" {
+		result.State = e.State
 	}
-	return result, nil
+	if e.State != "failed" && e.State != "cancelled" && (e.State != "succeeded" || e.ApplyState == "pending") {
+		return result, false, nil
+	}
+	result.State, result.ApplyState, result.Error = e.State, e.ApplyState, e.Error
+	if result.ContentRevisionIDs, err = creativecanvas.ExecutionOutputRevisionsInTx(ctx, tx, canvasID, executionID); err != nil {
+		return result, false, err
+	}
+	return result, true, nil
+}
+
+// AgentGenerationInTx 同名方法，供助手经接口调用。
+// CancelAgentGenerationInTx cancels a background assistant generation from
+// its card: not yet sent is withdrawn and free, already sent is charged and
+// not adopted (agent-tool-background).
+func (p *Product) CancelAgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, executionID string) error {
+	return creativecanvas.CancelExecutionInTx(ctx, tx, creativecanvas.ExecutionTarget{CanvasID: canvasID, ExecutionID: executionID})
+}
+
+func (p *Product) AgentGenerationInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, executionID string) (AgentGenerationResult, bool, error) {
+	return AgentGenerationInTx(ctx, tx, canvasID, nodeID, executionID)
 }
 
 func (p *Product) submitNode(ctx context.Context, scope store.AccountScope, in AgentGeneration, operation string) error {

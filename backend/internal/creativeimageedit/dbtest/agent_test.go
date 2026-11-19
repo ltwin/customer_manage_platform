@@ -9,6 +9,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // workInBackground plays the worker while an agent call waits: it runs the
@@ -50,13 +51,25 @@ func (f *fixture) workInBackground(ctx context.Context) <-chan error {
 func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	f := setup(t)
 	node, source := f.imageNode(t, "agent")
-	worker := f.workInBackground(t.Context())
-	in := creativeimageedit.AgentCompress{Seed: "run-1/step-1", CanvasID: f.canvas, NodeID: node, Quality: 60, Wait: 30 * time.Second}
-	got, err := f.svc.CompressForAgent(t.Context(), f.a, in)
+	in := creativeimageedit.AgentCompress{Seed: "run-1/step-1", CanvasID: f.canvas, NodeID: node, Quality: 60}
+	render, err := f.svc.AcceptAgentCompress(t.Context(), f.a, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = <-worker; err != nil {
+	if !f.pending(t, render) {
+		t.Fatal("a queued candidate is not pending")
+	}
+	if _, err = f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil); !errors.Is(err, creativeimageedit.ErrStillEncoding) {
+		t.Fatalf("concluded while encoding: %v", err)
+	}
+	if err = <-f.workInBackground(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.pending(t, render) {
+		t.Fatal("an encoded candidate is still pending")
+	}
+	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if got.State != creativeimageedit.AgentApplied || got.SourceRevisionID != source || got.OutputMIME != "image/jpeg" ||
@@ -66,7 +79,11 @@ func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	if shown := f.scalar(t, `SELECT content_revision_id FROM creative_nodes WHERE id=$1`, node); shown != got.ContentRevisionID {
 		t.Fatalf("node shows %s, want %s", shown, got.ContentRevisionID)
 	}
-	again, err := f.svc.CompressForAgent(t.Context(), f.a, in)
+	replayed, err := f.svc.AcceptAgentCompress(t.Context(), f.a, in)
+	if err != nil || replayed != render {
+		t.Fatalf("replay accepted %s %v", replayed, err)
+	}
+	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
 	if err != nil || again.State != creativeimageedit.AgentApplied || again.VersionID != got.VersionID {
 		t.Fatalf("replay %+v %v", again, err)
 	}
@@ -78,28 +95,39 @@ func TestAgentCompressAdoptsOnceAndReportsRealSizes(t *testing.T) {
 	}
 }
 
-// A wait that runs out before adoption discards the candidate: the node stays
-// as it was and is free for the photographer. Replaying the call does not
-// queue the encode again.
-func TestAgentCompressTimeoutLeavesTheNodeAlone(t *testing.T) {
+// A stopped call's ready candidate is discarded: the node stays as it was
+// and is free for the photographer.
+func TestAgentCompressStoppedLeavesTheNodeAlone(t *testing.T) {
 	f := setup(t)
-	node, source := f.imageNode(t, "agent-timeout")
-	in := creativeimageedit.AgentCompress{Seed: "run-2/step-1", CanvasID: f.canvas, NodeID: node, Wait: 0}
-	got, err := f.svc.CompressForAgent(t.Context(), f.a, in)
-	if err != nil || got.State != creativeimageedit.AgentNotApplied || got.Quality != creativeimageedit.QualityDefault {
+	node, source := f.imageNode(t, "agent-stopped")
+	in := creativeimageedit.AgentCompress{Seed: "run-2/step-1", CanvasID: f.canvas, NodeID: node}
+	render, err := f.svc.AcceptAgentCompress(t.Context(), f.a, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = <-f.workInBackground(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var checked bool
+	got, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, func(context.Context, store.TxAccountScope) (bool, error) {
+		checked = true
+		return false, nil
+	})
+	if !checked || err != nil || got.State != creativeimageedit.AgentNotApplied || got.Quality != creativeimageedit.QualityDefault {
 		t.Fatalf("result %+v %v", got, err)
 	}
-	if state := f.get(t, got.RenderID).State; state != "discarded" {
+	if state := f.get(t, render).State; state != "discarded" {
 		t.Fatalf("candidate %s", state)
 	}
 	if shown := f.scalar(t, `SELECT content_revision_id FROM creative_nodes WHERE id=$1`, node); shown != source {
 		t.Fatal("node changed")
 	}
 	if _, err = f.create(t, node, source, 70); err != nil {
-		t.Fatal("node still busy after the agent gave up:", err)
+		t.Fatal("node still busy after the stopped call:", err)
 	}
-	again, err := f.svc.CompressForAgent(t.Context(), f.a, in)
-	if err != nil || again.State != creativeimageedit.AgentNotApplied || again.RenderID != got.RenderID {
+	// Concluding again reports the discard instead of adopting.
+	again, err := f.svc.ConcludeAgentCompress(t.Context(), f.a, in, render, nil)
+	if err != nil || again.State != creativeimageedit.AgentNotApplied {
 		t.Fatalf("replay %+v %v", again, err)
 	}
 }
@@ -120,8 +148,23 @@ func TestAgentCompressRefusesWhatItCannotDo(t *testing.T) {
 		"missing node":  {Seed: "run-3/c", CanvasID: f.canvas, NodeID: "cwnode_missing"},
 		"quality range": {Seed: "run-3/d", CanvasID: f.canvas, NodeID: node, Quality: 101},
 	} {
-		if _, err := f.svc.CompressForAgent(t.Context(), f.a, in); !errors.As(err, &refusal) {
+		if _, err := f.svc.AcceptAgentCompress(t.Context(), f.a, in); !errors.As(err, &refusal) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
+}
+
+// pending reads a candidate the way the finisher does.
+func (f *fixture) pending(t *testing.T, render string) bool {
+	t.Helper()
+	var pending bool
+	err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		var err error
+		pending, _, err = f.svc.AgentCompressPendingInTx(t.Context(), tx, render)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pending
 }

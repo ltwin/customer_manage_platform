@@ -26,7 +26,7 @@ func parkOnClient(t *testing.T, f *fixture) Run {
 		if err != nil {
 			return err
 		}
-		return f.service.waitForClient(t.Context(), tx, c, now)
+		return f.service.waitForClient(t.Context(), tx, c, waitClientJob, now)
 	}); err != nil {
 		t.Fatal(err)
 	}

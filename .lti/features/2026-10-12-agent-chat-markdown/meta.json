@@ -1,18 +1,23 @@
 {
   "uid": "68c5ea77-722b-420d-afc5-e16e9b35a86e",
-  "revision": 1,
+  "revision": 2,
   "id": "agent-chat-markdown",
   "title": "Agent 助手 chatbox Markdown 渲染增强：表格、公式、Mermaid 与流式输出",
   "kind": "feature",
   "assurance": "governed",
-  "state": "draft",
+  "state": "abandoned",
   "createdAt": "2026-10-12T10:15:45.982Z",
-  "updatedAt": "2026-10-12T10:32:32.788Z",
+  "updatedAt": "2026-11-17T07:59:18.494Z",
   "approvals": {},
   "approvalHistory": [],
   "revisions": [],
   "verify": [],
   "checkRuns": [],
+  "abandoned": {
+    "by": "samson",
+    "at": "2026-11-17T07:59:18.273Z",
+    "reason": "已于 2026-10-12 经 lti quick 在 feat/agent-chat-markdown（47f2c9bb）完成实施、验证并合入 develop，此 draft 容器不再走 governed 流程，清理设为终态。"
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

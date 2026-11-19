@@ -1,0 +1,51 @@
+{
+  "uid": "faea01eb-ea5c-45a9-9b79-ec5aa941bc24",
+  "revision": 4,
+  "id": "scene-modeling-baseline-worktree",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-agent-modeling",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:评测与验证",
+      "design:关键机制",
+      "design:未决事项"
+    ],
+    "delivers": []
+  },
+  "state": "approved",
+  "createdAt": "2026-11-17T11:11:02.211Z",
+  "updatedAt": "2026-11-17T11:11:56.441Z",
+  "risk": {
+    "factors": [
+      "trust-boundary",
+      "perf-sensitive"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-11-17T11:11:32.885Z",
+      "contentHash": "7bb0655c6c4a4ca8"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-11-17T11:11:56.186Z",
+      "contentHash": "a91a0cd6b8df4aea"
+    }
+  },
+  "approvalHistory": [
+    {
+      "by": "samson",
+      "at": "2026-11-17T11:11:32.885Z",
+      "contentHash": "3ebac35e738c1283",
+      "role": "design"
+    }
+  ],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

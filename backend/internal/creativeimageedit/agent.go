@@ -20,10 +20,6 @@ import (
 // QualityDefault is the balanced preset, used when a caller names no quality.
 const QualityDefault = 80
 
-// agentPoll matches GenerateNode: the tool waits inside one call instead of
-// letting the model poll.
-const agentPoll = 2 * time.Second
-
 // AgentCompress is one compress_image call. Seed is the call's stable
 // identity: a recovered call finds its candidate and its adoption instead of
 // encoding or adopting twice.
@@ -35,9 +31,6 @@ type AgentCompress struct {
 	// the node shows when the call first runs; a replay never re-reads it.
 	SourceRevisionID string
 	Quality          int
-	// Wait bounds queueing plus encoding. When it runs out before adoption
-	// was sent, the candidate is discarded and nothing changes.
-	Wait time.Duration
 }
 
 // Agent outcomes. Only AgentApplied means the node now shows the result.
@@ -82,42 +75,73 @@ func agentOperation(seed, step string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("creative-agent/"+seed+"/image-edit/"+step)).String()
 }
 
-// CompressForAgent runs the photographer's path for the assistant: accept a
-// candidate on a fixed source, wait for it within the call, then adopt it
-// with the same synchronous command the panel sends. No worker adopts on the
-// assistant's behalf, so a call that stops waiting leaves the canvas alone.
-func (s *Service) CompressForAgent(ctx context.Context, scope store.AccountScope, in AgentCompress) (AgentCompressResult, error) {
+// ErrStillEncoding is ConcludeAgentCompress asked about a candidate that is
+// still queued or encoding.
+var ErrStillEncoding = errors.New("creative image edit: candidate still encoding")
+
+// AcceptAgentCompress accepts the assistant's candidate on a fixed source,
+// the photographer's path, and returns the candidate. A recovered call finds
+// the candidate it already has instead of encoding twice. Nothing waits here:
+// the caller concludes the candidate once it stops encoding
+// (agent-tool-background, replacing backend design §5.3 steps 2 and 4).
+func (s *Service) AcceptAgentCompress(ctx context.Context, scope store.AccountScope, in AgentCompress) (string, error) {
 	if in.Quality == 0 {
 		in.Quality = QualityDefault
 	}
 	if in.Quality < qualityMin || in.Quality > qualityMax {
-		return AgentCompressResult{}, refuse("质量须是 %d 到 %d 的整数", qualityMin, qualityMax)
+		return "", refuse("质量须是 %d 到 %d 的整数", qualityMin, qualityMax)
 	}
-	create, apply := agentOperation(in.Seed, "create"), agentOperation(in.Seed, "apply")
+	create := agentOperation(in.Seed, "create")
 	r, err := s.byOperation(ctx, scope, create)
 	if errors.Is(err, ErrNotFound) {
 		r, err = s.createForAgent(ctx, scope, in, create)
 	}
 	if err != nil {
-		return AgentCompressResult{}, agentRefusal(err)
+		return "", agentRefusal(err)
+	}
+	return r.ID, nil
+}
+
+// AgentCompressPendingInTx reads and locks a candidate in the caller's
+// transaction. pending says it is still queued or encoding; recheck is when
+// it lapses even if nothing writes it (its expiry), for a caller that does
+// not otherwise hear of it.
+func (s *Service) AgentCompressPendingInTx(ctx context.Context, tx store.TxAccountScope, renderID string) (pending bool, recheck time.Time, err error) {
+	r, err := readRender(ctx, tx, true, "id=$2", renderID)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	now, err := tx.CreativeNow(ctx)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	r = r.effective(now)
+	return r.State == "queued" || r.State == "running", r.ExpiresAt, nil
+}
+
+// CompressAdmit checks whether a candidate may be adopted and holds the
+// fencing locks until the adoption transaction commits.
+type CompressAdmit func(context.Context, store.TxAccountScope) (bool, error)
+
+var errAgentAdoptionDenied = errors.New("creative image edit: assistant adoption refused")
+
+// ConcludeAgentCompress finishes a candidate that stopped encoding, in its
+// own transactions. It reports a final state or adopts a ready candidate
+// with the panel's command under the call's fixed operation. If admit is
+// supplied, it runs inside the adoption transaction. A refusal discards the
+// candidate so the node stays as it was.
+func (s *Service) ConcludeAgentCompress(ctx context.Context, scope store.AccountScope, in AgentCompress, renderID string, admit CompressAdmit) (AgentCompressResult, error) {
+	if in.Quality == 0 {
+		in.Quality = QualityDefault
+	}
+	r, err := s.Get(ctx, scope, renderID)
+	if err != nil {
+		return AgentCompressResult{}, err
 	}
 	result := AgentCompressResult{NodeID: r.NodeID, RenderID: r.ID, Quality: in.Quality, SourceRevisionID: r.SourceRevisionID}
-	deadline := time.Now().Add(in.Wait)
-	for r.State == "queued" || r.State == "running" {
-		if !time.Now().Before(deadline) {
-			return s.abandon(ctx, scope, r, result, "压缩未在等待时间内完成，已放弃，图片没有改动")
-		}
-		select {
-		case <-ctx.Done():
-			s.discardQuietly(ctx, scope, r.ID)
-			return result, ctx.Err()
-		case <-time.After(min(agentPoll, max(time.Until(deadline), 0))):
-		}
-		if r, err = s.Get(ctx, scope, r.ID); err != nil {
-			return result, err
-		}
-	}
 	switch r.State {
+	case "queued", "running":
+		return result, ErrStillEncoding
 	case "applied":
 		return applied(result, r), nil
 	case "not_reduced":
@@ -130,7 +154,46 @@ func (s *Service) CompressForAgent(ctx context.Context, scope store.AccountScope
 		result.State, result.Reason = AgentNotApplied, "压缩结果已被丢弃或过期，图片没有改动"
 		return result, nil
 	}
-	return s.adoptForAgent(ctx, scope, r, result, apply)
+	return s.adoptForAgent(ctx, scope, r, result, agentOperation(in.Seed, "apply"), admit)
+}
+
+// DiscardAgentCompressInTx discards the assistant's candidate in the
+// caller's transaction, whatever its stage, and reports where it ended: the
+// photographer cancelled the background compress. One adopted first stays
+// adopted (agent-tool-background).
+func (s *Service) DiscardAgentCompressInTx(ctx context.Context, tx store.TxAccountScope, in AgentCompress, renderID string) (AgentCompressResult, error) {
+	if in.Quality == 0 {
+		in.Quality = QualityDefault
+	}
+	r, err := readRender(ctx, tx, true, "id=$2", renderID)
+	if err != nil {
+		return AgentCompressResult{}, err
+	}
+	now, err := tx.CreativeNow(ctx)
+	if err != nil {
+		return AgentCompressResult{}, err
+	}
+	if r.effective(now).active() {
+		if err := finishInTx(ctx, tx, r, "discarded", "", nil); err != nil {
+			return AgentCompressResult{}, err
+		}
+		if r, err = readRender(ctx, tx, false, "id=$2", renderID); err != nil {
+			return AgentCompressResult{}, err
+		}
+	}
+	r = r.effective(now)
+	result := AgentCompressResult{NodeID: r.NodeID, RenderID: r.ID, Quality: in.Quality, SourceRevisionID: r.SourceRevisionID}
+	switch r.State {
+	case "applied":
+		return applied(result, r), nil
+	case "not_reduced":
+		result.State, result.Reason, result.SourceSize = AgentNotReduced, "按这个质量压缩后文件没有变小，没有创建新版本；可以换更低的质量再试", r.SourceSize
+	case "failed":
+		result.State, result.Reason = AgentFailed, failureReason(r.ErrorCode)
+	default:
+		result.State, result.Reason = AgentNotApplied, "压缩已取消，图片没有改动"
+	}
+	return result, nil
 }
 
 func (s *Service) createForAgent(ctx context.Context, scope store.AccountScope, in AgentCompress, operation string) (Render, error) {
@@ -165,7 +228,7 @@ func (s *Service) createForAgent(ctx context.Context, scope store.AccountScope, 
 // adoptForAgent sends adoption once the candidate is ready. Only the node's
 // data revision is read again: a title edit must not cost the result, while
 // a changed image is still refused by the source check.
-func (s *Service) adoptForAgent(ctx context.Context, scope store.AccountScope, r Render, result AgentCompressResult, operation string) (AgentCompressResult, error) {
+func (s *Service) adoptForAgent(ctx context.Context, scope store.AccountScope, r Render, result AgentCompressResult, operation string, admit CompressAdmit) (AgentCompressResult, error) {
 	result.SourceSize = r.SourceSize
 	for attempt := 0; ; attempt++ {
 		revision, err := nodeDataRevision(ctx, scope, r.CanvasID, r.NodeID)
@@ -176,7 +239,25 @@ func (s *Service) adoptForAgent(ctx context.Context, scope store.AccountScope, r
 		if err != nil {
 			return result, err
 		}
-		_, err = s.Apply(ctx, scope, creativeops.Command{OperationID: operation, CreatedAt: time.Now().UTC(), Payload: payload})
+		command := creativeops.Command{OperationID: operation, CreatedAt: time.Now().UTC(), Payload: payload}
+		var admissionErr error
+		if admit != nil {
+			command.Guard = func(ctx context.Context, tx store.TxAccountScope, _ string, _ creativeops.Command) error {
+				allowed, err := admit(ctx, tx)
+				if !allowed && err == nil {
+					err = errAgentAdoptionDenied
+				}
+				admissionErr = err
+				return err
+			}
+		}
+		_, err = s.Apply(ctx, scope, command)
+		if errors.Is(admissionErr, errAgentAdoptionDenied) {
+			return s.abandon(ctx, scope, r, result, "助手已停止，压缩结果没有采用，图片没有改动")
+		}
+		if admissionErr != nil {
+			return result, admissionErr
+		}
 		if err == nil {
 			break
 		}
@@ -216,12 +297,6 @@ func (s *Service) abandon(ctx context.Context, scope store.AccountScope, r Rende
 	}
 	result.State, result.Reason = AgentNotApplied, reason
 	return result, nil
-}
-
-func (s *Service) discardQuietly(ctx context.Context, scope store.AccountScope, id string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	_, _ = s.Discard(ctx, scope, id)
 }
 
 func applied(result AgentCompressResult, r Render) AgentCompressResult {

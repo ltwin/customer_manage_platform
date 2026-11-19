@@ -350,32 +350,60 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 	}
 	library := libraryOpen(consent, true)
 	// Newest first, so a range longer than the page loses its oldest end.
-	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body",
-		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool') AND ordinal>$3 AND ordinal<=$4",
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "id,role,body",
+		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool','system') AND ordinal>$3 AND ordinal<=$4",
 		[]store.OrderBy{{Column: "ordinal", Desc: true}}, max(s.limits.HistoryMessages, 1)*4, 0, conversationID, plan.From, plan.CoversThrough)
 	if err != nil {
 		return llmgateway.ChatRequest{}, err
 	}
-	var lines []string
+	type entry struct {
+		id, role string
+		body     Body
+	}
+	var entries []entry
+	var notices []string
 	for rows.Next() {
-		var role string
+		var e entry
 		var payload []byte
-		if err := rows.Scan(&role, &payload); err != nil {
+		if err := rows.Scan(&e.id, &e.role, &payload); err != nil {
 			rows.Close()
 			return llmgateway.ChatRequest{}, err
 		}
-		var body Body
-		if json.Unmarshal(payload, &body) != nil || isCommand(body) {
+		if json.Unmarshal(payload, &e.body) != nil || isCommand(e.body) {
 			continue
 		}
-		if line := transcriptLine(role, body, library, consentHas(consent, "canvas_metadata")); line != "" {
-			lines = append(lines, line)
+		if e.role == "system" {
+			notices = append(notices, e.id)
 		}
+		entries = append(entries, e)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return llmgateway.ChatRequest{}, err
+	}
+	// A completion notice joins the summary once a request carried it, as
+	// the tool data that request saw (agent-tool-background).
+	delivered, err := deliveredNoticesInTx(ctx, tx, notices)
+	if err != nil {
+		return llmgateway.ChatRequest{}, err
+	}
+	var lines []string
+	for _, e := range entries {
+		if e.role == "system" {
+			task, ok := delivered[e.id]
+			if !ok {
+				continue
+			}
+			content, err := noticeContent(task)
+			if err != nil {
+				return llmgateway.ChatRequest{}, err
+			}
+			e.role, e.body = "user", Body{Blocks: []Block{{Type: "text", Text: content}}}
+		}
+		if line := transcriptLine(e.role, e.body, library, consentHas(consent, "canvas_metadata")); line != "" {
+			lines = append(lines, line)
+		}
 	}
 	slices.Reverse(lines)
 	instruction := compactionInstruction

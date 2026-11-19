@@ -143,8 +143,10 @@ func TestCancelRunJobs(t *testing.T) {
 		t.Fatalf("claim %+v %v", claimed, err)
 	}
 	_ = claimedJob
+	// A job handed to the background outlives its run.
+	kept := newJob(t, f.a, bakeJob(doc, "step-3"))
 	if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
-		return creativescene.CancelRunJobs(t.Context(), tx, "ccrn_test")
+		return creativescene.CancelRunJobs(t.Context(), tx, "ccrn_test", []string{kept.ID})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +167,7 @@ func TestCancelRunJobs(t *testing.T) {
 	if _, err := creativescene.Lease(t.Context(), f.a, claimed.ID, claimed.ClaimToken); !errors.Is(err, creativescene.ErrJobLeaseLost) {
 		t.Fatalf("late lease on a cancelled job: %v", err)
 	}
-	if list, _ := creativescene.ListActive(t.Context(), f.a, doc); len(list) != 0 {
-		t.Fatalf("cancelled jobs still listed: %+v", list)
+	if list, _ := creativescene.ListActive(t.Context(), f.a, doc); len(list) != 1 || list[0].ID != kept.ID || list[0].State != creativescene.JobQueued {
+		t.Fatalf("only the kept job should be left: %+v", list)
 	}
 }

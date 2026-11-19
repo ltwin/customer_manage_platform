@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,17 @@ type stubGenerator struct {
 	submitted int
 	// generate, when set, stands in for the generation itself.
 	generate func(context.Context, creativegeneration.AgentGeneration) error
+	// pending keeps every generation running, so a foreground call parks.
+	pending bool
+	// cancelled holds executions cancelled from their card.
+	cancelled []string
+}
+
+func (s *stubGenerator) CancelAgentGenerationInTx(_ context.Context, _ store.TxAccountScope, _, execution string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancelled = append(s.cancelled, execution)
+	return nil
 }
 
 func (s *stubGenerator) Models() []creativegeneration.Model {
@@ -36,26 +48,41 @@ func (s *stubGenerator) DraftParameters(model, nodeType string, given map[string
 	}
 	return json.Marshal(given)
 }
-func (s *stubGenerator) GenerateNode(ctx context.Context, scope store.AccountScope, in creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
+func (s *stubGenerator) SubmitAgentGeneration(ctx context.Context, scope store.AccountScope, in creativegeneration.AgentGeneration) (string, error) {
 	s.mu.Lock()
 	s.calls = append(s.calls, in)
 	s.mu.Unlock()
 	if s.generate != nil {
 		if err := s.generate(ctx, in); err != nil {
-			return creativegeneration.AgentGenerationResult{}, err
+			return "", err
 		}
 	}
 	// Admission runs the caller's check in its own transaction, as the real
 	// one does before the request is recorded.
 	if in.Admit != nil {
 		if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error { return in.Admit(ctx, tx) }); err != nil {
-			return creativegeneration.AgentGenerationResult{}, err
+			return "", err
 		}
 	}
 	s.mu.Lock()
 	s.submitted++
 	s.mu.Unlock()
-	return creativegeneration.AgentGenerationResult{NodeID: in.NodeID, ExecutionID: "cwexec_1", State: "succeeded", ContentRevisionIDs: []string{"ccrv_out"}}, nil
+	return creativegeneration.AgentExecutionID(scope.AccountID(), in.Seed), nil
+}
+
+// AgentGenerationInTx answers at once: the stub's generations are done as
+// soon as they are accepted, unless pending says otherwise.
+func (s *stubGenerator) AgentGenerationInTx(_ context.Context, _ store.TxAccountScope, _, nodeID, execution string) (creativegeneration.AgentGenerationResult, bool, error) {
+	s.mu.Lock()
+	pending, cancelled := s.pending, slices.Contains(s.cancelled, execution)
+	s.mu.Unlock()
+	if cancelled {
+		return creativegeneration.AgentGenerationResult{NodeID: nodeID, ExecutionID: execution, State: "cancelled", ApplyState: "discarded"}, true, nil
+	}
+	if pending {
+		return creativegeneration.AgentGenerationResult{NodeID: nodeID, ExecutionID: execution, State: "running", ApplyState: "pending"}, false, nil
+	}
+	return creativegeneration.AgentGenerationResult{NodeID: nodeID, ExecutionID: execution, State: "succeeded", ContentRevisionIDs: []string{"ccrv_out"}}, true, nil
 }
 
 func (s *stubGenerator) StopAgentGeneration(_ context.Context, _ store.AccountScope, _, seed string) (bool, error) {
@@ -261,8 +288,8 @@ type brokenGenerator struct {
 	err error
 }
 
-func (g *brokenGenerator) GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
-	return creativegeneration.AgentGenerationResult{}, g.err
+func (g *brokenGenerator) SubmitAgentGeneration(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (string, error) {
+	return "", g.err
 }
 
 // A failure nobody explained goes back to the model as a plain failure it can

@@ -218,6 +218,9 @@ type Message struct {
 	Body          Body                 `json:"body"`
 	Revision      creativeops.Revision `json:"revision"`
 	CreatedAt     time.Time            `json:"created_at"`
+	// BackgroundTask is the finished task a role=system completion notice
+	// reports (agent-tool-background).
+	BackgroundTask *ToolTask `json:"background_task,omitempty"`
 }
 
 type MessagePage struct {
@@ -748,6 +751,21 @@ func (s *Service) ListMessages(ctx context.Context, scope store.AccountScope, co
 		}
 		for i, j := 0, len(page.Items)-1; i < j; i, j = i+1, j-1 {
 			page.Items[i], page.Items[j] = page.Items[j], page.Items[i]
+		}
+		notices := []string{}
+		for _, m := range page.Items {
+			if m.Role == "system" {
+				notices = append(notices, m.ID)
+			}
+		}
+		tasks, err := toolTasksByInTx(ctx, tx, "notification_message_id", notices)
+		if err != nil {
+			return err
+		}
+		for i, m := range page.Items {
+			if task, ok := tasks[m.ID]; ok {
+				page.Items[i].BackgroundTask = &task
+			}
 		}
 		if before > 0 {
 			return nil

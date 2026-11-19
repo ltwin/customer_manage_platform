@@ -362,7 +362,7 @@ func TestRuntimeModelStepsUseDurableCountNotPromptHash(t *testing.T) {
 	seen := map[string]bool{}
 	previous := ""
 	for i := 0; i < 20; i++ {
-		id, _, err := f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat, contextComposition{Bytes: map[string]int{}})
+		id, _, err := f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat, contextComposition{Bytes: map[string]int{}}, nil)
 		if err != nil || seen[id] {
 			t.Fatalf("step %d: %s %v", i, id, err)
 		}

@@ -12,7 +12,9 @@ import {
 import type { components } from '../../api/schema'
 import * as api from './api.ts'
 import {
+  blockTask,
   layout,
+  newerTask,
   nodeRefs,
   planSteps,
   renderable,
@@ -22,9 +24,11 @@ import {
   text,
   isFinished,
   type AgentBlock,
+  type ToolTask,
 } from './agentBlocks.ts'
 import {
   AgentTurnContext,
+  controlToolTask,
   setOpen,
   shownRun,
   useAgentRuns,
@@ -191,11 +195,65 @@ function ToolRetry({ block }: { block: AgentBlock }) {
   )
 }
 
+const taskLabels: Record<ToolTask['state'], string> = {
+  running: '正在等待',
+  succeeded: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+  expired: '已过期',
+}
+
+function ToolTaskStatus({ task, stopped }: { task: ToolTask; stopped: boolean }) {
+  const { account, taskReadOnly } = useContext(AgentTurnContext)
+  const control = useAgentRuns((state) => state.taskControls[task.handle])
+  const settled = newerTask(task, control?.receipt)
+  const ended = settled.state !== 'running'
+  const background = settled.mode === 'background'
+  const sending = !ended && control?.phase === 'sending' &&
+    (control.action !== 'detach' || !background)
+  const unknown = !ended && control?.phase === 'unknown' &&
+    (control.action !== 'detach' || !background)
+  const detaching = (sending || unknown) && control?.action === 'detach'
+  const scene = settled.tool_key === 'write_model' || settled.tool_key === 'export_shots'
+  const action = unknown ? control?.action : background ? 'cancel' : 'detach'
+  const showAction = !ended && !taskReadOnly && !!account &&
+    (background || (!stopped && settled.tool_key !== 'render_view'))
+  const status = ended ? taskLabels[settled.state]
+    : unknown ? '等待确认'
+    : sending ? (detaching ? '正在转到后台' : '正在取消')
+    : background ? '后台运行中' : taskLabels.running
+  return (
+    <div className="cc-agent-task" data-mode={background || detaching ? 'background' : 'foreground'} data-state={settled.state}>
+      <div className="cc-agent-task-line">
+        <span role="status">{status}</span>
+        {showAction && action && (
+          <button
+            type="button"
+            className="cc-agent-link"
+            disabled={control?.phase === 'sending'}
+            onClick={() => void controlToolTask(account, settled, action)}
+          >
+            {unknown ? '重试确认' : action === 'detach' ? '转后台' : '取消'}
+          </button>
+        )}
+      </div>
+      {!ended && (background || detaching) && scene &&
+        <p>请保持创意空间页面打开。</p>}
+      {!ended && background && settled.tool_key === 'generate_node' && showAction &&
+        <p>已发出的生成仍会扣费。</p>}
+      {!ended && (unknown || (control?.phase === 'rejected' &&
+        (control.action !== 'detach' || !background))) &&
+        <p role="status" className="cc-agent-task-error">{control?.error}</p>}
+    </div>
+  )
+}
+
 function ToolRow({ block }: { block: AgentBlock }) {
   const open = useOpen(block.id) ?? false
   const running = block.state === 'running'
   const key = text(block.payload.tool_key)
   const refs = nodeRefs(block)
+  const task = blockTask(block)
   return (
     <div className={`cc-agent-tool is-${block.state}`}>
       <button
@@ -217,9 +275,10 @@ function ToolRow({ block }: { block: AgentBlock }) {
         <span className="cc-agent-row-title">
           {text(block.payload.title) || key}
         </span>
-        <span className="cc-agent-row-meta">{toolMeta(block)}</span>
+        <span className="cc-agent-row-meta">{task ? null : toolMeta(block)}</span>
         <Chevron open={open} />
       </button>
+      {task && <ToolTaskStatus task={task} stopped={block.state === 'interrupted'} />}
       {block.state === 'failed' && key === 'read_skill_resource' && (
         <ToolRetry block={block} />
       )}
@@ -429,7 +488,8 @@ function Segment({
 }) {
   // The segment is named after its first block; its own choice needs its own key.
   const key = `segment:${id}`
-  const open = segmentOpen(useOpen(key), settled)
+  const open = segmentOpen(useOpen(key), settled &&
+    !blocks.some((block) => blockTask(block)?.mode === 'background' || blockTask(block)?.state === 'running'))
   const rows = blocks.map((block) => <BlockView key={block.id} block={block} />)
   if (!settled) return <div data-segment={id}>{rows}</div>
   return (
@@ -456,6 +516,8 @@ export function RunTurn({ runID }: { runID: string }) {
   const { run } = view
   return (
     <div className="cc-agent-turn" data-run={runID} data-state={run.state}>
+      {run.trigger_kind === 'background_tool' &&
+        <p className="cc-agent-automatic">助手自动继续</p>}
       {items.map((item, index) =>
         item.kind === 'block' ? (
           <BlockView key={item.block.id} block={item.block} />

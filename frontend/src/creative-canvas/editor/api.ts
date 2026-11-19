@@ -38,12 +38,14 @@ export function send<T = unknown>(
   path: string,
   body: string,
   operation: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   if (currentAccount() !== account)
     return Promise.reject(new Error('账号已变化，请重新登录原账号恢复草稿'))
   const before = getAuthSnapshot()
   return request<T>(`/creative${path}`, {
     method: 'POST',
+    signal,
     headers: { 'Idempotency-Key': operation },
     body,
   }).then((value) => {

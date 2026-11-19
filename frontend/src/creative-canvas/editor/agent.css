@@ -1450,3 +1450,54 @@
 .cc-egress-error {
   color: var(--danger);
 }
+
+/* Task state can change after its original tool call and turn have finished. */
+.cc-agent-task {
+  border-inline-start: 1px solid var(--line-2);
+  margin-inline-start: 12px;
+  padding: 0 0 4px 12px;
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.cc-agent-task[data-mode='background'][data-state='running'] {
+  border-inline-start-color: var(--run);
+}
+.cc-agent-task-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 26px;
+}
+.cc-agent-task .cc-agent-link {
+  min-height: 24px;
+}
+.cc-agent-task p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+.cc-agent-task-error {
+  color: var(--warning);
+}
+.cc-agent-task-notice,
+.cc-agent-automatic {
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.cc-agent-task-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0;
+}
+.cc-agent-task-notice > span {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  align-self: center;
+}
+.cc-agent-automatic {
+  margin: 0 0 4px;
+}

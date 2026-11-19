@@ -117,9 +117,11 @@ export function nextQueueAction(
   ready: boolean,
 ): { queue: ConversationQueue; send?: QueuedMessage } {
   if (!latest || latest.id === queue.settledRun) return { queue }
-  if (pausing.has(latest.state))
+  const automatic = latest.trigger_kind === 'background_tool'
+  const interrupted = pausing.has(latest.state)
+  if (interrupted && !automatic)
     return { queue: { ...queue, paused: true, settledRun: latest.id } }
-  if (!settled.has(latest.state)) return { queue }
+  if (!settled.has(latest.state) && !interrupted) return { queue }
   const head = queue.items.find((item) => !item.sending)
   if (queue.paused || !head || head.sceneUnavailable || !ready) return { queue }
   return {
@@ -131,10 +133,11 @@ export function nextQueueAction(
 // 「继续发送」：解除暂停并发出队首。
 export function resumeQueue(
   queue: ConversationQueue,
+  latestID?: string,
 ): { queue: ConversationQueue; send?: QueuedMessage } {
   const head = queue.items.find((item) => !item.sending)
   if (head?.sceneUnavailable) return { queue }
-  const resumed = { ...queue, paused: false }
+  const resumed = { ...queue, paused: false, ...(latestID ? { settledRun: latestID } : {}) }
   return head
     ? { queue: markSending(resumed, head.id), send: head }
     : { queue: resumed }

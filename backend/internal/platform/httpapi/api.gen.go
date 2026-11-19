@@ -962,6 +962,21 @@ func (e CreativeAgentRunState) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentRunTriggerKind.
+const (
+	BackgroundTool CreativeAgentRunTriggerKind = "background_tool"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentRunTriggerKind enum.
+func (e CreativeAgentRunTriggerKind) Valid() bool {
+	switch e {
+	case BackgroundTool:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentSkillOrigin.
 const (
 	CreativeAgentSkillOriginAccount  CreativeAgentSkillOrigin = "account"
@@ -1112,6 +1127,78 @@ func (e CreativeAgentToolEffectClass) Valid() bool {
 	case ReadOnly:
 		return true
 	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentToolTaskMode.
+const (
+	Background CreativeAgentToolTaskMode = "background"
+	Foreground CreativeAgentToolTaskMode = "foreground"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentToolTaskMode enum.
+func (e CreativeAgentToolTaskMode) Valid() bool {
+	switch e {
+	case Background:
+		return true
+	case Foreground:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentToolTaskState.
+const (
+	CreativeAgentToolTaskStateCancelled CreativeAgentToolTaskState = "cancelled"
+	CreativeAgentToolTaskStateExpired   CreativeAgentToolTaskState = "expired"
+	CreativeAgentToolTaskStateFailed    CreativeAgentToolTaskState = "failed"
+	CreativeAgentToolTaskStateRunning   CreativeAgentToolTaskState = "running"
+	CreativeAgentToolTaskStateSucceeded CreativeAgentToolTaskState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentToolTaskState enum.
+func (e CreativeAgentToolTaskState) Valid() bool {
+	switch e {
+	case CreativeAgentToolTaskStateCancelled:
+		return true
+	case CreativeAgentToolTaskStateExpired:
+		return true
+	case CreativeAgentToolTaskStateFailed:
+		return true
+	case CreativeAgentToolTaskStateRunning:
+		return true
+	case CreativeAgentToolTaskStateSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentToolTaskToolKey.
+const (
+	CreativeAgentToolTaskToolKeyCompressImage CreativeAgentToolTaskToolKey = "compress_image"
+	CreativeAgentToolTaskToolKeyExportShots   CreativeAgentToolTaskToolKey = "export_shots"
+	CreativeAgentToolTaskToolKeyGenerateNode  CreativeAgentToolTaskToolKey = "generate_node"
+	CreativeAgentToolTaskToolKeyRenderView    CreativeAgentToolTaskToolKey = "render_view"
+	CreativeAgentToolTaskToolKeyWriteModel    CreativeAgentToolTaskToolKey = "write_model"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentToolTaskToolKey enum.
+func (e CreativeAgentToolTaskToolKey) Valid() bool {
+	switch e {
+	case CreativeAgentToolTaskToolKeyCompressImage:
+		return true
+	case CreativeAgentToolTaskToolKeyExportShots:
+		return true
+	case CreativeAgentToolTaskToolKeyGenerateNode:
+		return true
+	case CreativeAgentToolTaskToolKeyRenderView:
+		return true
+	case CreativeAgentToolTaskToolKeyWriteModel:
 		return true
 	default:
 		return false
@@ -2440,19 +2527,19 @@ func (e CreativeSceneJobCompletionState) Valid() bool {
 
 // Defines values for CreativeSceneJobKind.
 const (
-	BakeModel   CreativeSceneJobKind = "bake_model"
-	ExportShots CreativeSceneJobKind = "export_shots"
-	RenderView  CreativeSceneJobKind = "render_view"
+	CreativeSceneJobKindBakeModel   CreativeSceneJobKind = "bake_model"
+	CreativeSceneJobKindExportShots CreativeSceneJobKind = "export_shots"
+	CreativeSceneJobKindRenderView  CreativeSceneJobKind = "render_view"
 )
 
 // Valid indicates whether the value is a known member of the CreativeSceneJobKind enum.
 func (e CreativeSceneJobKind) Valid() bool {
 	switch e {
-	case BakeModel:
+	case CreativeSceneJobKindBakeModel:
 		return true
-	case ExportShots:
+	case CreativeSceneJobKindExportShots:
 		return true
-	case RenderView:
+	case CreativeSceneJobKindRenderView:
 		return true
 	default:
 		return false
@@ -3670,19 +3757,19 @@ func (e PricingMode) Valid() bool {
 
 // Defines values for ReminderStatus.
 const (
-	ReminderStatusDismissed ReminderStatus = "dismissed"
-	ReminderStatusDone      ReminderStatus = "done"
-	ReminderStatusPending   ReminderStatus = "pending"
+	Dismissed ReminderStatus = "dismissed"
+	Done      ReminderStatus = "done"
+	Pending   ReminderStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the ReminderStatus enum.
 func (e ReminderStatus) Valid() bool {
 	switch e {
-	case ReminderStatusDismissed:
+	case Dismissed:
 		return true
-	case ReminderStatusDone:
+	case Done:
 		return true
-	case ReminderStatusPending:
+	case Pending:
 		return true
 	default:
 		return false
@@ -5181,9 +5268,11 @@ type CreativeAgentLimits struct {
 
 // CreativeAgentMessage defines model for CreativeAgentMessage.
 type CreativeAgentMessage struct {
-	Body      CreativeAgentMessageBody `json:"body"`
-	CreatedAt time.Time                `json:"created_at"`
-	Id        string                   `json:"id"`
+	// BackgroundTask 仅后台任务完成的系统消息携带，必为终态。
+	BackgroundTask *CreativeAgentToolTask   `json:"background_task,omitempty"`
+	Body           CreativeAgentMessageBody `json:"body"`
+	CreatedAt      time.Time                `json:"created_at"`
+	Id             string                   `json:"id"`
 
 	// Ordinal 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Ordinal CreativeRevision `json:"ordinal"`
@@ -5369,10 +5458,13 @@ type CreativeAgentRun struct {
 	StartedAt   *time.Time        `json:"started_at,omitempty"`
 
 	// State 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
-	State            CreativeAgentRunState `json:"state"`
-	TriggerMessageId string                `json:"trigger_message_id"`
+	State CreativeAgentRunState `json:"state"`
 
-	// WaitReason 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。
+	// TriggerKind 后台任务完成触发的自动运行；既有入口省略。
+	TriggerKind      *CreativeAgentRunTriggerKind `json:"trigger_kind,omitempty"`
+	TriggerMessageId string                       `json:"trigger_message_id"`
+
+	// WaitReason 等待原因。waiting_client 时为 client_job（页面正在执行助手派出的任务）、tool_task（等待耗时工具）或 slot_busy（任务已完成， 等其他助手运行释放写入槽位）。
 	WaitReason   *string `json:"wait_reason,omitempty"`
 	WaitingToken *string `json:"waiting_token,omitempty"`
 }
@@ -5385,6 +5477,9 @@ type CreativeAgentRunSettlementState string
 
 // CreativeAgentRunState 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
 type CreativeAgentRunState string
+
+// CreativeAgentRunTriggerKind 后台任务完成触发的自动运行；既有入口省略。
+type CreativeAgentRunTriggerKind string
 
 // CreativeAgentRunPage defines model for CreativeAgentRunPage.
 type CreativeAgentRunPage struct {
@@ -5592,6 +5687,32 @@ type CreativeAgentTool struct {
 
 // CreativeAgentToolEffectClass defines model for CreativeAgentTool.EffectClass.
 type CreativeAgentToolEffectClass string
+
+// CreativeAgentToolTask defines model for CreativeAgentToolTask.
+type CreativeAgentToolTask struct {
+	FinishedAt *time.Time                `json:"finished_at,omitempty"`
+	Handle     string                    `json:"handle"`
+	Mode       CreativeAgentToolTaskMode `json:"mode"`
+
+	// Result 终态时的领域工具结果；运行中省略。
+	Result *map[string]interface{} `json:"result,omitempty"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision   CreativeRevision             `json:"revision"`
+	RunId      string                       `json:"run_id"`
+	State      CreativeAgentToolTaskState   `json:"state"`
+	ToolKey    CreativeAgentToolTaskToolKey `json:"tool_key"`
+	ToolStepId string                       `json:"tool_step_id"`
+}
+
+// CreativeAgentToolTaskMode defines model for CreativeAgentToolTask.Mode.
+type CreativeAgentToolTaskMode string
+
+// CreativeAgentToolTaskState defines model for CreativeAgentToolTask.State.
+type CreativeAgentToolTaskState string
+
+// CreativeAgentToolTaskToolKey defines model for CreativeAgentToolTask.ToolKey.
+type CreativeAgentToolTaskToolKey string
 
 // CreativeAssetBatchPayload defines model for CreativeAssetBatchPayload.
 type CreativeAssetBatchPayload struct {
@@ -10140,6 +10261,16 @@ type SupplementCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CancelCreativeAgentToolTaskParams defines parameters for CancelCreativeAgentToolTask.
+type CancelCreativeAgentToolTaskParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DetachCreativeAgentToolTaskParams defines parameters for DetachCreativeAgentToolTask.
+type DetachCreativeAgentToolTaskParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ListCreativeAgentSkillsParams defines parameters for ListCreativeAgentSkills.
 type ListCreativeAgentSkillsParams struct {
 	// Q 按 slug 前缀与展示名匹配
@@ -10960,6 +11091,12 @@ type SteerCreativeAgentRunJSONRequestBody = CreativeAgentSteerRequest
 
 // SupplementCreativeAgentRunJSONRequestBody defines body for SupplementCreativeAgentRun for application/json ContentType.
 type SupplementCreativeAgentRunJSONRequestBody = CreativeAgentSupplementRequest
+
+// CancelCreativeAgentToolTaskJSONRequestBody defines body for CancelCreativeAgentToolTask for application/json ContentType.
+type CancelCreativeAgentToolTaskJSONRequestBody = CreativeAgentControlRequest
+
+// DetachCreativeAgentToolTaskJSONRequestBody defines body for DetachCreativeAgentToolTask for application/json ContentType.
+type DetachCreativeAgentToolTaskJSONRequestBody = CreativeAgentControlRequest
 
 // CreateCreativeGroupJSONRequestBody defines body for CreateCreativeGroup for application/json ContentType.
 type CreateCreativeGroupJSONRequestBody = CreateCreativeGroupRequest
@@ -13799,6 +13936,12 @@ type ServerInterface interface {
 	// 在原授权和期限内补充文字或引用，继续运行
 	// (POST /creative/agent-runs/{id}/supplements)
 	SupplementCreativeAgentRun(c *gin.Context, id string, params SupplementCreativeAgentRunParams)
+	// 取消助手的后台任务
+	// (POST /creative/agent-tool-tasks/{handle}/cancel)
+	CancelCreativeAgentToolTask(c *gin.Context, handle string, params CancelCreativeAgentToolTaskParams)
+	// 将助手正在等待的任务转到后台
+	// (POST /creative/agent-tool-tasks/{handle}/detach)
+	DetachCreativeAgentToolTask(c *gin.Context, handle string, params DetachCreativeAgentToolTaskParams)
 	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
 	// (GET /creative/agent/catalog)
 	GetCreativeAgentCatalog(c *gin.Context)
@@ -15088,6 +15231,114 @@ func (siw *ServerInterfaceWrapper) SupplementCreativeAgentRun(c *gin.Context) {
 	}
 
 	siw.Handler.SupplementCreativeAgentRun(c, id, params)
+}
+
+// CancelCreativeAgentToolTask operation middleware
+func (siw *ServerInterfaceWrapper) CancelCreativeAgentToolTask(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "handle" -------------
+	var handle string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "handle", c.Param("handle"), &handle, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter handle: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelCreativeAgentToolTaskParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelCreativeAgentToolTask(c, handle, params)
+}
+
+// DetachCreativeAgentToolTask operation middleware
+func (siw *ServerInterfaceWrapper) DetachCreativeAgentToolTask(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "handle" -------------
+	var handle string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "handle", c.Param("handle"), &handle, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter handle: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DetachCreativeAgentToolTaskParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DetachCreativeAgentToolTask(c, handle, params)
 }
 
 // GetCreativeAgentCatalog operation middleware
@@ -21226,6 +21477,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/steers", wrapper.SteerCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id/steps", wrapper.ListCreativeAgentRunSteps)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/supplements", wrapper.SupplementCreativeAgentRun)
+	router.POST(options.BaseURL+"/creative/agent-tool-tasks/:handle/cancel", wrapper.CancelCreativeAgentToolTask)
+	router.POST(options.BaseURL+"/creative/agent-tool-tasks/:handle/detach", wrapper.DetachCreativeAgentToolTask)
 	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)
 	router.GET(options.BaseURL+"/creative/agent/skills", wrapper.ListCreativeAgentSkills)
 	router.GET(options.BaseURL+"/creative/agent/skills/:id/versions/:version_id", wrapper.GetCreativeAgentSkillVersion)

@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
-	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -133,6 +132,24 @@ func (s *Service) stopQueuedGenerations(ctx context.Context, scope store.Account
 		if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", conversation).Scan(&canvasID); err != nil {
 			return err
 		}
+		// A generation handed to the background outlives the stop.
+		background := map[string]bool{}
+		tasks, err := tx.Query(ctx, "creative_agent_tool_tasks", "tool_step_id", "source_run_id=$2 AND tool_key=$3 AND mode='background'", runID, generateNodeTool)
+		if err != nil {
+			return err
+		}
+		for tasks.Next() {
+			var id string
+			if err = tasks.Scan(&id); err != nil {
+				tasks.Close()
+				return err
+			}
+			background[id] = true
+		}
+		tasks.Close()
+		if err = tasks.Err(); err != nil {
+			return err
+		}
 		rows, err := tx.Query(ctx, "creative_agent_steps", "id", "run_id=$2 AND kind='tool' AND tool_key=$3", runID, generateNodeTool)
 		if err != nil {
 			return err
@@ -143,7 +160,9 @@ func (s *Service) stopQueuedGenerations(ctx context.Context, scope store.Account
 			if err = rows.Scan(&id); err != nil {
 				return err
 			}
-			steps = append(steps, id)
+			if !background[id] {
+				steps = append(steps, id)
+			}
 		}
 		return rows.Err()
 	})
@@ -257,7 +276,7 @@ func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope,
 		return err
 	}
 	// The run is locked, so its client jobs come after it in the lock order.
-	if err = creativescene.CancelRunJobs(ctx, tx, c.ID); err != nil {
+	if err = cancelRunSceneJobsInTx(ctx, tx, c.ID); err != nil {
 		return err
 	}
 	for _, table := range []string{"creative_agent_checkpoints", "creative_agent_context_items"} {
