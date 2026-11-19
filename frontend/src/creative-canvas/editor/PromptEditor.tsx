@@ -495,6 +495,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         data-placeholder={placeholder}
         tabIndex={0}
         onInput={() => {
+          committedAt.current = null
           persist()
           if (!composing.current && editor.current) {
             const q = mentionQuery(editor.current)
@@ -570,6 +571,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
           if (chip && key && scene && onSceneRef) editScene(chip, key, scene)
         }}
         onBlur={(e) => {
+          committedAt.current = null
           rememberCaret()
           setPeek(null)
           // 焦点进了菜单里的搜索框：菜单留着，插入位置也留着。
@@ -592,6 +594,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
             setPeek(null)
         }}
         onKeyDown={(e) => {
+          committedAt.current = null
           e.stopPropagation()
           if (e.nativeEvent.isComposing || composing.current) return
           if (query === null && onKey?.(e)) return

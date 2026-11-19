@@ -549,6 +549,18 @@ test('a refused send goes back to the head and pauses', () => {
   assert.equal(back.paused, true)
 })
 
+test('removing the last queued item clears pause so later runs can continue', () => {
+  const paused = { ...enqueue(enqueue(emptyQueue, queued('a', { sceneUnavailable: true })), queued('b')), paused: true }
+  const partial = removeQueued(paused, 'a')
+  assert.equal(partial.paused, true)
+  assert.deepEqual(partial.items.map((item) => item.id), ['b'])
+  const emptied = removeQueued(partial, 'b')
+  assert.equal(emptied.paused, false)
+  assert.deepEqual(emptied.items, [])
+  const single = removeQueued({ ...enqueue(emptyQueue, queued('a', { sceneUnavailable: true })), paused: true }, 'a')
+  assert.equal(single.paused, false)
+})
+
 test('after a reload a message the chain holds stays in the queue as sending, one never handed over is back', () => {
   const queue = { ...markSending(enqueue(emptyQueue, queued('a')), 'a'), settledRun: 'r1' }
   const chain: PendingAgentChain = {

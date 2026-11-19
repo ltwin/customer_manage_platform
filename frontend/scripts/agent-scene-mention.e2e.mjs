@@ -601,6 +601,40 @@ const checks = {
     assert.deepEqual(segments.filter((s) => s.type === 'scene_ref'), [{ type: 'scene_ref', document_id: 'cwdoc_living' }])
     return t
   },
+  async 'tab-focusing a pending reference does not hijack a later click inside typed text'() {
+    const t = await open()
+    await select(t.page, 'n-living')
+    await pending(t.page).waitFor()
+    await t.page.getByRole('button', { name: '收起创作助手' }).focus()
+    for (let i = 0; i < 10; i++) {
+      if (await t.editor.evaluate((el) => el === document.activeElement)) break
+      await t.page.keyboard.press('Tab')
+    }
+    assert.equal(await t.editor.evaluate((el) => el === document.activeElement), true, 'Tab focused the editor')
+    assert.equal(await pending(t.page).count(), 0)
+    await chips(t.page).first().waitFor()
+    await t.page.keyboard.type('改成暖色灯光')
+    const target = await t.editor.evaluate((el) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      let node
+      while ((node = walker.nextNode())) {
+        const at = (node.textContent ?? '').indexOf('暖色')
+        if (at >= 0) {
+          const range = document.createRange()
+          range.setStart(node, at)
+          range.setEnd(node, at + 1)
+          const rect = range.getBoundingClientRect()
+          return { x: rect.left + 1, y: rect.top + rect.height / 2 }
+        }
+      }
+      return null
+    })
+    assert.ok(target, 'found target text coordinate')
+    await t.page.mouse.click(target.x, target.y)
+    await t.page.keyboard.type('柔和')
+    assert.match(await t.editor.textContent(), /客厅\s*改成柔和暖色灯光/)
+    return t
+  },
   async 'a scene click inserts the whole scene; re-editing keeps an object that is gone'() {
     const t = await open()
     await pickFromMenu(t, '客')

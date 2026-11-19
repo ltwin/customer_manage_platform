@@ -11,7 +11,7 @@ type MessageSkill = Pick<
   'skill_id' | 'skill_version_id' | 'display_name' | 'version_number'
 >
 
-// 用户消息的一段：文字、引用（Skill、素材或场景）、命令，或旧页面从 3D 场景发送时
+// 摄影师消息的一段：文字、引用（Skill、素材或场景）、命令，或旧页面从 3D 场景发送时
 // 选中的物体（names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
 // 场景引用的 chip 带 detail：完整的物件名单。
 export type MessagePart =

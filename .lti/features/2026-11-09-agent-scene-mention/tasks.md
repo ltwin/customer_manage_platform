@@ -10,7 +10,8 @@
 - [x] 2.2 `creativescene.ReferenceContextInTx` 新增（账号范围读取标题、版本、物件名）；`CreateRun` 事务内检查 `canvas_metadata` consent、解析引用并填快照（missing 只有 ID）；`BlockScene.Revision`、`BlockSceneObject.Missing`、`validBody` 接受 `scene_ref`；`scene_context_test.go` 覆盖 404 / 403 / 快照 / missing，失败时 `runs` 表数量不变
 - [x] 2.3 冻结与措辞：`freezeRequestInputsInTx` 按位置写 instruction 行，抽出 `sceneRefWording` 供 `historyLine` / `bodyMessage` 共用，正在编辑的场景写「当前编辑的场景中的物件」，`sceneInputsInTx` 把被引用场景加入变化摘要候选，`EditorContextInTx` 无选中时换新措辞；测试断言多段语序、编辑场景只出现一次、冻结后改名重试请求哈希不变、旧 `selected_object_ids` 测试不改仍绿
 - [x] 2.4 预算：`bodyBytes` 按 `scene_ref` 实际措辞加 `perMessageOverhead` 计费，事务内补齐后重算 `planned.Bytes`，`validBody` 超过 32 KiB 返回 413；临界预算测试（补齐前低于压缩线、补齐后超过 → 触发压缩规划；补齐后超 32 KiB → 413 且 `runs` 不变）
-- [ ] 2.5 `scene_ref_live_test.go`：`CREATIVE_AGENT_LIVE=1` 门控的三条模型行为验收（跨场景同名物件、同场景分批、已删除物件先询问且本轮无写场景工具调用）；默认 `go test` 跳过，手动执行一次并记录结果
+- [x] 2.5 `scene_ref_live_test.go`：`CREATIVE_AGENT_LIVE=1` 门控的三条模型行为验收（跨场景同名物件、同场景分批、已删除物件先询问且本轮无写场景工具调用）；默认 `go test` 跳过，手动执行一次并记录结果
+  - 2026-11-16，`gpt-6.1-sol` 三条均通过。只把被引用场景的台灯改为红色；正在编辑的场景里，两批物件分别应用做旧金属和胡桃木；缺失物件时助手先请摄影师确认，本轮没有写场景调用。
 
 ## 3. 前端数据层
 

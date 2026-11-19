@@ -81,7 +81,8 @@ export function enqueue(queue: ConversationQueue, item: QueuedMessage): Conversa
   return { ...queue, items: [...queue.items, item] }
 }
 export function removeQueued(queue: ConversationQueue, id: string): ConversationQueue {
-  return { ...queue, items: queue.items.filter((item) => item.id !== id) }
+  const items = queue.items.filter((item) => item.id !== id)
+  return { ...queue, items, ...(items.length === 0 ? { paused: false } : {}) }
 }
 export function markSending(queue: ConversationQueue, id: string): ConversationQueue {
   return {
