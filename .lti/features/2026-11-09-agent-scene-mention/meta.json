@@ -1,12 +1,12 @@
 {
   "uid": "98650d92-2da5-4025-97d7-f2b81ca459e1",
-  "revision": 4,
+  "revision": 7,
   "id": "agent-scene-mention",
   "kind": "feature",
   "assurance": "governed",
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-09T12:29:03.360Z",
-  "updatedAt": "2026-11-10T06:29:01.885Z",
+  "updatedAt": "2026-11-19T10:05:19.509Z",
   "risk": {
     "factors": [
       "trust-boundary",
@@ -46,8 +46,393 @@
       ".lti/snapshots/04a48b02f2b4ab02c4e3a72f4f40a7a1d2aeb6fe30d6c3ec1a18ec4983666045.json"
     ]
   },
-  "verify": [],
+  "verify": [
+    {
+      "by": "Antigravity",
+      "at": "2026-11-19T10:04:02.615Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI checks，采用实跑验证与代码走查。合入 develop 与修复后实跑了 make generate-check、oxlint/tsc/vite build、全部 1145 项前端单测、go build/golangci-lint、creativeagent 与 creativescene 串行全包 Go 测试（-count=1），以及 Chromium 定向 3 条回归用例（Tab 聚焦光标、画布待选、排队场景失效恢复）；其余 e2e 与 gpt-6.1-sol 三条真实模型用例沿用 2026-11-16 结果且本轮未重跑。落地灯替换与双场景暖光两项保留未直接验证（组合证据）。U1/U2 沿用 2026-11-10 实测。主检出 merge/check-merge 集成门禁待执行。",
+        "coverage": [
+          {
+            "criterionId": "AC-15ead966835d",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的 200 节点搜索用例与 PromptEditor 的分组、高亮及查询替换。"
+          },
+          {
+            "criterionId": "AC-7ac743dac6e9",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的整场景点击、重新编辑场景引用及撤销用例。"
+          },
+          {
+            "criterionId": "AC-864448fde6f1",
+            "status": "verified",
+            "evidence": "Chromium 复核键盘 → 展开和二级菜单的搜索、方向键及插入；ScenePicker 的加载与失败重试分支走查。"
+          },
+          {
+            "criterionId": "AC-c66d6331e07f",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的单击、修饰键、拖选、搜索层级与完整物件选择，及 500 行滚动拖选。"
+          },
+          {
+            "criterionId": "AC-cefc76f55aae",
+            "status": "verified",
+            "evidence": "scene-picker.test.ts 的 Shift 范围选择，对照 ScenePicker.onPointerUp。"
+          },
+          {
+            "criterionId": "AC-d2938fbdc9e4",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的单击、修饰键、拖选、搜索层级与完整物件选择，及 500 行滚动拖选。"
+          },
+          {
+            "criterionId": "AC-060ccd169e00",
+            "status": "verified",
+            "evidence": "Chromium 同场景多选、键盘搜索后确认、输入框与历史悬停预览；sceneRefTitle 按前两名加剩余数量缩写。"
+          },
+          {
+            "criterionId": "AC-5e91c2cb1da7",
+            "status": "verified",
+            "evidence": "Chromium 验证整场景行与整场景引用。未搜索时，未选择物件可以确认整个场景；搜索时回车可直接引用匹配物件。"
+          },
+          {
+            "criterionId": "AC-d997ae14d3b8",
+            "status": "verified",
+            "evidence": "走查 PromptEditor.onPickerKey 与 ScenePicker 的加载、重试、整场景确认和 50 项上限，浏览器已运行展开及插入路径。"
+          },
+          {
+            "criterionId": "AC-810be457ab9e",
+            "status": "verified",
+            "evidence": "TestOneSceneMayBeReferencedTwiceWithFortyObjectsEach 与 creative-agent.test.ts 的场景引用片段与限额。"
+          },
+          {
+            "criterionId": "AC-73c25489b209",
+            "status": "verified",
+            "evidence": "走查 AgentPanel 的 usedDocs、sceneMenu 和 pendingTarget，结合 TestTheScenesOfASubmissionAreCountedOnce。"
+          },
+          {
+            "criterionId": "AC-695a40f45c6f",
+            "status": "verified",
+            "evidence": "Chromium 验证重开引用和撤销，以及在同场景两枚引用间直接切换时各恢复原有勾选。"
+          },
+          {
+            "criterionId": "AC-418539ebefc4",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的无名称物件搜索、显示与引用用例，及 PromptEditor 的未命名场景回退。"
+          },
+          {
+            "criterionId": "AC-fcc223620151",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-c9b47da827a5",
+            "status": "verified",
+            "evidence": "合入 develop 并修复 PromptEditor.tsx 光标残留后，agent-scene-mention.e2e.mjs 复跑通过「a canvas pick becomes...」与新增的「tab-focusing a pending reference does not hijack a later click inside typed text」回归用例。"
+          },
+          {
+            "criterionId": "AC-2aac1a1bb3f6",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-7e182d904748",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-ec338d2703a6",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-2f49f28f5333",
+            "status": "verified",
+            "evidence": "走查 PromptEditor.rememberCaret、setPending 和 commitPending 的 Range 处理；浏览器覆盖点击前后文本顺序。"
+          },
+          {
+            "criterionId": "AC-6f9e55b12030",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的空正文直接发送和待选图片的能力校验。"
+          },
+          {
+            "criterionId": "AC-84587c592a29",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的空正文直接发送和待选图片的能力校验。"
+          },
+          {
+            "criterionId": "AC-375f3ac2cb7a",
+            "status": "verified",
+            "evidence": "走查 readPromptDOM 跳过 data-pending、usedSceneRefs 和草稿序列化；creative-agent.test.ts 覆盖实际片段与恢复。"
+          },
+          {
+            "criterionId": "AC-f97b4cbfcd39",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-5d4d8d69282b",
+            "status": "verified",
+            "evidence": "走查 AgentPanel 展开生命周期、补充输入与切视图基线，以及 creative-scene/context.ts 的选中去重。"
+          },
+          {
+            "criterionId": "AC-b3d273e1af26",
+            "status": "verified",
+            "evidence": "AgentPanel 在 waiting_input 时清理待选并更新基线。develop 的补充接口已支持文字和媒体内容引用，仍会拒绝 scene_ref。"
+          },
+          {
+            "criterionId": "AC-5b4890714710",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-c36f51a22d7e",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的画布选择、替换、转正、光标与同选中不重复场景，结合 WorkspacePage 单选判断和 AgentPanel.pendingTarget。"
+          },
+          {
+            "criterionId": "AC-65445dd5d2c4",
+            "status": "verified",
+            "evidence": "走查 AgentPanel 展开生命周期、补充输入与切视图基线，以及 creative-scene/context.ts 的选中去重。"
+          },
+          {
+            "criterionId": "AC-ab18a2326453",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的编辑器分批、替换清空和超限用例，以及 creative-scene-agent.e2e.mjs 的待选转正。"
+          },
+          {
+            "criterionId": "AC-f04a03096c7b",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的编辑器分批、替换清空和超限用例，以及 creative-scene-agent.e2e.mjs 的待选转正。"
+          },
+          {
+            "criterionId": "AC-3765ce5e05bc",
+            "status": "verified",
+            "evidence": "输入片段顺序由两条浏览器测试验证，实际材质分批由 TestLiveSceneReferencesAreActedOn/同场景分批 验证。"
+          },
+          {
+            "criterionId": "AC-1e1aaae7b0b3",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的编辑器分批、替换清空和超限用例，以及 creative-scene-agent.e2e.mjs 的待选转正。"
+          },
+          {
+            "criterionId": "AC-9508f2c8d244",
+            "status": "verified",
+            "evidence": "走查 AgentPanel 展开生命周期、补充输入与切视图基线，以及 creative-scene/context.ts 的选中去重。"
+          },
+          {
+            "criterionId": "AC-edfabe451417",
+            "status": "verified",
+            "evidence": "Chromium 验证集合实际变化、重开编辑器恢复初始选中、同一集合换顺序、跨场景切换。"
+          },
+          {
+            "criterionId": "AC-22058145e34f",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的编辑器分批、替换清空和超限用例，以及 creative-scene-agent.e2e.mjs 的待选转正。"
+          },
+          {
+            "criterionId": "AC-ba60ab92a59d",
+            "status": "verified",
+            "evidence": "creative-scene-agent.test.ts 的编辑器 scene_context，及 TestAReferenceToTheEditedSceneIsNotNamedTwice。"
+          },
+          {
+            "criterionId": "AC-4635e1132c49",
+            "status": "verified",
+            "evidence": "TestTheMessageShowsTheSelectionItAskedAbout、前端兼容单测与 agentOutgoing.messageParts 的 legacy 分支走查。"
+          },
+          {
+            "criterionId": "AC-72b4c579750e",
+            "status": "verified",
+            "evidence": "Chromium 用存量 scene_selection 块验证消息旁的选中标签保留，悬停显示旧物件名。标签位于消息气泡上方。"
+          },
+          {
+            "criterionId": "AC-4a5ff9159b0c",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的剪切粘贴、删除撤销、插入撤销重做和编辑撤销。"
+          },
+          {
+            "criterionId": "AC-768d879a6c5d",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的剪切粘贴、删除撤销、插入撤销重做和编辑撤销。"
+          },
+          {
+            "criterionId": "AC-d3a3b771fc74",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的剪切粘贴、删除撤销、插入撤销重做和编辑撤销。"
+          },
+          {
+            "criterionId": "AC-b98636c8d985",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的剪切粘贴、删除撤销、插入撤销重做和编辑撤销。"
+          },
+          {
+            "criterionId": "AC-84c2ed5d0b40",
+            "status": "verified",
+            "evidence": "走查 readPromptDOM 跳过 data-pending、usedSceneRefs 和草稿序列化；creative-agent.test.ts 覆盖实际片段与恢复。"
+          },
+          {
+            "criterionId": "AC-3d2b7b6acd58",
+            "status": "verified",
+            "evidence": "走查 PromptEditor 的工具栏打开、搜索框聚焦、onPickerKey、无结果和资产库入口，结合浏览器搜索与回车用例。"
+          },
+          {
+            "criterionId": "AC-c9f93311f74c",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的 200 节点搜索用例与 PromptEditor 的分组、高亮及查询替换。"
+          },
+          {
+            "criterionId": "AC-e705540908c0",
+            "status": "verified",
+            "evidence": "走查 PromptEditor 的工具栏打开、搜索框聚焦、onPickerKey、无结果和资产库入口，结合浏览器搜索与回车用例。"
+          },
+          {
+            "criterionId": "AC-19d1fe3669b3",
+            "status": "verified",
+            "evidence": "最终 Chromium 测试在 200 节点输入下约 3.0 ms，阈值 100 ms；键盘导航会把屏外行滚入可见范围。"
+          },
+          {
+            "criterionId": "AC-1ca24d1a4b61",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的 200 节点搜索用例与 PromptEditor 的分组、高亮及查询替换。"
+          },
+          {
+            "criterionId": "AC-4c4d54476c53",
+            "status": "verified",
+            "evidence": "agent-scene-mention.e2e.mjs 的单击、修饰键、拖选、搜索层级与完整物件选择，及 500 行滚动拖选。"
+          },
+          {
+            "criterionId": "AC-3bdd1b5ffdf7",
+            "status": "verified",
+            "evidence": "走查 PromptEditor 的工具栏打开、搜索框聚焦、onPickerKey、无结果和资产库入口，结合浏览器搜索与回车用例。"
+          },
+          {
+            "criterionId": "AC-b41a22057d36",
+            "status": "unverified",
+            "evidence": "片段发送与单场景定向编辑分别通过浏览器和真实模型验证；换成落地灯的具体请求未真实执行。"
+          },
+          {
+            "criterionId": "AC-dbc937efd2bf",
+            "status": "unverified",
+            "evidence": "TestASceneReferenceIsFrozenWhereItStood 验证同条请求两场景的标题和 ID；统一暖色并实际写入两个场景的具体请求未真实执行。"
+          },
+          {
+            "criterionId": "AC-9e32ce3065ed",
+            "status": "verified",
+            "evidence": "TestAReferenceToTheEditedSceneIsNotNamedTwice。"
+          },
+          {
+            "criterionId": "AC-2d09a24a616e",
+            "status": "verified",
+            "evidence": "Chromium 使用保存的旧场景名和物件名打开历史小窗；TestASceneReferenceIsFrozenWhereItStood 在改名后比对旧快照。"
+          },
+          {
+            "criterionId": "AC-1ee255c4d05b",
+            "status": "verified",
+            "evidence": "TestASceneReferenceIsFrozenWhereItStood 与 agent-outgoing.test.ts 的冻结名称和已删除显示。"
+          },
+          {
+            "criterionId": "AC-0a7ee2cdf2b2",
+            "status": "verified",
+            "evidence": "2026-11-16 合入 develop 前 TestLiveSceneReferencesAreActedOn 三条真实模型用例（gpt-6.1-sol）通过；本轮合入 develop 后 creativeagent 与 creativescene 全包测试（-count=1）复核了冻结措辞、快照一致性、历史/压缩授权与语序（本轮未重跑真实模型）。"
+          },
+          {
+            "criterionId": "AC-8bd6667c3459",
+            "status": "verified",
+            "evidence": "2026-11-16 合入 develop 前 TestLiveSceneReferencesAreActedOn 三条真实模型用例（gpt-6.1-sol）通过；本轮合入 develop 后 creativeagent 与 creativescene 全包测试（-count=1）复核了冻结措辞、快照一致性、历史/压缩授权与语序（本轮未重跑真实模型）。"
+          },
+          {
+            "criterionId": "AC-3c37a39625ef",
+            "status": "verified",
+            "evidence": "2026-11-16 合入 develop 前 TestLiveSceneReferencesAreActedOn 三条真实模型用例（gpt-6.1-sol）通过；本轮合入 develop 后 creativeagent 与 creativescene 全包测试（-count=1）复核了冻结措辞、快照一致性、历史/压缩授权与语序（本轮未重跑真实模型）。"
+          },
+          {
+            "criterionId": "AC-134d9596c235",
+            "status": "verified",
+            "evidence": "合入 develop 后 TestASceneReferenceIsChecked（creativeagent 全包）通过；Chromium 复跑「a missing queued scene can be replaced without overwriting another draft」通过；creative-agent.test.ts 新增「removing the last queued item clears pause so later runs can continue」验证 removeQueued 清空队列时重置 paused。"
+          },
+          {
+            "criterionId": "AC-84fe040218a3",
+            "status": "verified",
+            "evidence": "TestASceneReferenceIsChecked 验证查无此场景、回收站、跨账号、缺授权、超场景数且无副作用；走查 ReferenceContextInTx 的场景类型检查和 AgentPanel 的草稿恢复。"
+          },
+          {
+            "criterionId": "AC-35c55601ff45",
+            "status": "verified",
+            "evidence": "TestASceneReferenceIsShapedBeforeAnyLookup 和 TestASceneReferenceIsChecked 覆盖片段格式、自有字段、显式 null、空数组与拒绝后无副作用。"
+          },
+          {
+            "criterionId": "AC-a32ac4dfc7aa",
+            "status": "verified",
+            "evidence": "契约随 develop 使用账号级当前同意。TestASceneReferenceIsChecked 和 TestNoRunStartsWithoutAConsent 覆盖缺少有效同意、撤回和不建运行，代码走查覆盖 canvas_metadata 范围。"
+          },
+          {
+            "criterionId": "AC-f26ce478ea74",
+            "status": "verified",
+            "evidence": "TestASceneReferenceIsChecked 验证查无此场景、回收站、跨账号、缺授权、超场景数且无副作用；走查 ReferenceContextInTx 的场景类型检查和 AgentPanel 的草稿恢复。"
+          },
+          {
+            "criterionId": "AC-d76bba2b8e0b",
+            "status": "verified",
+            "evidence": "TestAReferenceThatOutgrowsTheMessageIsRefused 与 TestAReferenceIsChargedAsWorded。"
+          },
+          {
+            "criterionId": "AC-3a6f64dbf60a",
+            "status": "verified",
+            "evidence": "TestAReferenceIsChargedAsWorded 与 TestAReferenceThatOutgrowsTheMessageIsRefused 校验补齐后的预算和上限；并发改名用例校验同场景快照复用。"
+          },
+          {
+            "criterionId": "AC-a9ae46c7099d",
+            "status": "verified",
+            "evidence": "TestTheMessageShowsTheSelectionItAskedAbout、前端兼容单测与 agentOutgoing.messageParts 的 legacy 分支走查。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "合入 develop（7d7fc198）并修复三处走查问题后：make generate-check 无漂移；oxlint 0 error、tsc -b 与 vite build 通过；全部 1145 项前端单测（含新增 removeQueued 重置暂停用例）通过；Go 全仓编译与 golangci-lint 0 issues；creativescene（75.4s）与 creativeagent（166.4s）串行全包测试通过；Chromium 定向 3 条回归用例（含新增 Tab 聚焦不劫持光标用例）通过。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "959df31b8f17e928fcb51ae3700a67cb67b58af0a62875bccf39376c25fd7a11"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-19T10:04:37.105Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI checks，采用实跑验证与代码走查。合入 develop 与修复后实跑了 make generate-check、oxlint/tsc/vite build、全部 1145 项前端单测、go build/golangci-lint、creativeagent 与 creativescene 串行全包 Go 测试（-count=1），以及 Chromium 定向 3 条回归用例（Tab 聚焦光标、画布待选、排队场景失效恢复）；其余 e2e 与 gpt-6.1-sol 三条真实模型用例沿用 2026-11-16 结果且本轮未重跑。落地灯替换与双场景暖光两项保留未直接验证（组合证据）。U1/U2 沿用 2026-11-10 实测。主检出 merge/check-merge 集成门禁待执行。"
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "Owner 确认修复走查问题后按 LTI 流程收尾。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "959df31b8f17e928fcb51ae3700a67cb67b58af0a62875bccf39376c25fd7a11"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-19T10:05:19.179Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "develop"
+  "stage": "closed"
 }
