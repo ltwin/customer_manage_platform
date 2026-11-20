@@ -1,12 +1,26 @@
 {
   "uid": "11145675-5d4c-4fdd-b139-2b59b867d183",
-  "revision": 15,
+  "revision": 16,
   "id": "scene-transparent-background",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-16T06:29:06.433Z",
-  "updatedAt": "2026-11-20T02:38:24.294Z",
+  "updatedAt": "2026-11-20T03:04:17.606Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-20T03:04:17.500Z",
+    "summary": "合并 feature/scene-transparent-background 到 develop 并通过 make check-merge（含 verify.go errcheck 与 scene_tools_test 回归修复）。",
+    "method": "manual",
+    "limitations": "未重跑全量浏览器 E2E 与 test-ops（scripts/deploy/Dockerfile 无变化），主检出已通过全量 make check-merge（build、golangci-lint、oxlint、generate-check、全量前端单测与后端全包测试）。",
+    "sourceCommit": "7362323786d9a67700d86f8749dcbd3d957ef410",
+    "targetCommit": "522159dbb67a34725e3264b1c0aa64db58d8f04d",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b3bd9de5c4246fc7f071505cabee8b242b45838d3178f8974cdae2b0844619b5"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
