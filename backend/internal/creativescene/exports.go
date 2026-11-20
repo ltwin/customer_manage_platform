@@ -1,6 +1,7 @@
 package creativescene
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,11 +44,26 @@ type ExportShot struct {
 
 // ExportInput is the export request's payload; DocumentID comes from the path.
 type ExportInput struct {
-	DocumentID    string               `json:"document_id"`
-	CanvasID      string               `json:"canvas_id"`
-	SceneNodeID   string               `json:"scene_node_id"`
-	SceneRevision creativeops.Revision `json:"scene_revision"`
-	Shots         []ExportShot         `json:"shots"`
+	DocumentID                     string               `json:"document_id"`
+	CanvasID                       string               `json:"canvas_id"`
+	SceneNodeID                    string               `json:"scene_node_id"`
+	SceneRevision                  creativeops.Revision `json:"scene_revision"`
+	EffectiveTransparentBackground *bool                `json:"effective_transparent_background,omitempty"`
+	Shots                          []ExportShot         `json:"shots"`
+	overrideTransparent            *bool
+}
+
+// rejectNullKey rejects explicit JSON null on optional pointer fields so legacy
+// omission (key absent) stays distinguishable from invalid explicit null.
+func rejectNullKey(raw json.RawMessage, key string) error {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil
+	}
+	if v, ok := fields[key]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		return invalid("字段 %s 不能为 null", key)
+	}
+	return nil
 }
 
 type ExportNode struct {
@@ -115,6 +131,9 @@ func Export(ctx context.Context, scope store.AccountScope, c creativeops.Command
 			if err := creativeops.Decode(raw, &in); err != nil {
 				return err
 			}
+			if err := rejectNullKey(raw, "effective_transparent_background"); err != nil {
+				return err
+			}
 			if in.DocumentID == "" || in.CanvasID == "" || in.SceneNodeID == "" || in.SceneRevision < 1 {
 				return invalid("缺少场景、画布、场景节点或 scene_revision")
 			}
@@ -180,6 +199,22 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 			used[img.Pass] = true
 		}
 	}
+	// Verify effective background mode against the rendered scene revision and any
+	// explicit job override BEFORE locking staged uploads or placing nodes.
+	hasClayOrLit := used[PassClay] || used[PassLit]
+	expectedTransparent := false
+	if hasClayOrLit {
+		if in.overrideTransparent != nil {
+			expectedTransparent = *in.overrideTransparent
+		} else {
+			expectedTransparent = scene.Render.TransparentBackground
+		}
+	}
+	mustReport := hasClayOrLit && (in.overrideTransparent != nil || expectedTransparent)
+	if (mustReport && in.EffectiveTransparentBackground == nil) ||
+		(in.EffectiveTransparentBackground != nil && *in.EffectiveTransparentBackground != expectedTransparent) {
+		return ExportResult{}, invalid("导出背景设置不一致，请刷新页面后重新导出")
+	}
 	var columns []string
 	for _, p := range Passes {
 		if used[p] {
@@ -219,21 +254,26 @@ func placeExportsInTx(ctx context.Context, tx store.TxAccountScope, in ExportInp
 			return slices.Index(Passes, a.Pass) - slices.Index(Passes, b.Pass)
 		})
 		row := creativecanvas.SceneExportRow{Aspect: cameraAspect(*cam.Camera)}
+		shownForFP := shown
+		if in.overrideTransparent != nil {
+			shownForFP.Render.TransparentBackground = *in.overrideTransparent
+		}
 		for _, img := range images {
-			fp, _ := Fingerprint(shown, shot.camera, img.Pass)
+			fp, _ := Fingerprint(shownForFP, shot.camera, img.Pass)
 			row.Images = append(row.Images, creativecanvas.SceneExportImage{
 				UploadID: img.UploadID,
 				Title:    name + " · " + passTitles[img.Pass],
 				Column:   slices.Index(columns, img.Pass),
 				BasedOn: creativecanvas.SceneExportBasedOn{
-					SceneDocumentID: in.DocumentID,
-					SceneRevision:   in.SceneRevision,
-					MarkerID:        s.MarkerID,
-					Frame:           shot.frame,
-					CameraObjectID:  shot.camera,
-					Pass:            img.Pass,
-					Fingerprint:     fp,
-					Lens:            &lens,
+					SceneDocumentID:       in.DocumentID,
+					SceneRevision:         in.SceneRevision,
+					MarkerID:              s.MarkerID,
+					Frame:                 shot.frame,
+					CameraObjectID:        shot.camera,
+					Pass:                  img.Pass,
+					Fingerprint:           fp,
+					Lens:                  &lens,
+					TransparentBackground: in.overrideTransparent,
 				},
 			})
 		}

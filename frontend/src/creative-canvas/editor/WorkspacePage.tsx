@@ -211,6 +211,7 @@ function Workspace({ account }: { account: string }) {
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const revealNode = useRef<((id: string) => void) | null>(null)
+  const [sceneExportToReveal, setSceneExportToReveal] = useState<{ canvasID: string; nodeID: string } | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
@@ -291,6 +292,16 @@ function Workspace({ account }: { account: string }) {
       canvas && canvas.id === canvasID ? projectCanvas(canvas, outbox) : canvas,
     [canvas, canvasID, outbox],
   )
+  useEffect(() => {
+    if (!sceneExportToReveal || maximized) return
+    if (sceneExportToReveal.canvasID !== canvasID) {
+      setSceneExportToReveal(null)
+      return
+    }
+    if (view?.id !== canvasID || !view.nodes.some((n) => n.id === sceneExportToReveal.nodeID)) return
+    revealNode.current?.(sceneExportToReveal.nodeID)
+    setSceneExportToReveal(null)
+  }, [canvasID, maximized, sceneExportToReveal, view])
   // 只在本地投影里、服务端快照还没有的节点：节点树把它们排在最前。
   const pendingNodes = useMemo(() => {
     if (!view || !canvas || view === canvas) return new Set<string>()
@@ -1917,6 +1928,10 @@ function Workspace({ account }: { account: string }) {
             host={sceneHost.launcher}
             onSaveModel={setSavingModel}
             onPlaceScreenshot={placeScreenshot}
+            onExportPlaced={(nodeID) => {
+              setSceneExportToReveal({ canvasID, nodeID })
+              void refreshCanvas.current()
+            }}
             libraryTick={sceneLibraryTick}
             onClose={() => {
               setSavingModel(null)

@@ -30,6 +30,8 @@ type editGraph struct {
 	mapping   map[string]string
 	omitted   []string
 	staged    []placedUpload
+	// Only server-generated scene exports can pass prelocked staged originals.
+	exportUploads map[string]creativestaging.Staged
 	// actor writes the documents add_node creates; zero is the photographer.
 	actor creativedocument.Actor
 }
@@ -50,7 +52,7 @@ func ApplyCommands(ctx context.Context, scope store.AccountScope, command creati
 // run. The actor never comes from the payload.
 func ApplyCommandsAs(ctx context.Context, scope store.AccountScope, actor creativedocument.Actor, command creativeops.Command) (creativeops.Receipt, error) {
 	return run(ctx, scope, "canvas.commands", command, validateBatch, func(ctx context.Context, tx store.TxAccountScope, v BatchInput) (creativeops.Outcome, error) {
-		r, err := applyBatchAs(ctx, tx, v, command.OperationID, actor)
+		r, err := applyBatchAs(ctx, tx, v, command.OperationID, actor, nil)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
@@ -81,10 +83,10 @@ func validateBatch(v BatchInput) error {
 	return nil
 }
 func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, operation string) (ChangeResult, error) {
-	return applyBatchAs(ctx, tx, v, operation, creativedocument.Photographer)
+	return applyBatchAs(ctx, tx, v, operation, creativedocument.Photographer, nil)
 }
 
-func applyBatchAs(ctx context.Context, tx store.TxAccountScope, v BatchInput, operation string, actor creativedocument.Actor) (ChangeResult, error) {
+func applyBatchAs(ctx context.Context, tx store.TxAccountScope, v BatchInput, operation string, actor creativedocument.Actor, exportUploads map[string]creativestaging.Staged) (ChangeResult, error) {
 	c, err := lockCanvas(ctx, tx, v.CanvasID, true)
 	if err != nil {
 		return ChangeResult{}, err
@@ -93,7 +95,7 @@ func applyBatchAs(ctx context.Context, tx store.TxAccountScope, v BatchInput, op
 	if err != nil {
 		return ChangeResult{}, err
 	}
-	e := editGraph{ctx: ctx, tx: tx, c: c, before: before, g: cloneGraph(before), ids: ids, required: map[string]map[string]bool{}, changeID: newChangeID(), mapping: map[string]string{}, omitted: []string{}, actor: actor}
+	e := editGraph{ctx: ctx, tx: tx, c: c, before: before, g: cloneGraph(before), ids: ids, required: map[string]map[string]bool{}, changeID: newChangeID(), mapping: map[string]string{}, omitted: []string{}, actor: actor, exportUploads: exportUploads}
 	structural := false
 	for _, a := range v.Actions {
 		switch a.Type {
@@ -686,12 +688,15 @@ func (e *editGraph) fillUpload(a Action) error {
 			return creativeops.Explain(creativeops.ErrValidation, "一批动作里，同一个上传文件或同一个节点只能用一次")
 		}
 	}
-	s, err := creativestaging.Lock(e.ctx, e.tx, a.UploadID)
-	if errors.Is(err, creativestaging.ErrUnavailable) {
-		return ErrVersionConflict
-	}
-	if err != nil {
-		return err
+	s, prelocked := e.exportUploads[a.UploadID]
+	if !prelocked {
+		s, err = creativestaging.Lock(e.ctx, e.tx, a.UploadID)
+		if errors.Is(err, creativestaging.ErrUnavailable) {
+			return ErrVersionConflict
+		}
+		if err != nil {
+			return err
+		}
 	}
 	r, err := creativecontent.RequireUsable(e.ctx, e.tx, s.ContentRevisionID, "display")
 	if err != nil {

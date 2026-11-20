@@ -6,6 +6,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
@@ -30,9 +31,10 @@ type NodeTarget struct {
 
 // Target is a strict union; exactly one branch must be present.
 type Target struct {
-	Kind  string       `json:"kind"`
-	Asset *AssetTarget `json:"asset,omitempty"`
-	Node  *NodeTarget  `json:"node,omitempty"`
+	Kind        string                             `json:"kind"`
+	Asset       *AssetTarget                       `json:"asset,omitempty"`
+	Node        *NodeTarget                        `json:"node,omitempty"`
+	SceneExport *creativestaging.SceneExportTarget `json:"scene_export,omitempty"`
 }
 
 type CreateUploadInput struct {

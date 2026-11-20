@@ -89,6 +89,16 @@ export function RenderPanel({ render, backend, trace, warming, readOnly, display
         </div>
         <small>导出图长边 {longSideOf(render.resolution)} px</small>
         {render.resolution === '8k' && gi && <small>8K 实时 GI 的材质光照每张约需一分钟以上，需要较大显存，设备画不了时导出会失败。</small>}
+        <label className="cc-scene-field">
+          <span>透明背景</span>
+          <input
+            type="checkbox"
+            aria-label="透明背景"
+            checked={render.transparent_background === true}
+            onChange={(e) => onRender({ transparent_background: e.target.checked }, e.target.checked ? '开启透明背景' : '关闭透明背景')}
+          />
+        </label>
+        <small>白模和材质光照导出不带天空背景，最终渲染视口显示棋盘格；线稿不受影响</small>
       </fieldset>
       <fieldset disabled={readOnly}>
         <legend>曝光</legend>

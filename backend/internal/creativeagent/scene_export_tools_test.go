@@ -1,9 +1,11 @@
 package creativeagent
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,6 +13,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 // placeOnCanvas puts an existing scene on the fixture's canvas.
@@ -392,5 +395,173 @@ func TestTheAssistantShootsByShot(t *testing.T) {
 	}
 	if want := map[any]any{shots[0]: 0.0, shots[1]: 10.0, shots[2]: 20.0}; !reflect.DeepEqual(frames, want) {
 		t.Fatalf("export sources by shot %v, want %v", frames, want)
+	}
+}
+
+// completeExportWithEffective claims the pending export_shots job and completes it
+// with an explicit effective_transparent_background field without editing scene_tools_test.go.
+func (f *fixture) completeExportWithEffective(effective bool) creativescene.CompleteResponse {
+	f.t.Helper()
+	claimed, err := creativescene.Claim(f.t.Context(), f.alice, creativescene.ClaimInput{EditorSessionID: "tab_0123456789abcdef"})
+	if err != nil || claimed == nil {
+		f.t.Fatalf("claim %+v %v", claimed, err)
+	}
+	var revision int64
+	if err := f.db.QueryRow(`SELECT revision FROM creative_documents WHERE id=$1`, claimed.DocumentID).Scan(&revision); err != nil {
+		f.t.Fatal(err)
+	}
+	var req creativescene.ExportRequest
+	if err := json.Unmarshal(claimed.Request, &req); err != nil {
+		f.t.Fatal(err)
+	}
+	rows, key := req.CameraObjectIDs, "camera_object_id"
+	if len(req.MarkerIDs) > 0 {
+		rows, key = req.MarkerIDs, "marker_id"
+	}
+	var shots []any
+	for _, row := range rows {
+		var images []any
+		for _, pass := range req.Passes {
+			images = append(images, map[string]any{"pass": pass, "upload_id": f.stageUpload("image")})
+		}
+		shots = append(shots, map[string]any{key: row, "images": images})
+	}
+	in := map[string]any{
+		"job_id":      claimed.ID,
+		"claim_token": claimed.ClaimToken,
+		"outcome":     "succeeded",
+		"export": map[string]any{
+			"scene_revision":                   strconv.FormatInt(revision, 10),
+			"effective_transparent_background": effective,
+			"shots":                            shots,
+		},
+	}
+	receipt, err := creativescene.Complete(f.t.Context(), f.alice, command(f.t, in))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var out struct {
+		JobID  string          `json:"job_id"`
+		State  string          `json:"state"`
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(receipt.Outcome.Response, &out); err != nil {
+		f.t.Fatal(err)
+	}
+	resp := creativescene.CompleteResponse{JobID: out.JobID, State: out.State}
+	if out.State == creativescene.JobSucceeded {
+		resp.Result.Export = &creativescene.ExportResult{}
+		_ = json.Unmarshal(out.Result, resp.Result.Export)
+	}
+	return resp
+}
+
+func TestExportShotsTransparentOverrideAndSetRenderChanges(t *testing.T) {
+	f, c, consent, doc := visualScene(t, true)
+	f.placeOnCanvas(doc)
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
+
+	cam := "sobj_CAM000000000000000001"
+	s := &script{turns: []func(llmgateway.ProviderRequest) llmgateway.Result{
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r, sceneCall("a", editSceneTool, map[string]any{
+				"document_id": doc, "based_on_revision": 1,
+				"operations": []any{map[string]any{"op": "add_objects", "objects": []any{map[string]any{
+					"id": cam, "kind": "camera", "name": "机位", "parent_id": nil, "order": 1, "visible": true, "locked": false,
+					"transform": map[string]any{"position": []float64{0, 1, 5}}, "look_at": []float64{0, 1, 0}, "camera": map[string]any{},
+				}}}},
+			}))
+		},
+		func(r llmgateway.ProviderRequest) llmgateway.Result {
+			return scriptedResult(r,
+				sceneCall("bad_null", exportShotsTool, map[string]any{"document_id": doc, "transparent_background": nil}),
+				sceneCall("bad_str", exportShotsTool, map[string]any{"document_id": doc, "transparent_background": "yes"}),
+				sceneCall("ok", exportShotsTool, map[string]any{"document_id": doc, "passes": []string{"lit"}, "transparent_background": true}),
+			)
+		},
+	}}
+	f.vendor.script = s.answer
+	run1, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "导出透明材质光照图"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run1.ID); got.State != RunWaitingClient {
+		t.Fatalf("after export_shots: %s %s", got.State, got.ErrorCode)
+	}
+	var jobRaw []byte
+	if err := f.db.QueryRow(`SELECT request FROM creative_scene_jobs WHERE run_id=$1 AND kind='export_shots'`, run1.ID).Scan(&jobRaw); err != nil {
+		t.Fatal(err)
+	}
+	var jobReq creativescene.ExportRequest
+	if err := json.Unmarshal(jobRaw, &jobReq); err != nil || jobReq.TransparentBackground == nil || !*jobReq.TransparentBackground {
+		t.Fatalf("job request = %s", jobRaw)
+	}
+	if resp := f.completeExportWithEffective(true); resp.State != creativescene.JobSucceeded {
+		t.Fatalf("complete = %+v", resp)
+	}
+	if got := f.resume(run1.ID); got.State != RunSucceeded {
+		t.Fatalf("run1 = %s %s", got.State, got.ErrorCode)
+	}
+	var refusedCount int
+	for _, m := range s.request(3).Chat.Messages {
+		if m.Role != llmgateway.RoleTool {
+			continue
+		}
+		for _, b := range m.Blocks {
+			if b.Kind != llmgateway.BlockText {
+				continue
+			}
+			var ans map[string]any
+			if json.Unmarshal([]byte(b.Text), &ans) == nil && ans["code"] == "creative_tool_refused" {
+				refusedCount++
+			}
+		}
+	}
+	if refusedCount != 2 {
+		t.Fatalf("refusedCount = %d, want 2", refusedCount)
+	}
+
+	// Verify scene document still has transparent_background = false.
+	var sr creativescene.SceneRead
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		var err error
+		sr, err = creativescene.AgentReadInTx(t.Context(), tx, creativescene.ReadInput{DocumentID: doc})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sr.Render.TransparentBackground {
+		t.Fatal("export_shots mutated scene render.transparent_background")
+	}
+
+	// Second run toggles scene setting via set_render -> appears in RunChanges as 「渲染设置」.
+	var seen2 []llmgateway.ProviderRequest
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+		seen2 = append(seen2, r)
+		if len(seen2) == 1 {
+			return scriptedResult(r, sceneCall("sr", editSceneTool, map[string]any{
+				"document_id": doc, "based_on_revision": int64(sr.Revision),
+				"operations": []any{map[string]any{"op": "set_render", "render": map[string]any{"transparent_background": true}}},
+			})), nil
+		}
+		return scriptedResult(r), nil
+	}
+	run2, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "打开场景透明背景"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.resume(run2.ID); got.State != RunSucceeded {
+		t.Fatalf("run2 = %s %s", got.State, got.ErrorCode)
+	}
+	if len(seen2) < 2 {
+		t.Fatalf("run2 seen = %d, want >= 2", len(seen2))
+	}
+	if edited := lastTool(seen2[1]); edited["written_revision"] == nil {
+		t.Fatalf("run2 edit_scene result = %v", edited)
+	}
+	changes, err := creativescene.RunChanges(t.Context(), f.alice, doc, run2.ID)
+	if err != nil || len(changes.Entries) != 1 || changes.Entries[0].Name != "渲染设置" {
+		t.Fatalf("run2 changes = %+v, err=%v", changes, err)
 	}
 }

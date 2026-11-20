@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { RenderTarget } from 'three'
 import { NodeFrame, ViewportTextureNode } from 'three/webgpu'
-import { advance, DeviceLostError, deviceState, lossCounter, reset, type FrameState } from '../src/creative-scene/render/gpu.ts'
+import { advance, canvasPngBlob, DeviceLostError, deviceState, lossCounter, reset, type FrameState } from '../src/creative-scene/render/gpu.ts'
 
 // The renderer entry steps three's private frame state (render/gpu.ts). These
 // checks fail first when a three upgrade moves it.
@@ -178,4 +178,173 @@ test('a frame counts what its render drew, whatever came before it', () => {
   assert.deepEqual([second.draws, second.triangles], [3, 36])
   assert.ok(second.cpuMs >= 0)
   assert.ok(measure(counts, () => {}, performance.now() - 20).cpuMs >= 20, 'timed from when render() began')
+})
+
+
+test('canvasBlob rejects a fallback format and returns the original encoded bytes', async () => {
+  const { canvasBlob } = await import('../src/creative-scene/render/gpu.ts')
+  const fakeCanvas = (url: string) => ({ toDataURL: () => url }) as unknown as HTMLCanvasElement
+
+  assert.throws(
+    () => canvasBlob(fakeCanvas('data:image/png;base64,AAAA'), 'image/jpeg', 0.95),
+    /图片编码失败/,
+  )
+  assert.throws(
+    () => canvasBlob(fakeCanvas('data:,'), 'image/png'),
+    /图片编码失败/,
+  )
+  const png = canvasBlob(fakeCanvas(`data:image/png;base64,${btoa('ok')}`), 'image/png')
+  assert.equal(png.type, 'image/png')
+  assert.equal(await png.text(), 'ok')
+})
+
+
+test('NodeMaterial.prototype.setupFog upstream structure guard and transparentBackground WGSL isolation (off -> on -> off)', async () => {
+  const nodeMatSrc = three('materials/nodes/NodeMaterial.js')
+  assert.match(nodeMatSrc, /\tsetupFog\( builder, outputNode \) \{\n\n\t\tconst fogNode = builder\.fogNode;\n\n\t\tif \( fogNode \) \{[^]*?outputNode = vec4\( fogNode\.toVar\(\) \);[^]*?return outputNode;\n\n\t\}/)
+  assert.match(nodeMatSrc, /\tsetupOutput\( builder, outputNode \) \{\n\n\t\t\/\/ FOG\n\n\t\tif \( this\.fog === true \) \{\n\n\t\t\toutputNode = this\.setupFog\( builder, outputNode \);/)
+
+  const { BoxGeometry, Fog, Mesh, PerspectiveCamera, Scene } = await import('three')
+  const { color, float, fog, rangeFogFactor } = await import('three/tsl')
+  const { MeshPhysicalNodeMaterial, WebGPURenderer } = await import('three/webgpu')
+  const { installTransparentFog } = await import('../src/creative-scene/render/gpu.ts')
+  const { transparentContext } = await import('../src/creative-scene/render/passContext.ts')
+
+  const renderer = new WebGPURenderer({ canvas: { style: {} } as never })
+  Object.assign(renderer, { hasFeature: () => false })
+  const scene = new Scene()
+  scene.fog = new Fog(0xabcdef, 1, 20)
+  const camera = new PerspectiveCamera()
+  const lightsNode = renderer.lighting.getNode(scene)
+  const fogNode = fog(color(0xabcdef), rangeFogFactor(float(1), float(20)))
+
+  const buildFrag = (mat: InstanceType<typeof MeshPhysicalNodeMaterial>, transparentPass: boolean) => {
+    const prev = renderer.contextNode
+    if (transparentPass) renderer.contextNode = transparentContext(prev as Parameters<typeof transparentContext>[0])
+    try {
+      const mesh = new Mesh(new BoxGeometry(), mat)
+      const builder = (renderer.backend as unknown as {
+        createNodeBuilder(o: InstanceType<typeof Mesh>, r: typeof renderer): {
+          scene: InstanceType<typeof Scene>
+          camera: InstanceType<typeof PerspectiveCamera>
+          material: typeof mat
+          lightsNode: unknown
+          fogNode: unknown
+          build(): void
+          fragmentShader: string
+        }
+      }).createNodeBuilder(mesh, renderer)
+      builder.scene = scene
+      builder.camera = camera
+      builder.material = mat
+      builder.lightsNode = lightsNode
+      builder.fogNode = fogNode
+      builder.build()
+      return builder.fragmentShader
+    } finally {
+      renderer.contextNode = prev
+    }
+  }
+
+  const glass = new MeshPhysicalNodeMaterial({ transmission: 1, ior: 1.5 })
+  const blended = new MeshPhysicalNodeMaterial({ transmission: 1, ior: 1.5, transparent: true, opacity: 0.5 })
+
+  const baseGlass = buildFrag(glass, false)
+  const baseBlended = buildFrag(blended, false)
+
+  installTransparentFog()
+  installTransparentFog()
+
+  assert.equal(buildFrag(glass, false), baseGlass, 'off state matches baseline')
+  const onGlass = buildFrag(glass, true)
+  const onBlended = buildFrag(blended, true)
+  assert.notEqual(onGlass, baseGlass, 'transparentBackground + transmission + !transparent wraps fog with alpha guard')
+  assert.match(onGlass, /1e-6|0\.000001/, 'contains alpha denominator guard')
+  assert.equal(onBlended, baseBlended, 'material.transparent = true leaves setupFog unchanged')
+  assert.equal(buildFrag(glass, false), baseGlass, 'off -> on -> off returns byte-identical WGSL')
+})
+
+
+test('SMAANode upstream structure guard and 4-channel transparent edge detection WGSL compile check', async () => {
+  const smaaSrc = readFileSync(new URL('../node_modules/three/examples/jsm/tsl/display/SMAANode.js', import.meta.url), 'utf8')
+  assert.match(smaaSrc, /const SMAA_THRESHOLD = 0\.1;[^]*?const C = this\.textureNode\.sample\( uvNode \)\.rgb\.toVar\(\);[^]*?delta\.x = max\( t\.r, t\.g, t\.b \);/)
+  assert.match(smaaSrc, /this\._materialEdges\.contextNode = sharedContext;\n\t\tthis\._materialEdges\.fragmentNode = SMAAEdgeDetection\(\);\n\t\tthis\._materialEdges\.needsUpdate = true;/)
+
+  const prevImage = globalThis.Image
+  class StubImage {
+    onload: (() => void) | null = null
+    set src(_v: string) {
+      this.onload?.()
+    }
+  }
+  globalThis.Image = StubImage as unknown as typeof Image
+  try {
+    const { BoxGeometry, HalfFloatType, Mesh, PerspectiveCamera, Scene } = await import('three')
+    const { texture: texNode } = await import('three/tsl')
+    const { smaa } = await import('three/addons/tsl/display/SMAANode.js')
+    const { WebGPURenderer } = await import('three/webgpu')
+    const { installTransparentSMAA } = await import('../src/creative-scene/render/sceneRenderer.ts')
+
+    const renderer = new WebGPURenderer({ canvas: { style: {} } as never })
+    Object.assign(renderer, { hasFeature: () => false })
+    const scene = new Scene()
+    const camera = new PerspectiveCamera()
+    const lightsNode = renderer.lighting.getNode(scene)
+
+    const beauty = new RenderTarget(4, 4, { type: HalfFloatType }).texture
+    const aa = smaa(texNode(beauty))
+    installTransparentSMAA(aa as unknown as Parameters<typeof installTransparentSMAA>[0])
+
+    const builder = (renderer.backend as unknown as {
+      createNodeBuilder(o: InstanceType<typeof Mesh>, r: typeof renderer): {
+        scene: InstanceType<typeof Scene>
+        camera: InstanceType<typeof PerspectiveCamera>
+        material: unknown
+        lightsNode: unknown
+        getSharedContext(): Record<string, unknown>
+        build(): void
+        fragmentShader: string
+      }
+    }).createNodeBuilder(new Mesh(new BoxGeometry()), renderer)
+    aa.setup(builder as never)
+    builder.scene = scene
+    builder.camera = camera
+    builder.material = (aa as unknown as { _materialEdges: unknown })._materialEdges
+    builder.lightsNode = lightsNode
+    builder.build()
+
+    assert.match(builder.fragmentShader, /\.w\b/, '4-channel SMAA edge pass reads alpha .w')
+    assert.match(builder.fragmentShader, /0\.1/, 'keeps SMAA_THRESHOLD = 0.1')
+    aa.dispose()
+  } finally {
+    globalThis.Image = prevImage
+  }
+})
+
+test('canvasPngBlob rejects with DeviceLostError when the device is lost during async toBlob', async () => {
+  const pending = deviceState()
+  const hung = canvasPngBlob({ toBlob: () => {} }, pending)
+  pending.markLost()
+  await assert.rejects(hung, DeviceLostError)
+
+  const lateNull = deviceState()
+  const returned = canvasPngBlob(
+    {
+      toBlob: (cb) => {
+        lateNull.markLost()
+        cb(null)
+      },
+    },
+    lateNull,
+  )
+  await assert.rejects(returned, DeviceLostError)
+
+  const healthy = deviceState()
+  const ok = await canvasPngBlob(
+    {
+      toBlob: (cb) => cb(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })),
+    },
+    healthy,
+  )
+  assert.equal(ok.type, 'image/png')
 })

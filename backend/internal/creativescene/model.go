@@ -167,13 +167,34 @@ type Fog struct {
 // stored before a field existed read its default (completeRenderSettings,
 // and UnmarshalJSON for exposure_ev100, whose zero is a value).
 type Render struct {
-	Mode                 string  `json:"mode"`
-	ExposureEV           float64 `json:"exposure_ev"`
-	Engine               string  `json:"engine"`
-	Resolution           string  `json:"resolution"`
-	ExposureEV100        float64 `json:"exposure_ev100"`
-	ExposureMode         string  `json:"exposure_mode"`
-	ExposureCompensation float64 `json:"exposure_compensation"`
+	Mode                  string  `json:"mode"`
+	ExposureEV            float64 `json:"exposure_ev"`
+	Engine                string  `json:"engine"`
+	Resolution            string  `json:"resolution"`
+	TransparentBackground bool    `json:"transparent_background"`
+	ExposureEV100         float64 `json:"exposure_ev100"`
+	ExposureMode          string  `json:"exposure_mode"`
+	ExposureCompensation  float64 `json:"exposure_compensation"`
+}
+
+// persistedScene and persistedRender omit transparent_background when false so
+// snapshots with transparent background disabled stay forward-compatible in DB.
+type persistedScene struct {
+	Environment Environment     `json:"environment"`
+	Render      persistedRender `json:"render"`
+	Timeline    *Timeline       `json:"timeline,omitempty"`
+	Objects     []Object        `json:"objects"`
+}
+
+type persistedRender struct {
+	Mode                  string  `json:"mode"`
+	ExposureEV            float64 `json:"exposure_ev"`
+	Engine                string  `json:"engine"`
+	Resolution            string  `json:"resolution"`
+	TransparentBackground bool    `json:"transparent_background,omitempty"`
+	ExposureEV100         float64 `json:"exposure_ev100"`
+	ExposureMode          string  `json:"exposure_mode"`
+	ExposureCompensation  float64 `json:"exposure_compensation"`
 }
 
 // The default camera's exposure: 15 is a sunny day.
@@ -223,12 +244,13 @@ const defaultResolution = "2k"
 
 // renderPatch is set_render: only what it carries changes.
 type renderPatch struct {
-	Mode          *string  `json:"mode,omitempty"`
-	ExposureEV    *float64 `json:"exposure_ev,omitempty"`
-	Engine        *string  `json:"engine,omitempty"`
-	Resolution    *string  `json:"resolution,omitempty"`
-	ExposureEV100 *float64 `json:"exposure_ev100,omitempty"`
-	ExposureMode  *string  `json:"exposure_mode,omitempty"`
+	Mode                  *string  `json:"mode,omitempty"`
+	ExposureEV            *float64 `json:"exposure_ev,omitempty"`
+	Engine                *string  `json:"engine,omitempty"`
+	Resolution            *string  `json:"resolution,omitempty"`
+	TransparentBackground *bool    `json:"transparent_background,omitempty"`
+	ExposureEV100         *float64 `json:"exposure_ev100,omitempty"`
+	ExposureMode          *string  `json:"exposure_mode,omitempty"`
 	// The compensation's zero is a value: null is refused by set_render.
 	ExposureCompensation *float64 `json:"exposure_compensation,omitempty"`
 }
@@ -503,7 +525,12 @@ func encodeScene(s Scene) (creativedocument.Snapshot, error) {
 	if s.Objects == nil {
 		s.Objects = []Object{}
 	}
-	raw, err := json.Marshal(s)
+	raw, err := json.Marshal(persistedScene{
+		Environment: s.Environment,
+		Render:      persistedRender(s.Render),
+		Timeline:    s.Timeline,
+		Objects:     s.Objects,
+	})
 	if err != nil {
 		return creativedocument.Snapshot{}, err
 	}

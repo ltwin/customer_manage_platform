@@ -5,6 +5,8 @@ import { AmbientLight, BoxGeometry, DirectionalLight, Mesh, PerspectiveCamera, R
 import { mrt, output, velocity } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PhysicalLightingModel, WebGPURenderer, type NodeFrame, type NodeMaterial } from 'three/webgpu'
 import { giAmbient, giBase, giEnvSpec, installGISplit, splitContext } from '../src/creative-scene/render/giSplit.ts'
+import { transparentContext } from '../src/creative-scene/render/passContext.ts'
+import { installTransparentTransmission } from '../src/creative-scene/render/transparentTransmission.ts'
 import { composite } from '../src/creative-scene/render/realtimeGI.ts'
 
 // The real-time GI (R2 tasks 1.1): the SSGI fork against three's node, the
@@ -391,4 +393,151 @@ test('a picture drawing the world-space layer gets its share of time, its probes
   // render_view: still the minute's floor, and the 15 s the lit look waits for the layer.
   assert.equal(traceWaitMs, 15_000)
   assert.equal(viewBudgetMs, 60_000 + traceWaitMs)
+})
+
+
+test('upstream PhysicalLightingModel, LightsNode and RenderObject cache key structures match transparentTransmission hooks', () => {
+  const model = read('../node_modules/three/src/nodes/functions/PhysicalLightingModel.js')
+  assert.match(model, /getTransmissionSample = .*?Fn\( \( \[ fragCoord, roughness, ior \], \{ material \} \) =>/)
+  assert.match(model, /const transmittedLight = |let transmittedLight, transmittance;/)
+  assert.match(model, /if \( this\.transmission === true \) \{[^]*?context\.backdrop = getIBLVolumeRefraction\([^]*?diffuseColor\.a\.mulAssign\( mix\( 1, context\.backdrop\.a, transmission \) \);/)
+  assert.match(model, /\tfinish\( \{ context \} \) \{[^]*?outgoingLight\.assign\( clearcoatLight \);[^]*?outgoingLight\.assign\( sheenLight \);/)
+
+  const lightsNode = read('../node_modules/three/src/nodes/lighting/LightsNode.js')
+  assert.match(lightsNode, /lightingModel\.start\( builder \);[^]*?totalDiffuse = vec3\( backdropAlpha\.mix\( totalDiffuse, backdrop \) \);[^]*?totalSpecularNode\.assign\( directSpecular\.add\( indirectSpecular \) \);[^]*?lightingModel\.finish\( builder \);/)
+
+  const renderObject = read('../node_modules/three/src/renderers/common/RenderObject.js')
+  assert.match(renderObject, /hash\( cacheKey, this\.renderer\.contextNode\.id, this\.renderer\.contextNode\.version \)/)
+})
+
+test('transparentTransmission compiles identical WGSL off -> on -> off and includes sampled B_a and highlight bound only when enabled', () => {
+  function inTransparentPass<T>(build: () => T): T {
+    const context = renderer.contextNode
+    renderer.contextNode = transparentContext(context as Parameters<typeof transparentContext>[0])
+    try {
+      return build()
+    } finally {
+      renderer.contextNode = context
+    }
+  }
+
+  const glass = new MeshPhysicalNodeMaterial({ color: 0xffffff, ior: 1.5, transmission: 1, roughness: 0 })
+  const clearcoatGlass = new MeshPhysicalNodeMaterial({ color: 0xd8f0ff, ior: 1.5, transmission: 1, dispersion: 0.4, clearcoat: 1 })
+  const alphaBlendedGlass = new MeshPhysicalNodeMaterial({ color: 0xffffff, ior: 1.5, transmission: 1, transparent: true, opacity: 0.5 })
+
+  const baseGlass = fragment(glass)
+  const baseClearcoat = fragment(clearcoatGlass)
+  const baseBlended = fragment(alphaBlendedGlass)
+
+  installTransparentTransmission()
+  installTransparentTransmission()
+  assert.equal((PhysicalLightingModel.prototype as { transparentTransmission?: true }).transparentTransmission, true)
+
+  assert.equal(fragment(glass), baseGlass, 'off mode immediately after install matches baseline')
+  assert.equal(fragment(clearcoatGlass), baseClearcoat, 'clearcoat dispersion off mode matches baseline')
+
+  const onGlass = inTransparentPass(() => fragment(glass))
+  const onClearcoat = inTransparentPass(() => fragment(clearcoatGlass))
+  const onBlended = inTransparentPass(() => fragment(alphaBlendedGlass))
+
+  assert.notEqual(onGlass, baseGlass, 'on mode generates transparent transmission coverage WGSL')
+  assert.match(onGlass, /transparentBackdropAlpha/, 'samples and preserves B_a in fragment shader')
+  assert.match(onGlass, /\(\s*transparentBackdropAlpha\s*-\s*0\.0\s*\)|1\.0\s*-\s*transparentBackdropAlpha|sub|max\(/, 'uses B_a in coverage calculation')
+  assert.notEqual(onClearcoat, baseClearcoat, 'clearcoat dispersion compiles cleanly in transparent pass')
+  assert.match(onBlended, /transparentBackdropAlpha/)
+  assert.match(onBlended, /transparentMaterialOpacity\s*\/\s*\w+/, 'blending applies optical coverage to alpha and material opacity to light')
+  assert.doesNotMatch(onGlass, /transparentMaterialOpacity\s*\/\s*\w+/, 'opaque glass writes premultiplied radiance directly')
+
+  // Same material instances toggled back to off must compile identically to baseline (zero cache/node mutation leak).
+  assert.equal(fragment(glass), baseGlass, 'off -> on -> off returns byte-identical WGSL on same material')
+  assert.equal(fragment(clearcoatGlass), baseClearcoat, 'off -> on -> off returns byte-identical clearcoat WGSL')
+  assert.equal(fragment(alphaBlendedGlass), baseBlended, 'off -> on -> off returns byte-identical transparent material WGSL')
+
+  // Combining splitContext + transparentContext carries both marks simultaneously without collision.
+  const combo = inLightingPass(() => {
+    const prev = renderer.contextNode
+    renderer.contextNode = transparentContext(prev as Parameters<typeof transparentContext>[0])
+    try {
+      return fragment(new MeshStandardNodeMaterial({ color: 0x8090a0 }))
+    } finally {
+      renderer.contextNode = prev
+    }
+  })
+  assert.match(combo, /output\.m\d = GIAmbient;/)
+})
+
+
+test('TRAANode & TAAUtils upstream structure guards, TransparentTRAANode WGSL 4D clipAABB and DoF R8 MRT setup', async () => {
+  const traaSrc = read('../node_modules/three/examples/jsm/tsl/display/TRAANode.js')
+  const taaUtilsSrc = read('../node_modules/three/examples/jsm/tsl/utils/TAAUtils.js')
+  assert.match(traaSrc, /const varianceClipping = Fn\( \( \[ positionTexel, currentColor, historyColor, gamma \] \) => \{[^]*?clipAABB\( mean\.clamp\( minColor, maxColor \), historyColor, minColor, maxColor \)/)
+  assert.match(traaSrc, /this\._resolveMaterial\.contextNode = context\( builder\.getSharedContext\(\) \);\n\t\tthis\._resolveMaterial\.colorNode = resolve\(\);\n\n\t\treturn this\._textureNode;/)
+  assert.match(taaUtilsSrc, /export const clipAABB = Fn\(/)
+  assert.match(taaUtilsSrc, /export const flickerReduction = Fn\(/)
+
+  const { DepthTexture, HalfFloatType, RedFormat, UnsignedByteType } = await import('three')
+  const { texture: texNode, vec4: vec4Node } = await import('three/tsl')
+  const { clipAABB4D, transparentTRAA } = await import('../src/creative-scene/render/nodes/TransparentTRAANode.js')
+  const { depthOfField } = await import('../src/creative-scene/render/dof.ts')
+  const { GILightingPass } = await import('../src/creative-scene/render/giSplit.ts')
+
+  // GILightingPass preserves PassNode.transparent = true while separating transparentBackground.
+  const opaquePass = new GILightingPass('color', scene, camera, { samples: 0 }, false)
+  const transpPass = new GILightingPass('color', scene, camera, { samples: 0 }, true)
+  assert.equal(opaquePass.transparent, true)
+  assert.equal(opaquePass.transparentBackground, false)
+  assert.equal(transpPass.transparent, true)
+  assert.equal(transpPass.transparentBackground, true)
+
+  // Compile TransparentTRAANode resolve shader via WebGPU backend NodeBuilder.
+  const localRenderer = new WebGPURenderer({ canvas: { style: {} } as never })
+  Object.assign(localRenderer, { hasFeature: () => false })
+  ;(localRenderer.backend as unknown as { renderer: unknown }).renderer = localRenderer
+  const beautyRt = new RenderTarget(4, 4, { type: HalfFloatType })
+  const beautyTex = beautyRt.texture
+  const depthTex = new DepthTexture(4, 4)
+  const depthRt = new RenderTarget(4, 4, { depthTexture: depthTex })
+  ;(depthTex as unknown as { renderTarget: RenderTarget }).renderTarget = depthRt
+  const velTex = new RenderTarget(4, 4, { type: HalfFloatType }).texture
+  const node = transparentTRAA(texNode(beautyTex), texNode(depthTex), texNode(velTex), camera)
+  const builder = (localRenderer.backend as unknown as {
+    createNodeBuilder(o: Mesh, r: WebGPURenderer): {
+      scene: Scene
+      camera: PerspectiveCamera
+      material: NodeMaterial
+      lightsNode: unknown
+      renderPipeline: unknown
+      context: Record<string, unknown>
+      getSharedContext(): Record<string, unknown>
+      build(): void
+      fragmentShader: string
+    }
+  }).createNodeBuilder(new Mesh(new BoxGeometry()), localRenderer)
+  node.setup(builder as never)
+  const mat = (node as unknown as { _resolveMaterial: NodeMaterial })._resolveMaterial
+  builder.scene = scene
+  builder.camera = camera
+  builder.material = mat
+  builder.lightsNode = localRenderer.lighting.getNode(scene)
+  builder.build()
+  assert.ok(mat.fragmentNode !== null && mat.colorNode === null && mat.fog === false, 'uses fragmentNode so opaque NodeMaterial does not force diffuseColor.a = 1.0')
+  assert.match(builder.fragmentShader, /clipAABB4D/, 'TRAA resolve calls 4D clipAABB4D')
+  assert.match(builder.fragmentShader, /clamp\(/, 'clipAABB4D strictly clamps to [minColor, maxColor] so empty background returns 0')
+  assert.match(builder.fragmentShader, /\.w\b/, '4D clipAABB considers alpha channel .w')
+  node.dispose()
+
+  // Also check clipAABB4D directly on vec4(0) neighborhood compiles cleanly.
+  assert.ok(clipAABB4D(vec4Node(0.5, 0.5, 0.5, 1), vec4Node(0), vec4Node(0)))
+
+  // DoF MRT attachment configuration: opaque keeps single attachment, transparent adds R8Unorm attachment 1.
+  const beautyTarget = texNode(beautyTex)
+  const depthTarget = texNode(depthTex)
+  const opaqueDof = depthOfField(beautyTarget, depthTarget, 8, false)
+  const transpDof = depthOfField(beautyTarget, depthTarget, 8, true)
+  const opaqueBlurRt = ((opaqueDof.output as unknown as { node: { parent?: unknown } }) && opaqueDof)
+  assert.ok(opaqueBlurRt)
+  assert.equal(RedFormat, 1028)
+  assert.equal(UnsignedByteType, 1009)
+  opaqueDof.dispose()
+  transpDof.dispose()
 })

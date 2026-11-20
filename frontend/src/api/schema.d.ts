@@ -7937,6 +7937,8 @@ export interface components {
              * @enum {string}
              */
             resolution: "1k" | "2k" | "4k" | "8k";
+            /** @description 透明背景（缺省 false）。开启后，跟随场景设置的白模（clay）和材质光照（lit）导出将天空背景设为透明，编辑器最终渲染模式视口显示棋盘格；线稿与助手 render_view 回看始终带背景。 */
+            transparent_background: boolean;
             /** @description 默认摄像机（视口的自由视角、render_view 的临时视点和预设视角）在物理天空下手动曝光时的曝光值 EV100；场景摄像机用自己的曝光。其他天空下不生效。不计入渲染指纹。之前保存的场景读出为 15（晴天）。 */
             exposure_ev100: number;
             /**
@@ -7956,6 +7958,7 @@ export interface components {
             engine?: "workbench" | "realtime_gi";
             /** @enum {string} */
             resolution?: "1k" | "2k" | "4k" | "8k";
+            transparent_background?: boolean;
             exposure_ev100?: number;
             /** @enum {string} */
             exposure_mode?: "ambient" | "manual";
@@ -8336,7 +8339,7 @@ export interface components {
             id: string;
             document_id: string;
             kind: components["schemas"]["CreativeSceneJobKind"];
-            /** @description 按 kind 定义，见契约 data:场景客户端任务 */
+            /** @description 按 kind 定义，见契约 data:场景客户端任务（export_shots 可带可选布尔 transparent_background 覆盖场景设置） */
             request: {
                 [key: string]: unknown;
             };
@@ -8383,10 +8386,12 @@ export interface components {
                 image_upload_id: string;
                 scene_revision: components["schemas"]["CreativeRevision"];
             };
-            /** @description export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。 */
+            /** @description export_shots 成功时必填：实际渲染的场景修订、图片清单和实际背景模式，必须正好覆盖任务 request 的摄像机和导出方式。 含白模或材质光照且任务显式指定 transparent_background 或期望为 true 时，effective_transparent_background 必传（缺失或不匹配记为 failed invalid_result，显式 null 或非布尔返回 400）。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。 */
             export?: {
                 scene_revision: components["schemas"]["CreativeRevision"];
                 shots: components["schemas"]["CreativeSceneExportShots"];
+                /** @description 渲染端实际给白模、材质光照使用的背景模式；仅线稿的有效值为 false，可省略。 */
+                effective_transparent_background?: boolean;
             };
         };
         CreativeSceneJobCompleteRequest: {
@@ -8422,6 +8427,8 @@ export interface components {
             scene_node_id: string;
             scene_revision: components["schemas"]["CreativeRevision"];
             shots: components["schemas"]["CreativeSceneExportShots"];
+            /** @description 渲染端实际给白模、材质光照使用的背景模式。含任一该导出方式且 scene_revision 对应的场景开关为 true 时必传；仅线稿有效值为 false 可省略。 缺失或与实际渲染修订不一致返回 400 validation_failed（提示刷新页面后重新导出）。 */
+            effective_transparent_background?: boolean;
         };
         CreativeSceneExportRequest: {
             /** Format: uuid */
@@ -8667,6 +8674,11 @@ export interface components {
             kind: "asset" | "node" | "staged";
             asset?: components["schemas"]["CreativeUploadAssetTarget"];
             node?: components["schemas"]["CreativeUploadNodeTarget"];
+            /** @description 限 image 的 staged 目标。原图单张最多 320 MiB，仅可通过指定场景的导出操作放上画布 */
+            scene_export?: {
+                canvas_id: string;
+                scene_node_id: string;
+            };
         };
         CreativeUploadCreatePayload: {
             file_name: string;

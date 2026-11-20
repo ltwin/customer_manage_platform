@@ -41,16 +41,16 @@ export const longSideOf = (resolution: Resolution): number => ({ '1k': 1024, '2k
 export type ImageType = 'image/png' | 'image/jpeg'
 
 /**
- * How an export image is encoded (R2 design「输出分辨率、编码与时限」): a 4K
- * or 8K clay or lit image as JPEG at 0.95, which keeps it within the media
- * upload's size; line art, all flat white and lines, and smaller images as PNG.
+ * Transparent exports and line art use lossless PNG at every resolution.
+ * Opaque clay and lit exports use PNG at 1K/2K and JPEG at 4K/8K.
  */
-export function imageTypeOf(pass: 'clay' | 'line' | 'lit', resolution: Resolution): { type: ImageType; quality?: number } {
-  return pass !== 'line' && (resolution === '4k' || resolution === '8k') ? { type: 'image/jpeg', quality: 0.95 } : { type: 'image/png' }
+export function imageTypeOf(pass: 'clay' | 'line' | 'lit', resolution: Resolution, transparent = false): { type: ImageType; quality?: number } {
+  if (transparent || pass === 'line' || (resolution !== '4k' && resolution !== '8k')) return { type: 'image/png' }
+  return { type: 'image/jpeg', quality: 0.95 }
 }
 
 /** The file extension uploads are named with. */
-export const extensionOf = (type: string) => (type === 'image/jpeg' ? 'jpg' : 'png')
+export const extensionOf = (type: ImageType) => (type === 'image/jpeg' ? 'jpg' : 'png')
 
 /** The scene's renderer; the server completes a scene stored before R2 (design R-1). */
 export const engineOf = (render: SceneRender): Engine => render.engine
@@ -95,9 +95,9 @@ export function framesFor(engine: Engine, use: Use, softShadows = false): number
 export const drawnFrames = (engine: Engine, use: Use, softShadows = false): number =>
   engine === 'workbench' ? framesFor(engine, use, softShadows) : convergeFrames(engine) + framesFor(engine, use)
 
-/** The reference device's time per pixel and frame, and per pixel encoded, rounded up (R0, design「输出分辨率、编码与时限」). */
+/** The reference device's time per pixel and frame, and per pixel encoded, rounded up. */
 const frameNs: Record<Engine, number> = { workbench: 15, realtime_gi: 30 }
-const encodeNs: Record<'image/png' | 'image/jpeg', number> = { 'image/png': 40, 'image/jpeg': 15 }
+const encodeNs: Record<ImageType, number> = { 'image/png': 40, 'image/jpeg': 15 }
 
 /**
  * What the world-space layer adds a pixel and frame when a picture draws it (S1 tasks 6.2): 3.4–4.7 ns in the
@@ -124,7 +124,7 @@ const probeMsPerLevel = 10
 const probeLevels = 5
 
 /** How long a picture should take on the reference device, in ms; world: it draws the world-space layer, and its probes. */
-export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg', world: boolean): number {
+export function estimateMs(engine: Engine, width: number, height: number, frames: number, type: ImageType, world: boolean): number {
   const probes = world ? probeMsPerLevel * probeLevels * (PROBE_WARMUP + (PICTURE_AFTER_WARMUP === 'update' ? frames : 0)) : 0
   return (width * height * (frames * (frameNs[engine] + (world ? worldNs : 0)) + encodeNs[type])) / 1e6 + probes
 }
@@ -135,7 +135,7 @@ const minShotMs = 30_000
 const minViewMs = 60_000
 
 /** One export image's time limit, drawn and encoded. */
-export const shotBudgetMs = (engine: Engine, width: number, height: number, frames: number, type: 'image/png' | 'image/jpeg', world: boolean) =>
+export const shotBudgetMs = (engine: Engine, width: number, height: number, frames: number, type: ImageType, world: boolean) =>
   Math.max(minShotMs, slack * estimateMs(engine, width, height, frames, type, world))
 
 /** How long the lit look waits for the world-space layer (S1 design「接入、就绪与切换」, D7), within lookBudgetMs. */

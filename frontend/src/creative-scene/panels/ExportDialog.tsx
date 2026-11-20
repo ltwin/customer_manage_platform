@@ -27,7 +27,7 @@ const passes: { pass: ExportPass; label: string }[] = [
 const progressText = (p: Progress | null) =>
   !p ? '准备中…' : p.stage === 'render' ? `正在渲染 ${p.done}/${p.total}` : p.stage === 'upload' ? `正在上传 ${p.done}/${p.total}` : '正在放到画布…'
 
-export function ExportDialog({ cameras, shots = [], unkeyed = [], display, resolution, busy, progress, onExport, onClose }: {
+export function ExportDialog({ cameras, shots = [], unkeyed = [], display, resolution, transparentBackground = false, busy, progress, error, onExport, onClose }: {
   cameras: readonly SceneObject[]
   /** The scene's shots in frame order; none for a scene exported by camera. */
   shots?: readonly ExportShot[]
@@ -37,8 +37,11 @@ export function ExportDialog({ cameras, shots = [], unkeyed = [], display, resol
   display: DisplayMode
   /** The scene's output resolution: the images' long side. */
   resolution: Resolution
+  /** Whether the scene enables transparent background for clay and lit passes. */
+  transparentBackground?: boolean
   busy: boolean
   progress: Progress | null
+  error?: string
   onExport: (plan: ExportPlan, unkeyed?: UnkeyedChoice) => void
   onClose: () => void
 }) {
@@ -48,6 +51,7 @@ export function ExportDialog({ cameras, shots = [], unkeyed = [], display, resol
   const [asking, setAsking] = useState(false)
   const ids = byShot ? shots.filter((s) => s.bound && chosen.has(s.id)).map((s) => s.id) : cameras.filter((c) => chosen.has(c.id)).map((c) => c.id)
   const kinds = passes.filter((p) => picked.has(p.pass)).map((p) => p.pass)
+  const usesTransparent = transparentBackground === true && kinds.some((k) => k === 'clay' || k === 'lit')
   const { count, problem } = exportCount(ids.length, kinds.length, byShot)
   const plan: ExportPlan = byShot ? { cameraObjectIDs: [], markerIDs: ids, passes: kinds } : { cameraObjectIDs: ids, passes: kinds }
   const go = (choice?: UnkeyedChoice) => {
@@ -99,9 +103,10 @@ export function ExportDialog({ cameras, shots = [], unkeyed = [], display, resol
                 </label>
               ))}
             </fieldset>
-            <p role="status">{busy ? progressText(progress) : (problem ?? `共 ${count} 张，长边 ${longSideOf(resolution)}（${resolution.toUpperCase()}），放在场景节点右侧`)}</p>
+            <p role="status">{busy ? progressText(progress) : (problem ?? `共 ${count} 张，长边 ${longSideOf(resolution)}（${resolution.toUpperCase()}）${usesTransparent ? ' · 白模、材质光照使用透明背景' : ''}，放在场景节点右侧`)}</p>
           </>
         )}
+        {error && <p role="alert">{error}</p>}
         {asking ? (
           <div role="alertdialog" aria-label="有改动还没有插入关键帧">
             <p>这些改动还没有插入关键帧，导出用的是已保存的场景：</p>

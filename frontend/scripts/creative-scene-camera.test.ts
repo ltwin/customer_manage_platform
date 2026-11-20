@@ -431,3 +431,125 @@ test('a device lost while the shots were drawn hands none of them on: the shoote
   assert.equal(uploads.length, 0)
   assert.equal(closed, 2)
 })
+
+
+test('transparent encoding uses PNG at each resolution and opaque 4K/8K clay and lit use JPEG', async () => {
+  const { imageTypeOf, extensionOf } = await import('../src/creative-scene/render/engines.ts')
+  assert.deepEqual(imageTypeOf('clay', '1k', true), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('lit', '2k', true), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('clay', '4k', true), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('lit', '8k', true), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('line', '4k', true), { type: 'image/png' })
+  assert.deepEqual(imageTypeOf('line', '8k', true), { type: 'image/png' })
+  assert.equal(extensionOf('image/png'), 'png')
+  assert.equal(extensionOf('image/jpeg'), 'jpg')
+
+  assert.deepEqual(imageTypeOf('clay', '4k', false), { type: 'image/jpeg', quality: 0.95 })
+  assert.deepEqual(imageTypeOf('lit', '8k', false), { type: 'image/jpeg', quality: 0.95 })
+})
+
+test('transparent export follows plan.transparentBackground over scene setting, keeps line-only false, and uploads lossless PNG and handles size rejections', async () => {
+  const { ExportSizeLimitError, runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+
+  const shootCalls: { kind: string; type: string; quality?: number; transparent?: boolean }[] = []
+  const mkShooter = (makeBlob?: (o: { kind: string; type: string; quality?: number; transparent?: boolean }) => Blob): Shooter => ({
+    shoot: (_f, o) => {
+      shootCalls.push({ kind: o.kind, type: o.type, quality: o.quality, transparent: o.transparent })
+      return makeBlob ? makeBlob(o) : new Blob(['img'], { type: o.type })
+    },
+    setLook: async () => {},
+    confirm: async () => {},
+    close: () => {},
+  })
+
+  // 1) scene=false overridden by plan.transparentBackground=true at 4K -> PNG & effectiveTransparentBackground=true.
+  const docFalse = { scene: { ...sceneOf(camera()), render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '4k', transparent_background: false } }, models: {}, revision: '5' }
+  const outOverrideTrue = await renderShots(
+    { read: async () => docFalse as never, loadModels: async () => {}, open: async () => mkShooter(), sleep: () => new Promise<void>(() => {}) },
+    'doc',
+    { cameraObjectIDs: ['cam'], passes: ['lit', 'line'], transparentBackground: true },
+  )
+  assert.ok(outOverrideTrue.ok)
+  assert.equal(outOverrideTrue.effectiveTransparentBackground, true)
+  assert.deepEqual(shootCalls, [
+    { kind: 'line', type: 'image/png', quality: undefined, transparent: true },
+    { kind: 'lit', type: 'image/png', quality: undefined, transparent: true },
+  ])
+
+  // 2) scene=true overridden by plan.transparentBackground=false at 4K -> JPEG 0.95 & effectiveTransparentBackground=false.
+  shootCalls.length = 0
+  const docTrue = { scene: { ...sceneOf(camera()), render: { mode: 'clay', exposure_ev: 0, engine: 'workbench', resolution: '4k', transparent_background: true } }, models: {}, revision: '5' }
+  const outOverrideFalse = await renderShots(
+    { read: async () => docTrue as never, loadModels: async () => {}, open: async () => mkShooter() },
+    'doc',
+    { cameraObjectIDs: ['cam'], passes: ['lit'], transparentBackground: false },
+  )
+  assert.ok(outOverrideFalse.ok)
+  assert.equal(outOverrideFalse.effectiveTransparentBackground, false)
+  assert.deepEqual(shootCalls, [{ kind: 'lit', type: 'image/jpeg', quality: 0.95, transparent: false }])
+
+  // 3) line-only stays effectiveTransparentBackground=false even when transparent is requested.
+  shootCalls.length = 0
+  const outLineOnly = await renderShots(
+    { read: async () => docTrue as never, loadModels: async () => {}, open: async () => mkShooter() },
+    'doc',
+    { cameraObjectIDs: ['cam'], passes: ['line'], transparentBackground: true },
+  )
+  assert.ok(outLineOnly.ok)
+  assert.equal(outLineOnly.effectiveTransparentBackground, false)
+  assert.deepEqual(shootCalls, [{ kind: 'line', type: 'image/png', quality: undefined, transparent: false }])
+
+  // 4) uploadShots passes through image/png MIME & .png extension and manual export forwards effective_transparent_background.
+  const sentPayloads: unknown[] = []
+  const uploadedFiles: [string, string, string][] = []
+  let upN = 0
+  const manualOk = await runManualExport(
+    {
+      read: async () => docTrue as never,
+      loadModels: async () => {},
+      open: async () => mkShooter(),
+      upload: async (file, declared) => (uploadedFiles.push([file.name, file.type, declared.mime]), { id: `ccup_${++upN}` } as Upload),
+      discard: async () => {},
+      send: async (_op, _at, payload) => {
+        sentPayloads.push(payload)
+        return { change_id: 'cchg_1', scene_revision: '5', nodes: [] }
+      },
+      wait: async () => {},
+    },
+    { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan: { cameraObjectIDs: ['cam'], passes: ['lit', 'line'] } },
+    new AbortController().signal,
+  )
+  assert.ok(manualOk.ok)
+  assert.deepEqual(uploadedFiles, [
+    ['cam-lit.png', 'image/png', 'image/png'],
+    ['cam-line.png', 'image/png', 'image/png'],
+  ])
+  assert.equal((sentPayloads[0] as { effective_transparent_background?: boolean }).effective_transparent_background, true)
+
+  // A PNG bigger than the ordinary image limit reaches the media service.
+  const big = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'image/png' })
+  const largeRender = await renderShots(
+    { read: async () => docTrue as never, loadModels: async () => {}, open: async () => mkShooter(() => big) },
+    'doc',
+    { cameraObjectIDs: ['cam'], passes: ['lit'] },
+  )
+  assert.ok(largeRender.ok)
+  assert.equal(largeRender.images[0].blob.size, big.size)
+
+  const partialUpload = await uploadShots(
+    async (file) => {
+      if (file.size === big.size) throw new ApiError(413, 'creative_size_limit', '超过大小上限')
+      return { id: 'ccup_1' } as Upload
+    },
+    [
+      { camera: 'cam1', pass: 'lit', blob: new Blob(['small'], { type: 'image/png' }) },
+      { camera: 'cam2', pass: 'lit', blob: big },
+    ],
+    new AbortController().signal,
+  )
+  assert.equal(partialUpload.ok, false)
+  if (!partialUpload.ok) {
+    assert.ok(partialUpload.cause instanceof ExportSizeLimitError)
+    assert.equal(partialUpload.uploads.length, 1)
+  }
+})

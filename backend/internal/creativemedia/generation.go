@@ -371,7 +371,7 @@ func (s *Service) workFactsProbe(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return s.retryFactsProbe(ctx, scope, claim, "open_failed", err)
 	}
-	facts, err := s.verifier.Probe(ctx, body, s.verifier.MaxBytes(mimeKind(claim.Mime)))
+	facts, err := s.verifier.Probe(ctx, body, s.probeMaxBytes(mimeKind(claim.Mime)))
 	// 暂存副本已拿到它需要的一切；这里的关闭错误没有剩余动作可做。
 	_ = body.Close()
 	if errors.Is(err, ErrUnsupported) {

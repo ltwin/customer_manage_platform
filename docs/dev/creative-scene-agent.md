@@ -26,7 +26,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
    └── 期限到（30 分钟）──> expired        运行结束时 ──> cancelled
 ```
 
-- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）、`export_shots`（C4：按摄像机出 clay 和线稿，节点在完成事务里放到画布上；C5 起可含 `lit`）。`render_view` 的请求带 `mode`（`clay` / `lit`，C5）。R2 起两种任务按场景的 `render.engine` 出图，导出长边按 `render.resolution`。
+- 种类：`bake_model`（编译代码模型、上传 GLB 与缩略图、写入场景）、`render_view`（截一张图）、`export_shots`（按分镜或摄像机输出白模、线稿与材质光照，节点在完成事务里放到画布上）。`render_view` 的请求带 `mode`（`clay` / `lit`），始终输出带背景的 JPEG。导出长边按 `render.resolution`，白模与材质光照的背景可用 `export_shots.transparent_background` 按次指定。
 - 租约 30 秒，页面每 10 秒续一次；续租不会超过期限。
 - 新建与进入终态会触发画布通知（账号级），认领和续租不通知。页面靠通知知道有新任务。
 - 终态满 30 天的任务由清扫删除。
@@ -46,6 +46,8 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 ## 运行的挂起与恢复
 
 - `write_model` / `render_view` / `export_shots` 在运行的写事务里建任务，返回 `errParked`；`callTool` 把它变成 Eino 的 interrupt，步骤保持 `prepared`。同一批里其他调用照常执行，挂起不停批。
+- `export_shots` 省略 `transparent_background` 时，按实际渲染修订的场景设置出图。显式传 `true` 或 `false` 只覆盖当前任务，场景开关的后续变动也不会让该批图过时。摄像机或场景画面的相关改动仍按导出指纹提示「场景已更新」。`edit_scene(set_render)` 则会修改场景默认值，并记入「本轮改动」的「渲染设置」。
+- 白模或材质光照导出若启用了透明背景，或者任务显式指定了背景模式，完成请求须带 `export.effective_transparent_background`。服务端按实际渲染修订和任务覆盖校验，缺失或不符时以 `invalid_result` 结束，提示刷新页面后重新发起，整批图片都不会放到画布上。仅线稿以及省略回报的存量默认不透明导出仍兼容。
 - 本次执行结束时，`completeAttempt` 看任务是否都已终态：是就直接入队继续，否则运行进入 `waiting_client`，`wait_reason = client_job`。等待期间不占写入槽位，补充输入不会唤醒它。
 - 任务完成的事务里，`Settle` 按工具成功分支的顺序写步骤结果，再取槽位入队；取不到槽位时运行留在 `waiting_client`、`wait_reason = slot_busy`，清扫在槽位空出后恢复它。
 - `Admit` 在完成事务里复查运行（能力、期限、未取消、Skill 未停用、consent 未撤回），锁序为项目 → 槽位 → 网关组 → 运行 → Skill → consent。复查失败时整笔回滚，另开事务 `Abort` 结束运行，任务随运行取消，场景不会多出修订。
@@ -72,7 +74,7 @@ queued ──认领──> claimed ──完成──> succeeded / failed
 - 材质光照（C5）：`openShooter(scene, models, look)` 按 `clay` 或 `lit` 挂载 `ShotScene`（`lit` 即视口的「最终渲染」：材质、灯光物件、天空当环境光照、阴影与 AO），挂载后 `gl.compileAsync` 预编译材质；`setLook` 换一种再编译。`lit` 出图前把 `toneMappingExposure` 设为 `2^render.exposure_ev`，出完复原。导出先出全部摄像机的 clay 与线稿，再切一次 `lit` 出全部材质光照图，切换超过 60 秒按失败处理；`render_view` 按请求的 `mode` 直接以那种方式打开。
 - 视口的显示模式（C5，`Viewport.tsx:LookView`）：线框直接 `gl.render`；白模、材质预览、最终渲染都走 `SceneRenderer`，只换挂载的光照（`objects/Lighting.tsx`）与材质。最终渲染里新增灯光、或灯光开关投射阴影时，three.js 要把所有受光材质重编译一遍（AC-9 场景约 2 秒）；`SceneLight` 先让这盏灯不亮，用 `compileAsync` 在驱动线程上编好再显示，卡顿降到 0.1 秒左右。截图不需要：出图前已整体编译。
 - 渲染器（R1 起，`render/gpu.ts`、`render/sceneRenderer.ts`）：上面的 WebGL 链已换成 `WebGPURenderer` + TSL 的 `RenderPipeline`，WebGPU 不可用时退回它的 WebGL2 后端；画面与原先在阈值内一致，组成以 `sceneRenderer.ts` 头注释为准。
-- 渲染设置（R2，`render/engines.ts`）：场景的 `render.engine` 决定最终渲染和材质光照用工作台还是实时 GI（`render/realtimeGI.ts`：SSGI、SSR、接触阴影、TRAA）；白模、线框、材质预览、线稿和正交视图总是工作台（`effectiveEngine`）。灯光图标、摄像机视锥、空物体等辅助对象在 aside 层，画进视口但不进 AO 与实时 GI 的 prepass。实时 GI 的一张图先画 12 帧让时域节点稳定，再平均 K 帧（导出 64、`render_view` 16；工作台 1 帧，`drawnFrames`）；出图（`final`）的 GI 只做空间滤波，视口用递归降噪。帧之间 `gpu.settle()` 等 GPU 做完，查设备丢失和截止时间；单张时限按估算的 8 倍、至少 30 秒，`render_view` 至少 60 秒，助手导出整批以 25 分钟为上限。导出长边按 `render.resolution`（1K–8K），4K、8K 的 clay 与 lit 编成 JPEG 0.95，其余 PNG；长边超过设备纹理上限时出图前失败，4K、8K 出图时设备丢失以 `host_error` 结束、不回队列。
+- 渲染设置（R2，`render/engines.ts`）：场景的 `render.engine` 决定最终渲染和材质光照用工作台还是实时 GI（`render/realtimeGI.ts`：SSGI、SSR、接触阴影、TRAA）；白模、线框、材质预览、线稿和正交视图总是工作台（`effectiveEngine`）。灯光图标、摄像机视锥、空物体等辅助对象在 aside 层，画进视口但不进 AO 与实时 GI 的 prepass。实时 GI 的一张图先画 12 帧让时域节点稳定，再平均 K 帧（导出 64、`render_view` 16；工作台 1 帧，`drawnFrames`）；出图（`final`）的 GI 只做空间滤波，视口用递归降噪。帧之间 `gpu.settle()` 等 GPU 做完，查设备丢失和截止时间；单张时限按估算的 8 倍、至少 30 秒，`render_view` 至少 60 秒，助手导出整批以 25 分钟为上限。导出长边按 `render.resolution`（1K–8K）。白模和材质光照在 1K、2K 使用 PNG，4K、8K 开启透明背景时用无损 PNG，关闭时用 JPEG 0.95。线稿始终是白底 PNG。透明模式保留场景光照、反射与景深，移除可见天空背景。分镜原图使用独立的 320 MiB 单图预算，并计入账号存储额度。超限时报告原因并清理本批暂存图。服务端把长边超过 1600 px 的透明图缩成带 alpha 的 PNG 展示图，画布大图预览仍读取原图。
 - 白模与色调映射（W1，scene-display-look）：白模（视口、正交视图、`render_view` 与导出的 `clay`、资产库预览的「白模」）用固定的工作室光（`render/studio.ts`），与 Blender 实体模式的默认一致：一盏平行主光从视角左上方照来，`SceneRenderer.render` 画之前用 `aimStudio` 按摄像机转好（资产库预览在 `useFrame` 里调用），加半球补光和一点环境光，不投影，保留 AO，背景是中性灰 `STUDIO_BACKGROUND`；不读场景的天空、太阳、环境光、雾和灯光物件。所以 `clay` 的渲染指纹不计 `environment`，`clay`、`lit` 另带常量键 `view_transform: "agx"`（`creativescene/fingerprint.go`）：W1 之前的白模和材质光照导出各显示一次过时，线稿不受影响。输出节点除线框外都按 AgX 色调映射（线框保持 ACES Filmic，画面不变），资产库预览在 `onCreated` 设 AgX；最终渲染的常量在 AgX 下重新标定（`render/litLook.ts`）。
 - 物理天空与手动曝光（W2，scene-physical-sky）：
   - 天空：`objects/Lighting.tsx:PhysicalLighting` 用 Hillaire 2020 的三张 LUT（`world/atmosphere/luts.ts`：透射率 256 × 64、多次散射 32 × 32、天空视图 384 × 216，RGBA16F）画背景，用不带太阳盘的同一节点生成天空光照（PMREM，200 ms 节流）。CPU 上另有一份同样的大气（`world/atmosphere/cpu.ts`）算太阳透射率和水平照度 E；两份只共享 `constants.ts`，e2e「W2 atmosphere drift」把 GPU 的 LUT 和 `sampleSkyView` 的方向采样与 CPU 对照。太阳位置由 `world/astro.ts`（`astronomy-engine`）按地点、日期、当地时刻算，换算 UTC 用 Temporal 的 compatible 规则。
@@ -180,6 +182,7 @@ SELECT id, state, wait_reason, deadline_at FROM creative_agent_runs WHERE state 
 - 浏览器：先在 `frontend/` 起 `npx vite --port 5179 --strictPort`，再跑
   - `node scripts/creative-scene-agent.e2e.mjs`：截图、画布页按需执行、关闭提醒、设备探测、面板截图与本轮改动、`scene_context`（`SCENE_AGENT_E2E_ONLY=<名称片段>` 只跑匹配项）；
   - `node scripts/creative-scene.e2e.mjs`：编辑器，含高亮、占位、优先认领本场景、编辑器上下文（`SCENE_E2E_ONLY=`）；C5c1 的检查以 `C5c1` 开头，世界空间层的几项要 `SCENE_E2E_TRACE=1`，`SCENE_E2E_EVIDENCE=<目录>` 存下材质球缩略图和对照截图；C5 起含最终渲染的标定检查（`calibration`）；W2、W3、W4 的检查分别以 `W2 `、`W3 `、`W4 ` 开头（`SCENE_E2E_ONLY='W3 '`），`SCENE_E2E_W3_DAY=<目录>` 在本机 GPU 上逐像素核对白天与手动角度的画面不受夜空影响，`SCENE_E2E_W2_METAL=1` 让防漂移对照跑在本机 GPU 上，`SCENE_E2E_W2_PICTURES=<目录>` 导出物理天空参考场景的图，`SCENE_E2E_W2_SKIES=<基线目录>` 逐像素核对其他天空不变；
+  - 透明背景回归：编辑器与助手分别用 `SCENE_E2E_ONLY='transparent background:'` 和 `SCENE_AGENT_E2E_ONLY='transparent background:'` 筛选上面的脚本。在 `backend` 目录运行 `CREATIVE_EDITOR_URL=http://127.0.0.1:5179 CREATIVE_EDITOR_SCRIPT=creative-media.e2e.mjs CREATIVE_MEDIA_E2E_ONLY=transparent go test ./internal/platform/httpapi -run '^TestCreativeEditorBrowser$' -count=1 -timeout=8m -v`，核对 2K 和 4K PNG 的真实上传、画布落位和预览，并在画布实时事件断开时验证手动导出回执直接刷新画布。
   - 帧时间（AC-9，只在点名时跑，需要本机 GPU）：`SCENE_E2E_PERF=1 SCENE_E2E_ONLY=AC-9 node scripts/creative-scene.e2e.mjs`，用 Metal 后端的无头 Chromium、1600 × 1000、2 倍像素比，打印四种显示模式的平均与 p95 帧时间和加灯、删灯的最长一帧。
 - 后端：`make check-go PKG=./internal/creativescene/...`、`PKG=./internal/creativeagent/...`。
 - 实测（只在点名时跑，经 `TestCreativeEditorBrowser` 起真实 API、媒体流水线和 PostgreSQL；测试端点 `/__test/scene-job` 像工具那样建任务，替身运行记下结果交回的时间）：

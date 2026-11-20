@@ -989,24 +989,26 @@ func CreateRenderJobInTx(ctx context.Context, tx store.TxAccountScope, r RenderI
 // (design「export_shots 任务」). Exactly one of MarkerIDs and CameraObjectIDs
 // is set.
 type ExportRequest struct {
-	MarkerIDs       []string `json:"marker_ids,omitempty"`
-	CameraObjectIDs []string `json:"camera_object_ids,omitempty"`
-	Passes          []string `json:"passes"`
-	CanvasID        string   `json:"canvas_id"`
-	SceneNodeID     string   `json:"scene_node_id"`
+	MarkerIDs             []string `json:"marker_ids,omitempty"`
+	CameraObjectIDs       []string `json:"camera_object_ids,omitempty"`
+	Passes                []string `json:"passes"`
+	CanvasID              string   `json:"canvas_id"`
+	SceneNodeID           string   `json:"scene_node_id"`
+	TransparentBackground *bool    `json:"transparent_background,omitempty"`
 }
 
 // ExportJobInput is export_shots: shots and cameras both left out mean
 // every shot in frame order, or every camera in object order for a scene
 // without shots; passes left out mean clay and line.
 type ExportJobInput struct {
-	DocumentID      string
-	RunID           string
-	ToolCallID      string
-	CanvasID        string
-	MarkerIDs       []string
-	CameraObjectIDs []string
-	Passes          []string
+	DocumentID            string
+	RunID                 string
+	ToolCallID            string
+	CanvasID              string
+	MarkerIDs             []string
+	CameraObjectIDs       []string
+	Passes                []string
+	TransparentBackground *bool
 }
 
 // defaultExportPasses are export_shots' passes when it names none: lit is
@@ -1093,7 +1095,7 @@ func CreateExportJobInTx(ctx context.Context, tx store.TxAccountScope, in Export
 	if err != nil {
 		return Job{}, err
 	}
-	req := ExportRequest{MarkerIDs: markers, CameraObjectIDs: cameras, Passes: passes, CanvasID: in.CanvasID, SceneNodeID: node}
+	req := ExportRequest{MarkerIDs: markers, CameraObjectIDs: cameras, Passes: passes, CanvasID: in.CanvasID, SceneNodeID: node, TransparentBackground: in.TransparentBackground}
 	return CreateJob(ctx, tx, NewJob{DocumentID: in.DocumentID, Kind: KindExportShots, Request: req, RunID: in.RunID, ToolCallID: in.ToolCallID})
 }
 

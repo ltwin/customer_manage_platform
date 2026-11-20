@@ -1,12 +1,12 @@
 {
   "uid": "11145675-5d4c-4fdd-b139-2b59b867d183",
-  "revision": 5,
+  "revision": 15,
   "id": "scene-transparent-background",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "closed",
   "createdAt": "2026-11-16T06:29:06.433Z",
-  "updatedAt": "2026-11-17T13:37:26.880Z",
+  "updatedAt": "2026-11-20T02:38:24.294Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -43,8 +43,832 @@
       "removed": []
     }
   ],
-  "verify": [],
+  "baseline": {
+    "commit": "7d7fc198af2f2c588e0e11316e87eecf7589e098",
+    "at": "2026-11-17T13:46:56.829Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "83741fd3a81bd1ab09e3303d0191eb6f5b0e981128048d4cdccebe64c297a998"
+    },
+    "preExisting": [
+      ".lti/snapshots/83741fd3a81bd1ab09e3303d0191eb6f5b0e981128048d4cdccebe64c297a998.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "Codex",
+      "at": "2026-11-18T03:57:21.746Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI 自动 checks，采用定向命令和浏览器实测。默认前端门禁 lint 和 build 完成，已有 creative-scene-maps 测试保留下载超时计时器，中止等待后用 Node --test-force-exit 重跑全量，1147 项通过。旧媒体脚本的资产库入口仍引用已过时的选择器，本次用 CREATIVE_MEDIA_E2E_ONLY=transparent 独立验证新增全栈链路。8K 性能证据限于交接记录的本机 Metal，未在本轮重跑。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "creative-scene-agent.e2e.mjs 的 export_shots 与 set_render 场景验证另一标签页改动期间沿用渲染修订、显式 true/false、清理与本轮改动 UI；TestExportShotsTransparentOverrideAndSetRenderChanges 与 TestExportShotsTransparentOverrideAndCompletionValidation 核对工具透传及真实事务中的 current/stale。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "TestRenderTransparentBackgroundStorageAndValidation 覆盖非布尔、null 和空补丁及修订不变。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs AA 场景验证 WebGL2 无 MSAA 暗色斜边、白黑底景深合成、雾与大气，以及 RealtimeGI 运动后的空背景。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 玻璃/体积场景验证清玻璃的 10/255 覆盖率、后物体核区、磨砂过渡的多阶 alpha；固定照明更换背景做正对照，彩色体积与同照明下的中性散射对照。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-8c42bbc69c28",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 真浏览器 4K WebP 解码、模拟编码器不支持和 413 后的降档提示与清理；真后端媒体验收上传 4K WebP；交接时 design.md U1 已记录 Metal WebGPU 的 4K/8K 方形 + 景深实测；creative-scene-camera.test.ts 检查 MIME、编码与时限。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "CREATIVE_MEDIA_E2E_ONLY=transparent 的 TestCreativeEditorBrowser 通过隔离 PostgreSQL、真实媒体工作器和文件存储验证原始 2K PNG/4K WebP、1600 px PNG 展示件、节点 #151516 及原图预览深色底。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "手动导出和显式覆盖任务 HTTP 测试验证缺回报整批拒绝、暂存图可重试；助手 E2E 删除第一次请求的回报字段，验证客户端收到失败后清理并在刷新重试时仅接受一批。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "14/14 任务完成，15 项规格均关联验证证据。设计挂载点全部核对，实际改动无清单外文件。交接中的设计调整为 WebP 编码估算 120→180 ns/px 及 TRAA resolve 改走 fragmentNode 保留 alpha。8 个契约、4 个 Living Spec 增量均可应用。场景 GPU 5 项、助手浏览器 3 项、真实 PostgreSQL/媒体工作器画布用例、Go 透明背景与助手压缩回归、OpenAPI 生成物、前端 lint/构建均通过。前端定向 150 项及全量 1147 项断言通过。固定物理天空样本与 7d7fc198 比较，5 张默认不透明图编码和解码 SHA-256 全相同。8K 方形景深性能沿用 design.md U1 的 Metal 实测，编码最慢 115.82 ns/px。调用图和当前源码核对视口、手动导出、助手任务和回看、两个后端落位入口、画布过时判断与媒体校验。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "761e7ab552c6162a40034fd982c1c2d29a990d781f32c7f917688fbe606d055f"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-18T07:56:08.874Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "用户现场的两次请求调用图片生成，回执为 generation_invalid_input 与 generation_unverified。供应商详细响应及既有图片去背景不在 3D 导出技术验收内。本轮以真实后端测试复现手动导出在画布事件中断时的行为，8K 性能沿用原 Metal 实测。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "creative-scene-agent.e2e.mjs 的 export_shots 与 set_render 场景验证另一标签页改动期间沿用渲染修订、显式 true/false、清理与本轮改动 UI；TestExportShotsTransparentOverrideAndSetRenderChanges 与 TestExportShotsTransparentOverrideAndCompletionValidation 核对工具透传及真实事务中的 current/stale。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "TestRenderTransparentBackgroundStorageAndValidation 覆盖非布尔、null 和空补丁及修订不变。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs AA 场景验证 WebGL2 无 MSAA 暗色斜边、白黑底景深合成、雾与大气，以及 RealtimeGI 运动后的空背景。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 玻璃/体积场景验证清玻璃的 10/255 覆盖率、后物体核区、磨砂过渡的多阶 alpha；固定照明更换背景做正对照，彩色体积与同照明下的中性散射对照。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-8c42bbc69c28",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 真浏览器 4K WebP 解码、模拟编码器不支持和 413 后的降档提示与清理；真后端媒体验收上传 4K WebP；交接时 design.md U1 已记录 Metal WebGPU 的 4K/8K 方形 + 景深实测；creative-scene-camera.test.ts 检查 MIME、编码与时限。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "CREATIVE_MEDIA_E2E_ONLY=transparent 的 TestCreativeEditorBrowser 通过隔离 PostgreSQL、真实媒体工作器和文件存储验证原始 2K PNG/4K WebP、1600 px PNG 展示件、节点 #151516 及原图预览深色底。 本轮在画布事件接口返回 503 时复现回执成功但快照未更新，修复后 2K 透明 PNG、4K 透明 WebP 及 2K 不透明 PNG 均无需重载显示，返回画布定位最近一次导出的首张图。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "手动导出和显式覆盖任务 HTTP 测试验证缺回报整批拒绝、暂存图可重试；助手 E2E 删除第一次请求的回报字段，验证客户端收到失败后清理并在刷新重试时仅接受一批。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "追加修复并验证真实后端手动导出。回执成功但画布事件断开时，原实现复现节点不显示。修复后在同一条件下 2K 透明 PNG、4K 透明 WebP 与 2K 不透明 PNG 均免重载显示，返回画布定位最新批次。WebP 不支持和上传超限在对话框保留错误，浏览器回归通过。助手提示区分已有图去背景和 3D 导出，透明覆盖工具及压缩测试通过。前端 TypeScript 和定向 lint 通过。其余场景及性能证据沿用上一轮逐项记录。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "e44f5eddef7ee4910731304e12ae82205f8a0544db5aaebb907d8e3e10925d6e"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-18T07:58:07.067Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "用户现场调用图片生成，分别获得 generation_invalid_input 与 generation_unverified，上游详细响应未取得。此次验证范围是 3D 场景导出及其画布显示，8K 性能沿用先前 Metal 实测。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "creative-scene-agent.e2e.mjs 的 export_shots 与 set_render 场景验证另一标签页改动期间沿用渲染修订、显式 true/false、清理与本轮改动 UI；TestExportShotsTransparentOverrideAndSetRenderChanges 与 TestExportShotsTransparentOverrideAndCompletionValidation 核对工具透传及真实事务中的 current/stale。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "TestRenderTransparentBackgroundStorageAndValidation 覆盖非布尔、null 和空补丁及修订不变。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs AA 场景验证 WebGL2 无 MSAA 暗色斜边、白黑底景深合成、雾与大气，以及 RealtimeGI 运动后的空背景。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 玻璃/体积场景验证清玻璃的 10/255 覆盖率、后物体核区、磨砂过渡的多阶 alpha；固定照明更换背景做正对照，彩色体积与同照明下的中性散射对照。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-8c42bbc69c28",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 真浏览器 4K WebP 解码、模拟编码器不支持和 413 后的降档提示与清理；真后端媒体验收上传 4K WebP；交接时 design.md U1 已记录 Metal WebGPU 的 4K/8K 方形 + 景深实测；creative-scene-camera.test.ts 检查 MIME、编码与时限。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "CREATIVE_MEDIA_E2E_ONLY=transparent 的 TestCreativeEditorBrowser 通过隔离 PostgreSQL、真实媒体工作器和文件存储验证原始 2K PNG/4K WebP、1600 px PNG 展示件、节点 #151516 及原图预览深色底。 本轮在画布事件接口返回 503 时复现回执成功但快照未更新，修复后 2K 透明 PNG、4K 透明 WebP 及 2K 不透明 PNG 均无需重载显示，返回画布定位最近一次导出的首张图。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "手动导出和显式覆盖任务 HTTP 测试验证缺回报整批拒绝、暂存图可重试；助手 E2E 删除第一次请求的回报字段，验证客户端收到失败后清理并在刷新重试时仅接受一批。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "手动导出在画布 SSE 中断时复现成功落位但前端不显示。修复后真实后端三次导出（2K 透明 PNG、4K 透明 WebP、2K 不透明 PNG）均免重载并在返回时定位。WebP 不支持和上传超限错误保留在导出对话框。助手提示区分 3D 场景导出和已有图片去背景，精简提示控制上下文增量，最终版透明覆盖工具与压缩测试通过。前端 TypeScript 和定向 lint 通过，挂载点和增量契约均核对。其余场景及性能证据沿用前序记录。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "8edf511cb309f3d8334239eba263250436c213c27d377c8c6eac70b047c42141"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-18T08:35:49.664Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "本轮使用隔离数据库与浏览器验收。实际开发实例需重启载入后端改动。8K 性能沿用先前 Metal 实测。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "creative-scene-agent.e2e.mjs 的 export_shots 与 set_render 场景验证另一标签页改动期间沿用渲染修订、显式 true/false、清理与本轮改动 UI；TestExportShotsTransparentOverrideAndSetRenderChanges 与 TestExportShotsTransparentOverrideAndCompletionValidation 核对工具透传及真实事务中的 current/stale。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "TestRenderTransparentBackgroundStorageAndValidation 覆盖非布尔、null 和空补丁及修订不变。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs AA 场景验证 WebGL2 无 MSAA 暗色斜边、白黑底景深合成、雾与大气，以及 RealtimeGI 运动后的空背景。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 玻璃/体积场景验证清玻璃的 10/255 覆盖率、后物体核区、磨砂过渡的多阶 alpha；固定照明更换背景做正对照，彩色体积与同照明下的中性散射对照。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-8c42bbc69c28",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs 真浏览器 4K WebP 解码、模拟编码器不支持和 413 后的降档提示与清理；真后端媒体验收上传 4K WebP；交接时 design.md U1 已记录 Metal WebGPU 的 4K/8K 方形 + 景深实测；creative-scene-camera.test.ts 检查 MIME、编码与时限。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "CREATIVE_MEDIA_E2E_ONLY=transparent 的 TestCreativeEditorBrowser 通过隔离 PostgreSQL、真实媒体工作器和文件存储验证原始 2K PNG/4K WebP、1600 px PNG 展示件、节点 #151516 及原图预览深色底。 本轮在画布事件接口返回 503 时复现回执成功但快照未更新，修复后 2K 透明 PNG、4K 透明 WebP 及 2K 不透明 PNG 均无需重载显示，返回画布定位最近一次导出的首张图。 嵌套分组的透明材质光照、线稿和不透明材质光照，及助手任务完成均通过真实 HTTP 测试，原节点位置保留；断 SSE 的真实浏览器测试在组内上传、落位和定位均通过。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "手动导出和显式覆盖任务 HTTP 测试验证缺回报整批拒绝、暂存图可重试；助手 E2E 删除第一次请求的回报字段，验证客户端收到失败后清理并在刷新重试时仅接受一批。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "分组扩张落位回归已修复。真实 PostgreSQL HTTP 测试先复现手动 400 validation_failed 和助手 invalid_result 缺读取记录，改用画布锁内已有节点版本后两条路径通过。内外分组扩张，保持原节点坐标，整批图放入场景同组。真实浏览器在断开 SSE 的组内导出了 2K 透明 PNG、4K 透明 WebP 和 2K 不透明 PNG 并正确定位。画布、场景与 HTTP 定向 Go 回归、测试脚本 lint 通过。其余证据继承前序记录。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "6b4a84d3d85b4b6f2de62329674e93ff7a42164d7aa38bb4621cf2998e7d21ab"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-18T10:18:29.369Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI 自动 checks。本轮做定向验证，沿用未改动的着色与视口分支的前轮证据。8K PNG 真机证据为 Metal Chromium 方形白模和材质光照，未重测 8K 景深或满批高熵图的资源峰值。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "Agent 浏览器回归验证场景开关被另一标签页关闭时显式透明覆盖与落位清理。前端助手测试确认超过 25 MiB 的 PNG 保持原格式、上传目标按任务作用域绑定。定向 Go 验证任务完成与覆盖值。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。TestRenderTransparentBackgroundStorageAndValidation 覆盖非布尔、null 和空补丁及修订不变。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs AA 场景验证 WebGL2 无 MSAA 暗色斜边、白黑底景深合成、雾与大气，以及 RealtimeGI 运动后的空背景。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 玻璃/体积场景验证清玻璃的 10/255 覆盖率、后物体核区、磨砂过渡的多阶 alpha；固定照明更换背景做正对照，彩色体积与同照明下的中性散射对照。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "Metal Chromium 真浏览器验证 4096×4096 与 8192×8192 透明白模和材质光照为 PNG，解码天空 alpha 为 0，模拟 413 后整批不上画布且释放部分暂存。TestScopedSceneExportLargePNG 将超过 32 MiB 的 PNG 走真实分片、媒体校验、指定场景落位与原图票据，拒绝普通上传、其他账号、另一场景和超过 320 MiB 的声明。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "TestCreativeEditorBrowser 在真实 PostgreSQL 与媒体工作器验证 2K／4K 透明 PNG、画布节点和原图预览，1600 px 的 PNG 展示件保留透明，实时通知不可用时仍可落位和定位。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "本轮重跑手动导出与助手任务 HTTP 校验、旧通用暂存兼容、助手跨标签页及清理用例。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "按选定分辨率导出无损 PNG。新暂存会话以账号可写画布及场景节点为边界，320 MiB 仅用于分镜原图，继续使用分片、存储配额和原子画布放置。真实 32 MiB 级 PNG 上传、场景隔离及 320 MiB 边界通过。4K／8K 方形 PNG、Agent 导出回归和真实媒体端到端通过。前端 76 项、lint/build、OpenAPI 生成校验及后端定向检查通过。8 个契约和 4 个规格增量均可用，挂载点核对无差异。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "b86ce9abd410ea6baff0d8275ffcaaeb4e8b67851db9d7378704240abd5d23ae"
+      }
+    },
+    {
+      "by": "Codex",
+      "at": "2026-11-18T10:35:52.949Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI 自动 checks，采用定向回归。8K 景深资源为本机 Chromium／Metal 下的 macOS 进程物理内存采样，未采集独立显存指标或满批大图。场景读取优化未做延迟基准。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "Agent 浏览器回归验证场景开关被另一标签页关闭时显式透明覆盖与落位清理。前端助手测试确认超过 25 MiB 的 PNG 保持原格式、上传目标按任务作用域绑定。定向 Go 验证任务完成与覆盖值。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "本轮 Go 定向用例 TestRenderTransparentBackgroundStorageAndValidation 验证省略 false 的存储、布尔值响应及无效输入处理。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "本轮运行透明 AA、WebGL2 暗斜边、黑白底景深、雾、大气和 GI 前景运动浏览器回归，均通过。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "Metal 浏览器玻璃／体积 E2E 通过。固定点光源下，opacity=1 时 blend 和默认玻璃的黑底平均红通道差不超过 2，opacity=0.5 时亮度下降。空背景、后方不透明物体、轮廓过渡和彩色体积也通过。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。Metal WebGPU + Chromium 运行同一个物理天空场景，比对基线 7d7fc198 与当前 worktree。1K 白模/线稿/材质光照 PNG 与 4K 白模/材质光照 JPEG 共 5 个样本，文件 SHA-256 与解码 RGBA SHA-256 均一致；现有 E2E 覆盖关闭态 GI 绘制 alpha_mode: blend。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "本轮 Chromium／Metal Workbench E2E 覆盖 4K、8K 方形并开启景深的透明 PNG，解码背景 alpha 为 0，超限清理无部分落位。8K 白模和材质光照双图耗时 6.886 秒，浏览器进程物理内存采样峰值 9.75 GiB。真实媒体工作器的 32 MiB PNG、320 MiB 边界和候选绑定测试通过。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "真实后端浏览器验证 2K／4K 画布预览。SSE 持续返回 503 时，隐藏或离线收到放置回执都保留快照刷新，恢复后新节点出现并正确定位。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale；按次覆盖对照 TestExportShotsTransparentOverrideAndCompletionValidation。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "本轮重跑手动导出与助手任务 HTTP 校验、旧通用暂存兼容、助手跨标签页及清理用例。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留此前的验收证据，相关渲染设置、着色或指纹分支未改。creative-scene.e2e.mjs UI 场景比较最终渲染的棋盘格和物体像素，验证白模、材质预览与线框维持原样。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "复核审计。当前规格和 Agent 工具均描述透明 PNG。修复场景候选改绑、隐藏和离线回执刷新、混合玻璃高光衰减，合并通道上下文派生与场景默认读路径。本轮 59 项前端测试、lint、build、三包定向 Go、真实后端浏览器及三组定向 GPU 浏览器场景通过，设计挂载点无差异。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "195bdd37e00053ecaf6cf11a14afcd451ec487d9997b5238e8a7d43012526cfe"
+      }
+    },
+    {
+      "by": "Antigravity",
+      "at": "2026-11-20T02:36:58.812Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI 自动 checks；本轮为代码审查修复与合并 develop 后的定向回归（creativemedia、creativeagent、generate-check、go vet、tsc/oxlint/build 与 151 项前端单测），未改动着色与视口逻辑，GPU 像素与 8K 性能沿用前轮 Metal Chromium 实测证据。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染设置、着色与视口分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "修正 scene_tools.go 禁用词后重跑 creativeagent 的 TestExportShotsTransparentOverrideAndSetRenderChanges 与全套 TestCompaction 回归全绿；合并 develop 后前端 creative-scene-agent.test.ts 与 tsc/lint/build 通过；保留前轮 Agent 浏览器回归证据。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关场景命令校验未改。TestRenderTransparentBackgroundStorageAndValidation 验证省略 false 的存储、布尔值响应及无效输入处理。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染管线与着色未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，线稿与导出对话框逻辑未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，透明 AA、WebGL2 暗斜边、黑白底景深、雾、大气与 GI 前景运动分支未改，均通过浏览器回归。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，玻璃与体积着色未改。Metal 浏览器玻璃/体积 E2E 与 creative-scene-gi.test.ts 守卫通过。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，夜空渲染未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，关闭态渲染分支未改。Metal WebGPU + Chromium 物理天空样本与 7d7fc198 基线 5 张不透明图 SHA-256 及解码 RGBA 一致。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "本轮修复 320 MiB 分镜原图在 workFactsProbe/probeImage 走 25 MiB 上限与整文件进堆的问题、补充 uploadMaxBytes 零值回退，以及高分辨率 PNG canvasPngBlob 竞态 DeviceLostError 守卫；实跑 TestScopedSceneExportLargePNG（含 >25 MiB 4096×2048 PNG 的 ScheduleFactsProbe 与 ResolveGenerationMedia 校验）、TestTransparentDisplayRendition 与 creative-scene-gpu.test.ts 全绿；沿用前轮 Metal Chromium 4K/8K 方形+景深透明 PNG 浏览器实测。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "合并 develop 后验证 WorkspacePage/SceneEditor 无冲突、tsc/lint/build 与 151 项前端单测全绿；保留前轮真实后端浏览器 2K/4K PNG 展示件与断 SSE 刷新定位证据。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹与过时判定逻辑未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹逻辑未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，回报校验与暂存隔离逻辑未改。手动导出与助手任务 HTTP 校验、旧通用暂存兼容及清理用例通过。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，视口棋盘格与白模/材质预览/线框背景未改。creative-scene.e2e.mjs UI 场景验证最终渲染棋盘格与其余显示模式原样保留。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "完成代码审查修复（scene_tools.go 禁用词改「创作者」、workFactsProbe/probeImage 兼容 320 MiB 流式探测、uploadMaxBytes 零值回退、高分 PNG canvasPngBlob 设备丢失竞态守卫、清理残余 WebP 注释/文案及更新 CLAUDE.md GitFlow 分支命名）并合并最新 develop。generate-check、go vet、creativemedia/creativeagent 定向 Go 测试、前端 tsc/lint/build 与 151 项单测全绿；8 条契约与 4 条 Living Spec 增量均 applicable 且与 develop 无章节冲突；unplanned 项均为合并 develop 带入文件与 CLAUDE.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "230ac8d3333dc734eb00d12f2e36eb1e581ddc88612ded0ca8d829039b19123b"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-20T02:37:42.284Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "复用同快照技术验证记录；未重跑全量 E2E，沿用本轮定向回归与前轮 Metal Chromium 浏览器及 8K 实测证据。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染设置、着色与视口分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "修正 scene_tools.go 禁用词后重跑 creativeagent 的 TestExportShotsTransparentOverrideAndSetRenderChanges 与全套 TestCompaction 回归全绿；合并 develop 后前端 creative-scene-agent.test.ts 与 tsc/lint/build 通过；保留前轮 Agent 浏览器回归证据。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关场景命令校验未改。TestRenderTransparentBackgroundStorageAndValidation 验证省略 false 的存储、布尔值响应及无效输入处理。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染管线与着色未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，线稿与导出对话框逻辑未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，透明 AA、WebGL2 暗斜边、黑白底景深、雾、大气与 GI 前景运动分支未改，均通过浏览器回归。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，玻璃与体积着色未改。Metal 浏览器玻璃/体积 E2E 与 creative-scene-gi.test.ts 守卫通过。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，夜空渲染未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，关闭态渲染分支未改。Metal WebGPU + Chromium 物理天空样本与 7d7fc198 基线 5 张不透明图 SHA-256 及解码 RGBA 一致。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "本轮修复 320 MiB 分镜原图在 workFactsProbe/probeImage 走 25 MiB 上限与整文件进堆的问题、补充 uploadMaxBytes 零值回退，以及高分辨率 PNG canvasPngBlob 竞态 DeviceLostError 守卫；实跑 TestScopedSceneExportLargePNG（含 >25 MiB 4096×2048 PNG 的 ScheduleFactsProbe 与 ResolveGenerationMedia 校验）、TestTransparentDisplayRendition 与 creative-scene-gpu.test.ts 全绿；沿用前轮 Metal Chromium 4K/8K 方形+景深透明 PNG 浏览器实测。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "合并 develop 后验证 WorkspacePage/SceneEditor 无冲突、tsc/lint/build 与 151 项前端单测全绿；保留前轮真实后端浏览器 2K/4K PNG 展示件与断 SSE 刷新定位证据。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹与过时判定逻辑未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹逻辑未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，回报校验与暂存隔离逻辑未改。手动导出与助手任务 HTTP 校验、旧通用暂存兼容及清理用例通过。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，视口棋盘格与白模/材质预览/线框背景未改。creative-scene.e2e.mjs UI 场景验证最终渲染棋盘格与其余显示模式原样保留。"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "Owner 授权修复代码审查问题、提交并结案，接受当前快照技术验证结论。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "230ac8d3333dc734eb00d12f2e36eb1e581ddc88612ded0ca8d829039b19123b"
+      }
+    }
+  ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-20T02:38:23.960Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "closed"
 }

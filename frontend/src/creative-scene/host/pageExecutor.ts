@@ -27,6 +27,7 @@ export function createPageExecutor(api: JobApi, deviceLost: () => void): PageRun
     },
     thumbnail: renderThumbnail,
     upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal, ticker.wait),
+    uploadExport: (file, declared, target, signal) => uploadGenerated(file, declared, { kind: 'staged', scene_export: target }, signal, ticker.wait),
     discard: (upload) =>
       upload.publication?.kind === 'candidate' ? discardCandidate(upload.publication.id, upload.publication.revision) : Promise.resolve(),
     render: (documentID, request) => renderView(documentID, request),

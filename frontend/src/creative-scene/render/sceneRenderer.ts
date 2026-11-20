@@ -1,16 +1,19 @@
 import { ACESFilmicToneMapping, AgXToneMapping, Color, DataTexture, DataUtils, Group, HalfFloatType, Layers, NoToneMapping, RepeatWrapping, Scene, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, type Camera, type DirectionalLight, type Light, type LightShadow, type Mesh, type Object3D, type PerspectiveCamera, type SpotLight } from 'three'
-import { float, mix, mrt, normalView, pass, renderOutput, texture, uniform, uv, vec4 } from 'three/tsl'
-import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeFrame } from 'three/webgpu'
+import { Fn, abs, dot, float, max, mix, mrt, normalView, pass, renderOutput, step, texture, uniform, uv, vec2, vec4 } from 'three/tsl'
+import { MeshBasicNodeMaterial, NodeMaterial, NodeUpdateType, PassNode, QuadMesh, RenderPipeline, RenderTarget, RendererUtils, TempNode, type Node, type NodeBuilder, type NodeFrame } from 'three/webgpu'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js'
 import type { DepthOfField } from '../cameraOptics.ts'
+import type { TSLNode } from '../materials/patterns.ts'
 import { depthOfField, type Dof } from './dof.ts'
 import { convergeFrames, PICTURE_AFTER_WARMUP, type Engine, type Quality } from './engines.ts'
 import { gpuTestHooks, pageYields, yieldToPage, type SceneGPU } from './gpu.ts'
 import { builds, drawBuilt } from './deferredBuild.ts'
 import { ao } from './nodes/GTAONode.js'
-import { GILightingPass, splitContext } from './giSplit.ts'
+import { GILightingPass } from './giSplit.ts'
+import { transparentContext, type PassContext } from './passContext.ts'
+import { installTransparentTransmission } from './transparentTransmission.ts'
 import { realtimeGI, type RealtimeGI } from './realtimeGI.ts'
 import { aimStudio } from './studio.ts'
 import { cascadeSunShadow } from './sunShadow.ts'
@@ -123,6 +126,8 @@ export type Frame = {
    * frames (R2 design「累积与出图」). The viewport does not.
    */
   accumulate?: boolean
+  /** Transparent sky/background pass (only used for transparent clay/lit exports and rendered viewport). */
+  transparent?: boolean
 }
 
 /**
@@ -281,7 +286,8 @@ function asItsPass(renderer: SceneGPU['renderer']) {
       const context = renderer.contextNode
       renderer.setRenderTarget(pass.target)
       renderer.setMRT(pass.node.getMRT())
-      if (pass.node instanceof GILightingPass) renderer.contextNode = splitContext(context as Parameters<typeof splitContext>[0])
+      if (pass.node instanceof TransparentScenePass || pass.node instanceof GILightingPass)
+        renderer.contextNode = pass.node.contextFor(context as PassContext)
       try {
         return call()
       } finally {
@@ -414,10 +420,10 @@ export function mainLight(scene: Object3D): Shadowing | null {
  * workbench; the real-time GI's world-space layer, once ready (S1); its
  * probes, once warm (S2).
  */
-type Look = { wireframe: boolean; blur: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null; world: ProbeView | null }
+type Look = { wireframe: boolean; blur: boolean; transparent: boolean; gi: boolean; quality: Quality; accumulate: boolean; trace: TraceHandle | null; world: ProbeView | null }
 
-const keyOf = ({ wireframe, blur, gi, quality, accumulate, trace, world }: Look) =>
-  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}${world ? '+probes' : ''}` : 'shaded'}${blur ? '+dof' : ''}${accumulate ? '+acc' : ''}`
+const keyOf = ({ wireframe, blur, transparent, gi, quality, accumulate, trace, world }: Look) =>
+  wireframe ? 'wire' : `${gi ? `gi-${quality}${trace ? `+trace-${trace.key}` : ''}${world ? '+probes' : ''}` : 'shaded'}${blur ? '+dof' : ''}${transparent ? '+transparent' : ''}${accumulate ? '+acc' : ''}`
 
 /** A picture's warm-up frames dispatched in one run, some 40 ms of the page's time (warm). */
 const WARM_CHUNK = 16
@@ -428,10 +434,10 @@ const WARM_CHUNK = 16
  * within the real-time GI (the layer or the probes coming on, the solid view to the rendered one, the blur), not
  * out of it or into or out of wireframe: those build as before.
  */
-const keeps = (a: Look, b: Look) => b.gi && a.wireframe === b.wireframe && (!a.trace || a.trace.key === b.trace?.key) && (!a.world || b.world !== null)
+const keeps = (a: Look, b: Look) => b.gi && a.wireframe === b.wireframe && a.transparent === b.transparent && (!a.trace || a.trace.key === b.trace?.key) && (!a.world || b.world !== null)
 
 /** The pipeline's structure apart from what it draws with (keyOf without the layer's and probes' serials): its passes draw at the same depths. */
-const shapeOf = (look: Look) => `${look.gi}|${look.wireframe}|${look.quality}|${look.blur}|${look.accumulate}|${look.trace !== null}|${look.world !== null}`
+const shapeOf = (look: Look) => `${look.gi}|${look.wireframe}|${look.transparent}|${look.quality}|${look.blur}|${look.accumulate}|${look.trace !== null}|${look.world !== null}`
 
 /** The depths a picture's scene passes draw at, each pass's in the pipeline's order, by its shape (SceneRenderer.prepare). */
 const pictureDepths = new Map<string, Set<number>[]>()
@@ -524,6 +530,83 @@ class BackgroundlessPass extends PassNode {
   }
 }
 
+/**
+ * Transparent sky/background Workbench pass: clears RGB+alpha to (0, 0, 0, 0)
+ * and injects transparentContext(base) while keeping clearColor and context
+ * untouched for subsequent non-transparent passes on the same renderer.
+ */
+class TransparentScenePass extends BackgroundlessPass {
+  contextFor(base: PassContext): PassContext {
+    return transparentContext(base)
+  }
+
+  updateBefore(frame: Parameters<PassNode['updateBefore']>[0]) {
+    const renderer = frame.renderer!
+    const base = renderer.contextNode
+    const prevColor = renderer.getClearColor(new Color())
+    const prevAlpha = renderer.getClearAlpha()
+    renderer.setClearColor(0x000000, 0)
+    renderer.contextNode = this.contextFor(base as PassContext)
+    try {
+      return super.updateBefore(frame)
+    } finally {
+      renderer.contextNode = base
+      renderer.setClearColor(prevColor, prevAlpha)
+    }
+  }
+}
+
+type SmaaInternals = {
+  setup(builder: NodeBuilder): unknown
+  textureNode: TSLNode & { uvNode?: TSLNode }
+  _invSize: TSLNode
+  _materialEdges: { fragmentNode: unknown; needsUpdate: boolean }
+}
+
+/**
+ * Expands upstream SMAANode edge detection to four channels max(|dR|, |dG|, |dB|, |dA|)
+ * so dark silhouettes (< 0.1 sRGB) over transparent backgrounds are detected and blended.
+ *
+ * Checked against three 0.186.1 examples/jsm/tsl/display/SMAANode.js:
+ *   - lines 284-351 (SMAAEdgeDetection)
+ *   - lines 656-658 (_materialEdges assignment)
+ */
+export function installTransparentSMAA(aa: SmaaInternals): void {
+  const origSetup = aa.setup.bind(aa)
+  aa.setup = (builder: NodeBuilder) => {
+    const result = origSetup(builder)
+    const smaaThreshold = 0.1
+    const edge = (c: TSLNode, sampleUV: TSLNode): TSLNode => {
+      const t = abs(c.sub(aa.textureNode.sample(sampleUV))) as unknown as TSLNode
+      return max(max(t.r, t.g), max(t.b, t.a))
+    }
+    const edges4ch = Fn(() => {
+      const uvNode = aa.textureNode.uvNode || uv()
+      const vOffset0 = vec4(uvNode.xy, uvNode.xy).add(vec4(aa._invSize.xy, aa._invSize.xy).mul(vec4(-1.0, 0.0, 0.0, -1.0))).toVertexStage()
+      const vOffset1 = vec4(uvNode.xy, uvNode.xy).add(vec4(aa._invSize.xy, aa._invSize.xy).mul(vec4(1.0, 0.0, 0.0, 1.0))).toVertexStage()
+      const vOffset2 = vec4(uvNode.xy, uvNode.xy).add(vec4(aa._invSize.xy, aa._invSize.xy).mul(vec4(-2.0, 0.0, 0.0, -2.0))).toVertexStage()
+      const threshold = vec2(smaaThreshold, smaaThreshold)
+      const delta = vec4().toVar()
+      const c = aa.textureNode.sample(uvNode).toVar()
+      delta.x = edge(c, vOffset0.xy)
+      delta.y = edge(c, vOffset0.zw)
+      const edges = step(threshold, delta.xy).toVar()
+      dot(edges, vec2(1.0, 1.0)).equal(0).discard()
+      delta.z = edge(c, vOffset1.xy)
+      delta.w = edge(c, vOffset1.zw)
+      let maxDelta: TSLNode = max(max(delta.x, delta.y), max(delta.z, delta.w)).toVar()
+      delta.z = edge(c, vOffset2.xy)
+      delta.w = edge(c, vOffset2.zw)
+      maxDelta = max(maxDelta, max(delta.z, delta.w))
+      edges.xy.mulAssign(vec2((step as unknown as (...args: unknown[]) => TSLNode)(float(0.5).mul(maxDelta), delta.xy)))
+      return vec4(edges, 0, 0)
+    })
+    aa._materialEdges.fragmentNode = edges4ch()
+    aa._materialEdges.needsUpdate = true
+    return result
+  }
+}
+
 type Built = {
   key: string
   look: Look
@@ -594,6 +677,7 @@ export class SceneRenderer {
   private readonly redraw: (() => void) | null
 
   constructor(gpu: SceneGPU, scene: Scene, camera: Camera, overlays: Overlays = noOverlays, redraw: (() => void) | null = null) {
+    installTransparentTransmission()
     this.gpu = gpu
     this.camera = camera
     this.scene = scene
@@ -705,7 +789,7 @@ export class SceneRenderer {
         realtimeGI(scene, camera, {
           quality: look.quality,
           layers: layers(0),
-          pictureLayers: layers(0, SKY_LAYER),
+          pictureLayers: look.transparent ? layers(0) : layers(0, SKY_LAYER),
           aside: aside && { color: aside.getTextureNode(), depth: aside.getTextureNode('depth') },
           noise: fixedNoise,
           mainLight: () => mainLight(scene),
@@ -713,21 +797,29 @@ export class SceneRenderer {
           // The reflections' hits lit by the probes as the screen is (S2 design「命中点的间接光」).
           trace: look.trace && hitShading(look.trace.reflect, look.trace.tables, scene, look.world && { probes: look.world, fill: AMBIENT_FILL }),
           world: look.trace && look.world ? { probes: look.world, ambient: look.trace.tables.ambient, fill: AMBIENT_FILL, ao: gpuTestHooks.probeAO } : null,
+          transparent: look.transparent,
         }),
       )
       passes = aside ? [...gi.passes, { node: aside, layers: layers(ASIDE_LAYER) }] : gi.passes
       aoOn = gi.aoOn
       picture = gi.color
       if (blur) {
-        dof = depthOfField(picture, gi.depth)
+        dof = depthOfField(picture, gi.depth, 128, look.transparent)
         disposables.push(dof)
         picture = dof.output
       }
       if (look.accumulate) picture = own(new AccumulateNode(picture, convergeFrames('realtime_gi'))) as unknown as Node<'vec4'>
     } else {
-      const beauty = own(wireframe ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }) : pass(scene, camera, { samples: msaa }))
-      beauty.setLayers(layers(0, ASIDE_LAYER, SKY_LAYER))
-      passes = [{ node: beauty, layers: layers(0, ASIDE_LAYER, SKY_LAYER) }]
+      const beautyLayers = look.transparent ? layers(0, ASIDE_LAYER) : layers(0, ASIDE_LAYER, SKY_LAYER)
+      const beauty = own(
+        wireframe
+          ? new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa })
+          : look.transparent
+            ? new TransparentScenePass(PassNode.COLOR, scene, camera, { samples: msaa })
+            : pass(scene, camera, { samples: msaa }),
+      )
+      beauty.setLayers(beautyLayers)
+      passes = [{ node: beauty, layers: beautyLayers }]
       picture = beauty
       if (!wireframe) {
         // Multisampled depth cannot be sampled by the AO: the prepass has none.
@@ -756,13 +848,13 @@ export class SceneRenderer {
         aoOn = on
         picture = vec4(beauty.rgb.mul(mix(float(1), vec4Of(clean).r, on)), beauty.a)
         // The aerial perspective after the AO (design「合成顺序」), before the blur; off it is the picture as it was.
-        picture = vec4(aerialBehind(picture.rgb, depth, camera), beauty.a)
+        picture = vec4Of(aerialBehind(picture, depth, camera))
         // Then the volumes, the air before and behind them apart (Epic revision v9); none drawn, the picture as it was.
         const volumes = own(new VolumeNode(depth, camera, [beauty], this.redraw))
-        picture = vec4(applyVolumes(picture.rgb, depth, camera, volumes), beauty.a)
+        picture = vec4Of(applyVolumes(picture, depth, camera, volumes))
         // AO comes before the blur, so contact shadows out of focus soften with everything else.
         if (blur) {
-          dof = depthOfField(picture, depth)
+          dof = depthOfField(picture, depth, 128, look.transparent)
           disposables.push(dof)
           picture = dof.output
         }
@@ -779,10 +871,14 @@ export class SceneRenderer {
     let output = vec4Of(renderOutput(picture, wireframe ? ACESFilmicToneMapping : AgXToneMapping, SRGBColorSpace))
     if (wireframe) output = vec4(output.rgb.add(vec4Of(renderOutput(vec4(background, 1), NoToneMapping, SRGBColorSpace)).rgb.mul(output.a.oneMinus())), 1)
     // The real-time GI is antialiased by its TRAA.
-    if (msaa === 0 && !gi) output = vec4Of(own(smaa(output)))
+    if (msaa === 0 && !gi) {
+      const aa = own(smaa(output))
+      if (look.transparent) installTransparentSMAA(aa as unknown as SmaaInternals)
+      output = vec4Of(aa)
+    }
     const pipeline = new RenderPipeline(gpu.renderer)
     pipeline.outputColorTransform = false
-    pipeline.outputNode = vec4(output.rgb, 1)
+    pipeline.outputNode = look.transparent ? output : vec4(output.rgb, 1)
     let overlayPass: PassNode | null = null
     if (this.viewport) {
       const overlay = own(new BackgroundlessPass(PassNode.COLOR, scene, camera, { samples: msaa }))
@@ -790,7 +886,7 @@ export class SceneRenderer {
       overlay.setLayers(layers(OVERLAY_LAYER))
       // Premultiplied sRGB over the finished picture.
       const top = vec4Of(renderOutput(overlay, NoToneMapping, SRGBColorSpace))
-      pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), 1)
+      pipeline.outputNode = vec4(output.rgb.mul(top.a.oneMinus()).add(top.rgb), look.transparent ? mix(output.a, float(1), top.a) : float(1))
     }
     const scenePasses = [...passes.map((p) => p.node), ...(overlayPass ? [overlayPass] : [])]
     for (const node of scenePasses) trackDepth(gpu.renderer, node)
@@ -953,6 +1049,7 @@ export class SceneRenderer {
     const look: Look = {
       wireframe,
       blur: dof !== null,
+      transparent: !wireframe && frame.transparent === true,
       gi,
       quality: frame.quality ?? 'interactive',
       // The real-time GI's frames, or the workbench's soft shadows' (host/render.ts).

@@ -103,7 +103,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"reparent_objects{moves:[{object_id, parent_id(分组或 null), order?}], create_groups?:[{id, name, parent_id, order?, transform?}], remove_groups?:[分组 ID]}：编组、取消编组和改挂，按新建→改挂→删除执行；" +
 				"改挂自动保持物件的世界位置，不要写 transform；省略 order 排到父级末尾；新分组省略 transform 时放在挂进它的物件的中点；删除的分组要先把子物件挂走；add_objects、remove_objects、reparent_objects 都改物件列表，一次修改里最多一个；" +
 				"set_environment{environment:{sky:{kind:procedural, sun_elevation_deg（0 地平线、90 天顶）, sun_azimuth_deg（0 朝 +Z、90 朝 +X）, turbidity}|{kind:physical, …见下}|{kind:color, color}（暂无内置 HDRI）, ambient:{color, intensity:0…10}, fog:{color, near, far}（three.js Fog，米）或 null}}（三项都要写；环境只作用于 lit）；" +
-				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_mode?:ambient|manual（物理天空下临时视点和预设取景的曝光模式，默认 ambient 环境测光）, exposure_compensation?:-5…5（它们环境测光的补偿）, exposure_ev100?:-10…20（它们手动曝光时的 EV100）, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
+				"set_render{render:{mode?:clay|lit, exposure_ev?:-10…10（物理天空以外的曝光补偿）, exposure_mode?:ambient|manual（物理天空下临时视点和预设取景的曝光模式，默认 ambient 环境测光）, exposure_compensation?:-5…5（它们环境测光的补偿）, exposure_ev100?:-10…20（它们手动曝光时的 EV100）, transparent_background?:bool, engine?:workbench|realtime_gi, resolution?:1k|2k|4k|8k}}（按键合并）；" +
 				"set_instance_model{object_id, model{content_revision_id}|model{builtin}, material_slots?（给出时按新模型的槽位重写这些实例的材质槽）, scope:this|all_instances, object_ids}。" +
 				"物理天空（真实的大气和太阳，调时间产生真实的光照变化）sky:{kind:physical, sun_mode:location（按地点和时间推算太阳）|manual（用 sun_elevation_deg、sun_azimuth_deg）, latitude_deg:-90…90, longitude_deg:-180…180（东经为正）, " +
 				"timezone（IANA 时区名，大小写与时区库一致，如 Asia/Shanghai、Europe/London；夏令时由时区处理）, place（显示用地名，≤80 字）, date:\"YYYY-MM-DD\"（必填）, local_time:\"HH:MM\"（当地时刻）, " +
@@ -126,7 +126,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"内置模型（男、女素体）：search_assets 用 source:builtin、kind:model 查，builtin_id 写进 model{builtin}；放入或换成它时不写 material_slots 就带上它自带的贴图材质，之后照常改 material_slots；不能用 write_model 替换。" +
 				"渲染方式：clay 是素模，用固定的工作室光（光从视角左上方照来，不投影，带环境光遮蔽，背景是中性灰），不受天空、太阳、环境光、雾和灯光物件影响，看几何、比例和构图；lit 是最终渲染：材质、灯光物件、天空当环境光照和反射、太阳、环境光、雾、阴影和环境光遮蔽，按 render.exposure_ev 曝光（档，只作用于 lit；物理天空下改为摄像机的环境测光或手动曝光，见建议曝光）。" +
 				"渲染器 render.engine 只作用于材质光照（lit 的导出与回看；白模和线稿总按工作台画）：workbench 是默认的工作台渲染；realtime_gi 是实时 GI，加入屏幕空间的间接光（墙面互相渗色）、反射和接触阴影，画面更接近成片，但回看和导出要多帧累积、更慢；path_tracing 还不能选。" +
-				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上，设备画不了时导出失败，可以换低一档。" +
+				"输出分辨率 render.resolution 只决定 export_shots 导出图的长边（1k 1024、2k 2048、4k 4096、8k 8192），不影响画面内容和回看；8K 实时 GI 的材质光照一张要一分钟以上。设备无法渲染时先说明失败原因，由创作者决定是否调整分辨率。" +
 				"material_slots{槽位:{preset, params}}：基础体只有 main，模型实例的槽位见 read_scene 的 model.slots，换模型后另行提交；没写的槽位按模型的材质提示或默认材质显示；params 省略的取默认。" +
 				"贴图只用于原理化材质 principled@1，槽位另写 maps、mapping、alpha_mode、alpha_cutoff：maps 可写 base_color（与 color 相乘，按 sRGB）、normal（切线空间，OpenGL 约定 +Y 朝上，同 glTF、Blender）、roughness、metalness、ao（只压暗间接光）、emissive（自发光，与 emissive 颜色、emissive_intensity 相乘，按 sRGB）六种，每种 {content_revision_id:图片修订, channel?}；" +
 				"channel 为 r/g/b/a，只用于 roughness、metalness、ao，缺省 r，glTF 打包的 ORM 图三项写同一张图，分别取 r、g、b。图片须是这一轮读得到的：画布上、对话里、已授权的资产库里，或你读到的材质资产、模型资产带的贴图；场景里已经用着的图片可以直接复制到别的槽位。单个场景最多 64 张不同的图片。" +
@@ -193,15 +193,16 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 		}, nil
 	case exportShotsTool:
 		params := map[string]*schema.ParameterInfo{
-			"document_id":       doc,
-			"shots":             strs("要导出的分镜 ID，省略时有分镜导出全部分镜（按帧序），没有分镜导出全部摄像机；最多 32 个；未绑定摄像机的分镜会被列出并拒绝"),
-			"camera_object_ids": strs("没有分镜的场景按摄像机导出：省略为全部摄像机（按物件顺序），最多 32 台；不能和 shots 同用"),
-			"passes":            {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
+			"document_id":            doc,
+			"shots":                  strs("要导出的分镜 ID，省略时有分镜导出全部分镜（按帧序），没有分镜导出全部摄像机；最多 32 个；未绑定摄像机的分镜会被列出并拒绝"),
+			"camera_object_ids":      strs("没有分镜的场景按摄像机导出：省略为全部摄像机（按物件顺序），最多 32 台；不能和 shots 同用"),
+			"passes":                 {Type: schema.Array, Desc: "导出方式，省略为 clay 和 line；配了材质和灯光时加 lit", ElemInfo: &schema.ParameterInfo{Type: schema.String, Enum: []string{"clay", "line", "lit"}}},
+			"transparent_background": {Type: schema.Boolean, Desc: "白模、材质光照去底；省略随场景"},
 		}
 		return &schema.ToolInfo{
 			Name: exportShotsTool,
 			Desc: t.handler.offerBackground("把场景的分镜导出成图，放到当前画布上这个场景节点的右侧：有分镜时每个分镜一行（按分镜的帧和它绑定的摄像机出图，标题用分镜名），没有分镜时每台摄像机一行；clay（白模：固定的工作室光，不受环境和灯光影响，打开景深的摄像机按光圈虚化）、line（线稿）和 lit（材质光照：与 render_view 的 lit 同一套渲染，景深同 clay）各一列，节点记下来源修订和镜头（lens：焦距、景深开关、光圈、对焦距离和对焦物件），场景之后改了会提示过时。"+
-				"图在创作者的页面渲染，材质光照按场景的渲染器，白模和线稿按工作台；长边按 render.resolution（缺省 2k 即 2048）；4K、8K 的白模和材质光照是 JPEG，线稿是 PNG。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。", params, sceneBackgroundNote),
+				"图在创作者的页面渲染，材质光照按场景的渲染器，白模和线稿按工作台；长边按 render.resolution（缺省 2k 即 2048）。透明背景的白模、材质光照以及线稿在 1K 至 8K 均为无损 PNG；4K、8K 的不透明白模和材质光照为 JPEG。分镜原图单张可上传 320 MiB。按创作者指定的分辨率导出，失败时告知具体原因。调用等到图放上画布后返回节点 ID，不返回图片；要看画面先用 render_view。场景须已在当前画布上。", params, sceneBackgroundNote),
 			ParamsOneOf: schema.NewParamsOneOfByParams(params),
 		}, nil
 	default:
@@ -209,7 +210,7 @@ func (t *sceneTool) Info(context.Context) (*schema.ToolInfo, error) {
 			Name: renderViewTool,
 			Desc: "给场景拍一张截图交给你看：默认 mode:clay 素模（固定的工作室光，不受环境和灯光影响），检查摆放、比例和构图；mode:lit 按最终渲染（材质、灯光、天空、环境光、雾、曝光）出图，检查材质和打光；物理天空下摄像机按自己的曝光（环境测光，或 iso、shutter_s、f_stop 手动），临时视点和预设取景按 render 的曝光设置（默认环境测光），所以它们的亮度可能和摄像机拍出来的不同，手动曝光的摄像机尤其如此：判断最终画面的明暗要按那台摄像机回看；结果的 exposure 写着这张截图怎么曝光（by:camera|default_camera，mode，环境测光的 compensation 或手动的 ev100）。四选一：分镜（shot，这个分镜的样子，从它绑定的摄像机拍）、场景里的摄像机、临时视点，或预设取景（overview 斜上方总览、top 俯视、front 正视、side 侧视，按可见物件自动取景）；后三种可带 frame 看某一帧（缺省 0）。" +
 				"截图与编辑器视口的白模或最终渲染、对应的导出是同一套画面（带环境光遮蔽）。默认全清晰，先看清结构；要检查焦点和虚化时按摄像机回看并带 depth_of_field:true，按光圈和对焦虚化，这台摄像机须已打开 depth_of_field。" +
-				"截图 mode:lit 按场景的渲染器（render.engine）画，素模按工作台；长边 1024；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
+				"截图 mode:lit 按场景的渲染器（render.engine）画，素模按工作台；长边 1024（恒带背景）；实时 GI 要多帧累积，比工作台慢。截图在创作者的页面渲染，调用等到完成后返回；scene_revision 是截图画的修订，不能当基线。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"document_id":      doc,
 				"shot":             str("分镜 ID"),
@@ -497,14 +498,21 @@ func (h *runtimeHandler) renderView(ctx context.Context, step, raw string) (any,
 // the job.
 func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any, error) {
 	var args struct {
-		DocumentID      string   `json:"document_id"`
-		Shots           []string `json:"shots"`
-		CameraObjectIDs []string `json:"camera_object_ids"`
-		Passes          []string `json:"passes"`
+		DocumentID            string   `json:"document_id"`
+		Shots                 []string `json:"shots"`
+		CameraObjectIDs       []string `json:"camera_object_ids"`
+		Passes                []string `json:"passes"`
+		TransparentBackground *bool    `json:"transparent_background"`
 	}
 	raw, background, err := h.backgroundArgument(ctx, raw)
 	if err != nil {
 		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &fields) == nil {
+		if v, ok := fields["transparent_background"]; ok && strings.TrimSpace(string(v)) == "null" {
+			return nil, errToolArguments
+		}
 	}
 	if err := strictArguments(raw, &args); err != nil {
 		return nil, err
@@ -514,7 +522,7 @@ func (h *runtimeHandler) exportShots(ctx context.Context, step, raw string) (any
 		if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", h.held.ConversationID).Scan(&canvasID); err != nil {
 			return creativescene.Job{}, nil, err
 		}
-		in := creativescene.ExportJobInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step, MarkerIDs: args.Shots, CameraObjectIDs: args.CameraObjectIDs, Passes: args.Passes}
+		in := creativescene.ExportJobInput{DocumentID: args.DocumentID, RunID: h.held.RunID, ToolCallID: step, MarkerIDs: args.Shots, CameraObjectIDs: args.CameraObjectIDs, Passes: args.Passes, TransparentBackground: args.TransparentBackground}
 		if canvasID != nil {
 			in.CanvasID = *canvasID
 		}

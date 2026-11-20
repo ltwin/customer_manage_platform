@@ -1,7 +1,8 @@
-import { Color, type Fog, type Scene } from 'three'
+import { Color, type Camera, type Fog, type Scene } from 'three'
 import { context, diffuseColor, float, Fn, luminance, metalness, normalView, positionViewDirection, property, sheen, sheenRoughness, specularColor, specularF90, uniform, vec3, vec4 } from 'three/tsl'
 import { PassNode, PhysicalLightingModel, type NodeBuilder } from 'three/webgpu'
 import type { TSLNode } from '../materials/patterns.ts'
+import { transparentContext, type PassContext } from './passContext.ts'
 
 // The real-time GI's lighting pass takes the materials' indirect light apart
 // (R2 design「合成」): the AO is to shade only the indirect light, and the
@@ -38,15 +39,13 @@ export const giEnvSpec = property('vec4', 'GIEnvSpec', vec4(0))
 /** The base colour and metalness, for the GI's albedo and the reflections' Fresnel. */
 export const giBase = property('vec4', 'GIBase', vec4(0))
 
-/** getFlowContextData is three's, missing from its typings: the data of a context and the contexts it wraps. */
-type Context = ReturnType<typeof context> & { getFlowContextData(): Record<string, unknown> }
-const contexts = new WeakMap<Context, { version: number; context: Context }>()
+const contexts = new WeakMap<PassContext, { version: number; context: PassContext }>()
 
 /** The renderer's context with the mark: the same node for as long as the renderer's is unchanged. */
-export function splitContext(base: Context): Context {
+export function splitContext(base: PassContext): PassContext {
   let made = contexts.get(base)
   if (!made || made.version !== base.version) {
-    made = { version: base.version, context: context({ ...base.getFlowContextData(), [mark]: true }) as Context }
+    made = { version: base.version, context: context({ ...base.getFlowContextData(), [mark]: true }) as PassContext }
     contexts.set(base, made)
   }
   return made.context
@@ -58,9 +57,27 @@ export function splitContext(base: Context): Context {
  * picture would have the fog where the composite takes the indirect light
  * out, and none on the GI, reflections and contact shadows it puts in: the
  * composite lays the fog over it all (realtimeGI.ts), from these uniforms.
+ * Inherited PassNode.transparent stays true so alpha_mode: blend queues keep drawing.
  */
 export class GILightingPass extends PassNode {
   readonly fog = { on: uniform(0), color: uniform(new Color()), near: uniform(0), far: uniform(1) }
+  readonly transparentBackground: boolean
+
+  constructor(
+    scope: ConstructorParameters<typeof PassNode>[0],
+    scene: Scene,
+    camera: Camera,
+    options?: ConstructorParameters<typeof PassNode>[3],
+    transparentBackground = false,
+  ) {
+    super(scope, scene, camera, options)
+    this.transparentBackground = transparentBackground
+  }
+
+  contextFor(base: PassContext): PassContext {
+    const split = splitContext(base)
+    return this.transparentBackground ? transparentContext(split) : split
+  }
 
   updateBefore(frame: Parameters<PassNode['updateBefore']>[0]) {
     const renderer = frame.renderer!
@@ -76,10 +93,21 @@ export class GILightingPass extends PassNode {
       this.fog.far.value = fog.far
       scene.fog = null
     }
-    renderer.contextNode = splitContext(base as Context)
+    const prevBackground = scene.background
+    const prevClearAlpha = renderer.getClearAlpha()
+    const prevClearColor = this.transparentBackground ? renderer.getClearColor(new Color()) : null
+    if (this.transparentBackground) {
+      scene.background = null
+      renderer.setClearColor(0x000000, 0)
+    }
+    renderer.contextNode = this.contextFor(base as PassContext)
     try {
       return super.updateBefore(frame)
     } finally {
+      if (this.transparentBackground) {
+        scene.background = prevBackground
+        renderer.setClearColor(prevClearColor!, prevClearAlpha)
+      }
       renderer.contextNode = base
       scene.fog = fog
     }

@@ -184,7 +184,7 @@ func TestOldRenderIsCompletedOnRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "lit", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "lit", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "transparent_background": false, "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
 		t.Fatalf("full read of an old render: %v", got)
 	}
 	if r := readScene(t, f.a, doc).Scene.Render; r != (creativescene.Render{Mode: "lit", Engine: creativescene.EngineWorkbench, Resolution: "2k", ExposureEV100: 15, ExposureMode: creativescene.ExposureAmbient}) {

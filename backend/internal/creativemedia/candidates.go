@@ -97,15 +97,19 @@ func (s *Service) AdoptCandidate(ctx context.Context, scope store.AccountScope, 
 		if candidate.State != "pending" || !now.Before(candidate.ExpiresAt) || candidate.ContentRevisionID == nil {
 			return creativeops.Outcome{}, ErrState
 		}
+		var target Target
+		if err := json.Unmarshal(candidate.Target, &target); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		if target.SceneExport != nil {
+			return creativeops.Outcome{}, creativeops.Explain(creativeops.ErrValidation, "分镜暂存图只能通过所属场景的导出操作放上画布")
+		}
 		// A staged model is consumed only by a scene command (commit_model).
 		if candidate.Kind == "model" {
 			return creativeops.Outcome{}, creativeops.ErrValidation
 		}
-		target := Target{}
 		if v.Target != nil {
 			target = *v.Target
-		} else if err := json.Unmarshal(candidate.Target, &target); err != nil {
-			return creativeops.Outcome{}, err
 		}
 		// 暂存目标没有可绑定的节点或资产，只能由放入节点或场景命令消费。
 		if target.Kind == "staged" {

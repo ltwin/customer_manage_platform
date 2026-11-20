@@ -592,7 +592,7 @@ func TestRenderMergesByKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
+	if got := renderOf(t, raw); !reflect.DeepEqual(got, map[string]any{"mode": "clay", "exposure_ev": 0.0, "engine": "workbench", "resolution": "2k", "transparent_background": false, "exposure_ev100": 15.0, "exposure_mode": "ambient", "exposure_compensation": 0.0}) {
 		t.Fatalf("a new scene reads without every render field: %v", got)
 	}
 	set := func(render map[string]any) error {
@@ -1328,5 +1328,110 @@ func TestVolumeKindAndLimit(t *testing.T) {
 	wantErr(t, err, creativedocument.ErrSizeLimit)
 	if after := readScene(t, f.a, doc); after.Revision != v.Revision {
 		t.Fatalf("refused commands wrote revision %d", after.Revision)
+	}
+}
+
+func TestRenderTransparentBackgroundStorageAndValidation(t *testing.T) {
+	f := setup(t)
+	doc := createScene(t, f.a)
+
+	hasStoredKey := func(rev int64) bool {
+		t.Helper()
+		var present bool
+		if err := f.db.QueryRow(`SELECT (r.payload->'scene'->'render') ? 'transparent_background' FROM creative_content_revisions r JOIN creative_document_revisions dr ON dr.content_revision_id = r.id WHERE dr.account_id = 'scene-a' AND dr.document_id = $1 AND dr.revision = $2`, doc, rev).Scan(&present); err != nil {
+			t.Fatal(err)
+		}
+		return present
+	}
+	assertReadFalse := func(rev int64) {
+		t.Helper()
+		raw, err := creativedocument.Read(t.Context(), f.a, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := renderOf(t, raw)["transparent_background"].(bool); !ok || got {
+			t.Fatalf("Read transparent_background = %v (%T), want false", renderOf(t, raw)["transparent_background"], renderOf(t, raw)["transparent_background"])
+		}
+		revRaw, err := creativedocument.ReadRevision(t.Context(), f.a, doc, rev, []string{"render"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rv struct {
+			View struct {
+				Scene struct {
+					Render map[string]any `json:"render"`
+				} `json:"scene"`
+			} `json:"view"`
+		}
+		if err := json.Unmarshal(revRaw, &rv); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := rv.View.Scene.Render["transparent_background"].(bool); !ok || got {
+			t.Fatalf("ReadRevision transparent_background = %v (%T), want false", rv.View.Scene.Render["transparent_background"], rv.View.Scene.Render["transparent_background"])
+		}
+		var ag creativescene.SceneRead
+		if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			var err error
+			ag, err = creativescene.AgentReadInTx(t.Context(), tx, creativescene.ReadInput{DocumentID: doc})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if ag.Render.TransparentBackground {
+			t.Fatalf("AgentReadInTx Render.TransparentBackground = true, want false")
+		}
+	}
+
+	// New scene omits the key in DB when false, while all read surfaces emit false.
+	if hasStoredKey(1) {
+		t.Fatal("rev 1 stored transparent_background key when false")
+	}
+	assertReadFalse(1)
+
+	// Toggle true -> stored key exists; toggle back to false -> key omitted again.
+	v := readScene(t, f.a, doc)
+	resOn := mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": true}}}})
+	if !hasStoredKey(int64(resOn.Revision)) {
+		t.Fatal("true revision did not store transparent_background key")
+	}
+	if !readScene(t, f.a, doc).Scene.Render.TransparentBackground {
+		t.Fatal("read after enable = false, want true")
+	}
+
+	v = readScene(t, f.a, doc)
+	resOff := mustSend(t, f.a, batch{DocumentID: doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": false}}}})
+	if hasStoredKey(int64(resOff.Revision)) {
+		t.Fatal("false revision kept transparent_background key in DB")
+	}
+	assertReadFalse(int64(resOff.Revision))
+
+	// Non-boolean, explicit null, and empty patch fail with 400 validation_failed without advancing revision.
+	before := readScene(t, f.a, doc).Revision
+	for name, patch := range map[string]map[string]any{
+		"string": {"transparent_background": "yes"},
+		"number": {"transparent_background": 1},
+		"object": {"transparent_background": map[string]any{}},
+		"array":  {"transparent_background": []any{true}},
+		"null":   {"transparent_background": nil},
+		"empty":  {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cur := readScene(t, f.a, doc)
+			_, err := send(t, f.a, batch{DocumentID: doc, Expected: cur.expect("render"), Operations: []any{op{"op": "set_render", "render": patch}}})
+			wantErr(t, err, creativeops.ErrValidation)
+		})
+	}
+	if after := readScene(t, f.a, doc).Revision; after != before {
+		t.Fatalf("refused updates wrote revision %d, want %d", after, before)
+	}
+
+	// Undo/restore via restore_units restores true then back to omitted false.
+	mustRestore(t, f.a, doc, resOn.Revision, []string{"render"})
+	if !readScene(t, f.a, doc).Scene.Render.TransparentBackground {
+		t.Fatal("after restore to true: want true")
+	}
+	resBack := mustRestore(t, f.a, doc, resOff.Revision, []string{"render"})
+	if hasStoredKey(int64(resBack.Revision)) || readScene(t, f.a, doc).Scene.Render.TransparentBackground {
+		t.Fatal("after restore to false: want omitted key and false")
 	}
 }

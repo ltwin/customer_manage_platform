@@ -107,6 +107,9 @@ func Fingerprint(s Scene, cameraID, pass string) (string, bool) {
 	// resolution and the default camera's exposure never count: no export
 	// comes from the default camera.
 	render := fingerprintRender{}
+	if pass != PassLine && s.Render.TransparentBackground {
+		render.TransparentBackground = true
+	}
 	if pass == PassLit {
 		if !physicalLit {
 			render.ExposureEV = s.Render.ExposureEV
@@ -153,11 +156,12 @@ type fingerprintScene struct {
 }
 
 type fingerprintRender struct {
-	Mode       string  `json:"mode"`
-	ExposureEV float64 `json:"exposure_ev,omitempty"`
-	Engine     string  `json:"engine,omitempty"`
-	WorldTrace int     `json:"world_trace,omitempty"`
-	LightModel string  `json:"light_model,omitempty"`
+	Mode                  string  `json:"mode"`
+	ExposureEV            float64 `json:"exposure_ev,omitempty"`
+	Engine                string  `json:"engine,omitempty"`
+	WorldTrace            int     `json:"world_trace,omitempty"`
+	LightModel            string  `json:"light_model,omitempty"`
+	TransparentBackground bool    `json:"transparent_background,omitempty"`
 }
 
 // lightsDrawn reports whether a lit image of s draws a light: a light object,
@@ -184,7 +188,10 @@ var _ creativecanvas.ExportFreshness = Freshness{}
 // camera is checked at frame 0. A fingerprint of another version can only
 // come from a future projection; until one exists it reads as stale.
 func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string]creativecontent.Revision) map[string]string {
-	type shot struct{ doc, marker, camera, pass string }
+	type shot struct {
+		doc, marker, camera, pass string
+		hasOverride, transparent  bool
+	}
 	type moment struct {
 		doc   string
 		frame int
@@ -198,7 +205,11 @@ func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string
 		if !strings.HasPrefix(src.Fingerprint, fingerprintVersion+":") {
 			continue
 		}
-		key := shot{src.DocumentID, src.MarkerID, src.CameraObjectID, src.Pass}
+		key := shot{doc: src.DocumentID, marker: src.MarkerID, camera: src.CameraObjectID, pass: src.Pass}
+		if src.TransparentBackground != nil {
+			key.hasOverride = true
+			key.transparent = *src.TransparentBackground
+		}
 		fp, ok := prints[key]
 		if !ok {
 			s, decoded := scenes[src.DocumentID]
@@ -214,6 +225,9 @@ func (Freshness) Check(sources []creativecanvas.ExportSource, current map[string
 				if !done {
 					e = EvaluateAt(*s, frame)
 					evaluated[m] = e
+				}
+				if src.TransparentBackground != nil {
+					e.Render.TransparentBackground = *src.TransparentBackground
 				}
 				fp, _ = Fingerprint(e, camera, src.Pass)
 			}

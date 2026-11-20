@@ -130,6 +130,7 @@
 
 .cc-scene-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cc-scene-viewport { position: relative; flex: 1; min-height: 0; touch-action: none; }
+.cc-scene-viewport.is-transparent { background: repeating-conic-gradient(#25272c 0% 25%, #1a1b1f 0% 50%) 0 0 / 16px 16px; }
 .cc-scene-viewport canvas { outline: none; }
 .cc-scene-box { position: absolute; border: 1px dashed #ffd27a; background: #ffd27a1f; pointer-events: none; }
 .cc-scene-banner { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f28c2829; border-bottom: 1px solid var(--border); font-size: 13px; }

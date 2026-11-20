@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"image"
+	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"log/slog"
@@ -24,6 +27,8 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -49,6 +54,11 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
+	return setupWithConfig(t, nil)
+}
+
+func setupWithConfig(t *testing.T, configure func(*creativemedia.Config)) *fixture {
+	t.Helper()
 	url := storetest.NewURL(t)
 	db, err := sql.Open("pgx", url)
 	if err != nil {
@@ -71,6 +81,9 @@ func setup(t *testing.T) *fixture {
 	cfg.ImageMaxBytes = 4 << 20
 	cfg.MaxParts = 2000
 	cfg.QuotaLimitBytes = 2 << 20
+	if configure != nil {
+		configure(&cfg)
+	}
 	key := bytes.Repeat([]byte{7}, 32)
 	f := &fixture{db: db, cfg: cfg, store: st}
 	var svc *creativemedia.Service
@@ -928,5 +941,216 @@ func TestStagedUploadFillsNodeOnlyByUserEdit(t *testing.T) {
 	c := must[creativemedia.UploadView](t)(f.svc.CreateUpload(t.Context(), f.a, command(t, creativemedia.CreateUploadInput{FileName: "c.png", Kind: "image", Mime: "image/png", Size: int64(len(png)), Rights: rights(), Target: staged})))
 	if _, err := f.svc.CancelUpload(t.Context(), f.a, command(t, creativemedia.CancelUploadInput{UploadID: c.ID, ExpectedRevision: c.Revision})); err != nil {
 		t.Fatal("cancel staged before upload", err)
+	}
+}
+
+func TestScopedSceneExportLargePNG(t *testing.T) {
+	f := setupWithConfig(t, func(cfg *creativemedia.Config) {
+		*cfg = creativemedia.DefaultConfig()
+	})
+	ctx := t.Context()
+	p := project(t, f.a)
+	canvas, err := creativecanvas.GetCanvas(ctx, f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sceneID, otherSceneID := "cwnode_"+uuid.NewString(), "cwnode_"+uuid.NewString()
+	imageID := "cwnode_" + uuid.NewString()
+	if _, err := creativecanvas.ApplyCommands(ctx, f.a, command(t, creativecanvas.BatchInput{
+		CanvasID: p.CanvasID, ExpectedTopologyRevision: canvas.TopologyRevision,
+		Actions: []creativecanvas.Action{
+			{Type: "add_node", NodeID: sceneID, TypeKey: creativescene.NodeTypeKey},
+			{Type: "add_node", NodeID: otherSceneID, TypeKey: creativescene.NodeTypeKey, Y: 900},
+			{Type: "add_node", NodeID: imageID, TypeKey: "core.image", Y: 1600},
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	canvas, err = creativecanvas.GetCanvas(ctx, f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documents := make(map[string]string, len(canvas.Nodes))
+	for _, n := range canvas.Nodes {
+		if n.DocumentID != nil {
+			documents[n.ID] = *n.DocumentID
+		}
+	}
+
+	img := image.NewNRGBA(image.Rect(0, 0, 4096, 2048))
+	img.SetNRGBA(2048, 1024, color.NRGBA{R: 200, A: 255})
+	var body bytes.Buffer
+	encoder := png.Encoder{CompressionLevel: png.NoCompression}
+	if err := encoder.Encode(&body, img); err != nil {
+		t.Fatal(err)
+	}
+	if int64(body.Len()) <= f.cfg.ImageMaxBytes {
+		t.Fatalf("fixture must exceed the ordinary limit, got %d bytes", body.Len())
+	}
+	target := creativemedia.Target{Kind: "staged", SceneExport: &creativestaging.SceneExportTarget{CanvasID: p.CanvasID, SceneNodeID: sceneID}}
+	create := func(scope store.AccountScope, size int64, target creativemedia.Target) error {
+		_, err := f.svc.CreateUpload(ctx, scope, command(t, creativemedia.CreateUploadInput{FileName: "shot.png", Kind: "image", Mime: "image/png", Size: size, Target: target}))
+		return err
+	}
+	if err := create(f.a, int64(body.Len()), creativemedia.Target{Kind: "staged"}); !errors.Is(err, creativemedia.ErrSizeLimit) {
+		t.Fatalf("unscoped upload: %v", err)
+	}
+	if err := create(f.a, f.cfg.SceneExportMaxBytes+1, target); !errors.Is(err, creativemedia.ErrSizeLimit) {
+		t.Fatalf("over export limit: %v", err)
+	}
+	if err := create(f.b, int64(body.Len()), target); !errors.Is(err, creativecanvas.ErrVersionConflict) {
+		t.Fatalf("other account's scene: %v", err)
+	}
+	upload := f.uploadFile(t, f.a, "shot.png", "image/png", "image", body.Bytes(), target)
+	if upload.State != "ready" || upload.ContentRevisionID == nil {
+		t.Fatalf("large export upload: %+v", upload)
+	}
+	for _, adoptTarget := range []creativemedia.Target{
+		{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "shot"}},
+		{Kind: "node", Node: &creativemedia.NodeTarget{CanvasID: p.CanvasID, NodeID: imageID, ExpectedDataRevision: 1}},
+	} {
+		_, err := f.svc.AdoptCandidate(ctx, f.a, command(t, creativemedia.CandidateInput{
+			CandidateID: upload.Publication.ID, CandidateRevision: upload.Publication.Revision, Target: &adoptTarget,
+		}))
+		if !errors.Is(err, creativeops.ErrValidation) {
+			t.Fatalf("scene export adopted by %s: %v", adoptTarget.Kind, err)
+		}
+	}
+	place := func(scene string) error {
+		return f.a.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			_, err := creativecanvas.PlaceSceneExportsInTx(ctx, tx, creativecanvas.SceneExportPlacement{
+				CanvasID: p.CanvasID, SceneNodeID: scene, DocumentID: documents[scene], Operation: uuid.NewString(),
+				Rows: []creativecanvas.SceneExportRow{{Aspect: 2, Images: []creativecanvas.SceneExportImage{{
+					UploadID: upload.ID, Title: "shot", BasedOn: creativecanvas.SceneExportBasedOn{SceneDocumentID: documents[scene], SceneRevision: 1, Pass: "lit"},
+				}}}},
+			})
+			return err
+		})
+	}
+	if err := f.a.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		_, err := creativestaging.Lock(ctx, tx, upload.ID)
+		return err
+	}); !errors.Is(err, creativestaging.ErrUnavailable) {
+		t.Fatalf("ordinary placement can see export uploads: %v", err)
+	}
+	if err := place(otherSceneID); !errors.Is(err, creativecanvas.ErrExportUploadUnavailable) {
+		t.Fatalf("another scene can use the upload: %v", err)
+	}
+	if err := place(sceneID); err != nil {
+		t.Fatal(err)
+	}
+	original, err := f.svc.IssueTicket(ctx, f.a, creativemedia.TicketInput{ContentRevisionID: *upload.ContentRevisionID, Role: "original", Purpose: "download"})
+	if err != nil || original.Mime != "image/png" || original.ByteSize != int64(body.Len()) {
+		t.Fatalf("original ticket: %+v %v", original, err)
+	}
+	display, err := f.svc.IssueTicket(ctx, f.a, creativemedia.TicketInput{ContentRevisionID: *upload.ContentRevisionID, Role: "display", Purpose: "display"})
+	if err != nil || display.Mime != "image/png" || display.ByteSize >= original.ByteSize {
+		t.Fatalf("display ticket: %+v %v", display, err)
+	}
+	if status, err := f.svc.ScheduleFactsProbe(ctx, f.a, *upload.ContentRevisionID); err != nil || status.State != "pending" {
+		t.Fatalf("schedule large png facts probe: %+v %v", status, err)
+	}
+	f.drain(t, f.a)
+	reader := f.svc.GenerationReaderFor(f.a)
+	meta, err := reader.ResolveGenerationMedia(ctx, originalReference(t, f.db, "media-a", *upload.ContentRevisionID))
+	if err != nil || meta.Width == nil || *meta.Width != 4096 || meta.Height == nil || *meta.Height != 2048 {
+		t.Fatalf("large png facts after probe: %+v %v", meta, err)
+	}
+}
+
+func TestTransparentDisplayRendition(t *testing.T) {
+	f := setup(t)
+	scopeFor := func(string) store.AccountScope { return f.a }
+	encodePNG := func(img image.Image) []byte {
+		var b bytes.Buffer
+		if err := png.Encode(&b, img); err != nil {
+			t.Fatal(err)
+		}
+		return b.Bytes()
+	}
+	encodeJPEG := func(img image.Image) []byte {
+		var b bytes.Buffer
+		if err := jpeg.Encode(&b, img, &jpeg.Options{Quality: 90}); err != nil {
+			t.Fatal(err)
+		}
+		return b.Bytes()
+	}
+	// 1800x20 transparent PNG: left half transparent, right half opaque teal.
+	trPNGImg := image.NewNRGBA(image.Rect(0, 0, 1800, 20))
+	for y := range 20 {
+		for x := 900; x < 1800; x++ {
+			trPNGImg.SetNRGBA(x, y, color.NRGBA{R: 20, G: 180, B: 140, A: 255})
+		}
+	}
+	// 1800x20 fully opaque 4-channel NRGBA PNG: display must stay JPEG.
+	opaqueNRGBAImg := image.NewNRGBA(image.Rect(0, 0, 1800, 20))
+	for y := range 20 {
+		for x := range 1800 {
+			opaqueNRGBAImg.SetNRGBA(x, y, color.NRGBA{R: 200, G: 120, B: 60, A: 255})
+		}
+	}
+	// 1800x20 transparent WebP (left half alpha=0, right half opaque teal).
+	trWebP, err := base64.StdEncoding.DecodeString("UklGRv4AAABXRUJQVlA4WAoAAAAQAAAABwcAEwAAQUxQSBoAAAABDzD/ERGCTMBi/dNqIMG8Ivo/AeimuvffZlZQOCC+AAAAMBAAnQEqCAcUAD4xGItEoiGhED1UACADBLS3cLsAjlj/3QAAG/LXoy8Ry16MvEctejLxHLXoy8Ry16MvD0h7Pfflr0ZeI5a9GXiOWvRl4jlr0ZeI5a9GXiOWvRl4jlr0ZeI5a9GXiOWvRl4jlr0VDLN4jlr0ZeI5a9GXiOWvRl4jlr0ZeI5a9FQAAP7/6dZAPXh39hWPPTFX4Z///pz/+nwtYg//8wA//pz/+nwtYg/+UCAAACA8Cv4JAAAAAA==")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uploadDisplay := func(name, mime string, body []byte) (string, []byte) {
+		t.Helper()
+		view := f.uploadFile(t, f.a, name, mime, "image", body, creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: name}})
+		asset, err := creativelibrary.GetAsset(t.Context(), f.a, view.Publication.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ticket, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: asset.ContentRevisionID, Role: "display", Purpose: "display"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stream, err := f.svc.Open(t.Context(), scopeFor, ticket.URL[strings.Index(ticket.URL, "ticket=")+7:], asset.ContentRevisionID, "display", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = stream.Body.Close() }()
+		out, err := io.ReadAll(stream.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stream.Mime, out
+	}
+
+	for _, tc := range []struct {
+		name     string
+		mime     string
+		body     []byte
+		wantMIME string
+		wantTr   bool
+	}{
+		{"transparent png", "image/png", encodePNG(trPNGImg), "image/png", true},
+		{"transparent webp", "image/webp", trWebP, "image/png", true},
+		{"opaque 4ch png", "image/png", encodePNG(opaqueNRGBAImg), "image/jpeg", false},
+		{"jpeg", "image/jpeg", encodeJPEG(opaqueNRGBAImg), "image/jpeg", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotMIME, gotBytes := uploadDisplay(tc.name, tc.mime, tc.body)
+			if gotMIME != tc.wantMIME {
+				t.Fatalf("display mime = %s, want %s", gotMIME, tc.wantMIME)
+			}
+			decoded, _, err := image.Decode(bytes.NewReader(gotBytes))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Bounds().Dx() != f.cfg.DisplayMaxEdge {
+				t.Fatalf("display width = %d, want %d", decoded.Bounds().Dx(), f.cfg.DisplayMaxEdge)
+			}
+			_, _, _, leftA := decoded.At(10, 8).RGBA()
+			_, _, _, rightA := decoded.At(f.cfg.DisplayMaxEdge-10, 8).RGBA()
+			if tc.wantTr {
+				if leftA != 0 || rightA != 0xffff {
+					t.Fatalf("alpha not preserved in PNG display: left=%d right=%d", leftA, rightA)
+				}
+			} else if leftA != 0xffff || rightA != 0xffff {
+				t.Fatalf("opaque image display unexpectedly translucent: left=%d right=%d", leftA, rightA)
+			}
+		})
 	}
 }

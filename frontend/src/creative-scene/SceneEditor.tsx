@@ -173,6 +173,7 @@ export default function SceneEditor({
   sceneNodeID,
   onSaveModel,
   onPlaceScreenshot,
+  onExportPlaced,
   libraryTick = 0,
 }: {
   documentID: string
@@ -184,6 +185,7 @@ export default function SceneEditor({
   onSaveModel?: (request: SaveRequest) => void
   /** Uses the owning canvas's image import, including its upload tray and undo. */
   onPlaceScreenshot?: (file: File) => void
+  onExportPlaced?: (firstNodeID: string) => void
   /** Changes when the page wrote to the asset library; the asset panel reads it again. */
   libraryTick?: number
 }) {
@@ -245,7 +247,7 @@ export default function SceneEditor({
   // the outliner tab, so going back to it does not read the library again.
   const [assetsSeen, setAssetsSeen] = useState(false)
   if (!assetsSeen && u.sidebar && u.sidebarTab === 'assets') setAssetsSeen(true)
-  const [exportRun, setExportRun] = useState<{ busy: boolean; progress: Progress | null }>({ busy: false, progress: null })
+  const [exportRun, setExportRun] = useState<{ busy: boolean; progress: Progress | null; error?: string }>({ busy: false, progress: null })
   // The code sandbox starts with the first bake and goes with the editor.
   const sandbox = useRef<SandboxHost | null>(null)
   const modelEdits = useMemo(
@@ -766,6 +768,7 @@ export default function SceneEditor({
   }
   /** The dialog takes the focus with it when it goes: the keys stay with the editor. */
   const closeExport = () => {
+    setExportRun({ busy: false, progress: null })
     ui.setState({ exporting: false })
     root.current?.focus()
   }
@@ -777,8 +780,8 @@ export default function SceneEditor({
     if (unkeyed === 'key') insertKeysOn(Object.keys(ui.getState().unkeyed))
     setExportRun({ busy: true, progress: null })
     if (!(await whenSaved(session, savedWaitMs))) {
-      setExportRun({ busy: false, progress: null })
-      return notify('还有修改没有保存，保存后再导出')
+      setExportRun({ busy: false, progress: null, error: '还有修改没有保存，保存后再导出' })
+      return
     }
     const account = currentAccount() ?? ''
     const out = await runManualExport(
@@ -786,7 +789,8 @@ export default function SceneEditor({
         read: (id) => readScene(id),
         loadModels: (doc) => loadModels(doc.scene, doc.models),
         open: (doc, look) => openShooter(doc.scene, doc.models, look),
-        upload: (file, declared, signal) => uploadGenerated(file, declared, { kind: 'staged' }, signal),
+        upload: (file, declared, signal) =>
+          uploadGenerated(file, declared, { kind: 'staged', scene_export: { canvas_id: canvasID, scene_node_id: sceneNodeID } }, signal),
         discard: discardUpload,
         send: (operation, createdAt, payload) => exportScene(account, documentID, operation, createdAt, payload),
         wait: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
@@ -795,11 +799,12 @@ export default function SceneEditor({
       new AbortController().signal,
       (progress) => setExportRun({ busy: true, progress }),
     )
-    setExportRun({ busy: false, progress: null })
     if (out.ok) {
       closeExport()
+      const firstNode = out.result.nodes[0]
+      if (firstNode) onExportPlaced?.(firstNode.node_id)
       notify(`已导出 ${out.result.nodes.length} 张图到画布`)
-    } else notify(out.message)
+    } else setExportRun({ busy: false, progress: null, error: out.message })
   }
   /**
    * An asset's model dropped on the viewport, where it snapped. Its summary is
@@ -1785,8 +1790,10 @@ export default function SceneEditor({
           unkeyed={Object.entries(u.unkeyed).flatMap(([id, paths]) => Object.keys(paths).map((p) => `「${byID.get(id)?.name || '物件'}」的${channelLabel(p)}`))}
           display={display}
           resolution={shown?.render.resolution ?? '2k'}
+          transparentBackground={shown?.render.transparent_background === true}
           busy={exportRun.busy}
           progress={exportRun.progress}
+          error={exportRun.error}
           onExport={(plan, unkeyed) => void startExport(plan, unkeyed)}
           onClose={closeExport}
         />

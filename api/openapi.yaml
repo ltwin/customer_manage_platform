@@ -16258,6 +16258,7 @@ components:
       - exposure_ev
       - engine
       - resolution
+      - transparent_background
       - exposure_ev100
       - exposure_mode
       - exposure_compensation
@@ -16286,6 +16287,9 @@ components:
           - 4k
           - 8k
           description: 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
+        transparent_background:
+          type: boolean
+          description: 透明背景（缺省 false）。开启后，跟随场景设置的白模（clay）和材质光照（lit）导出将天空背景设为透明，编辑器最终渲染模式视口显示棋盘格；线稿与助手 render_view 回看始终带背景。
         exposure_ev100:
           type: number
           minimum: -10
@@ -16329,6 +16333,8 @@ components:
           - 2k
           - 4k
           - 8k
+        transparent_background:
+          type: boolean
         exposure_ev100:
           type: number
           minimum: -10
@@ -17213,7 +17219,7 @@ components:
         request:
           type: object
           additionalProperties: true
-          description: 按 kind 定义，见契约 data:场景客户端任务
+          description: 按 kind 定义，见契约 data:场景客户端任务（export_shots 可带可选布尔 transparent_background 覆盖场景设置）
         attempt: {type: integer, minimum: 0}
         claim_token: {type: string}
         lease_until: {type: string, format: date-time}
@@ -17284,11 +17290,15 @@ components:
           additionalProperties: false
           required: [scene_revision, shots]
           description: >-
-            export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。
+            export_shots 成功时必填：实际渲染的场景修订、图片清单和实际背景模式，必须正好覆盖任务 request 的摄像机和导出方式。
+            含白模或材质光照且任务显式指定 transparent_background 或期望为 true 时，effective_transparent_background 必传（缺失或不匹配记为 failed invalid_result，显式 null 或非布尔返回 400）。
             服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。
           properties:
             scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
             shots: {$ref: '#/components/schemas/CreativeSceneExportShots'}
+            effective_transparent_background:
+              type: boolean
+              description: 渲染端实际给白模、材质光照使用的背景模式；仅线稿的有效值为 false，可省略。
     CreativeSceneJobCompleteRequest:
       type: object
       additionalProperties: false
@@ -17348,6 +17358,11 @@ components:
         scene_node_id: {type: string}
         scene_revision: {$ref: '#/components/schemas/CreativeRevision'}
         shots: {$ref: '#/components/schemas/CreativeSceneExportShots'}
+        effective_transparent_background:
+          type: boolean
+          description: >-
+            渲染端实际给白模、材质光照使用的背景模式。含任一该导出方式且 scene_revision 对应的场景开关为 true 时必传；仅线稿有效值为 false 可省略。
+            缺失或与实际渲染修订不一致返回 400 validation_failed（提示刷新页面后重新导出）。
     CreativeSceneExportRequest:
       type: object
       additionalProperties: false
@@ -17838,6 +17853,14 @@ components:
         kind: {type: string, enum: [asset, node, staged]}
         asset: {$ref: "#/components/schemas/CreativeUploadAssetTarget"}
         node: {$ref: "#/components/schemas/CreativeUploadNodeTarget"}
+        scene_export:
+          type: object
+          additionalProperties: false
+          description: "限 image 的 staged 目标。原图单张最多 320 MiB，仅可通过指定场景的导出操作放上画布"
+          required: [canvas_id, scene_node_id]
+          properties:
+            canvas_id: {type: string, minLength: 1}
+            scene_node_id: {type: string, minLength: 1}
     CreativeUploadCreatePayload:
       type: object
       additionalProperties: false

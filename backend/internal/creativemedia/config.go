@@ -6,6 +6,7 @@ import "time"
 // verification tooling for them is actually available at runtime.
 type Config struct {
 	ImageMaxBytes        int64
+	SceneExportMaxBytes  int64
 	AVMaxBytes           int64
 	PartSize             int64
 	MaxParts             int
@@ -26,6 +27,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		ImageMaxBytes:        25 << 20,
+		SceneExportMaxBytes:  320 << 20,
 		AVMaxBytes:           250 << 20,
 		PartSize:             8 << 20,
 		MaxParts:             100,

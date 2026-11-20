@@ -89,9 +89,10 @@ function lookup(viewPosition: TSLNode, projection: Uniform<Matrix4>): TSLNode {
  * projection is projection: colour where it is off or on the background.
  */
 export function applyAerial(color: TSLNode, viewPosition: TSLNode, projection: Uniform<Matrix4>, opaque: TSLNode): TSLNode {
+  const c = vec4(color).toVar()
   const ap = lookup(viewPosition, projection)
-  const fogged = color.mul(ap.a).add(ap.rgb.mul(relative))
-  return mix(color, fogged, on.mul(opaque))
+  const fogged = c.rgb.mul(ap.a).add(ap.rgb.mul(relative).mul(c.a))
+  return vec4(mix(c.rgb, fogged, on.mul(opaque)), c.a)
 }
 
 /**

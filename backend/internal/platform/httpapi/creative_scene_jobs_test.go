@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
@@ -242,4 +243,126 @@ INSERT INTO accounts(id,password_hash,status) VALUES('acct-other','test','active
 			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
 		}
 	}
+}
+
+func TestCreativeSceneExportJobTransparentCompleteHTTP(t *testing.T) {
+	ctx := context.Background()
+	creativescene.SetJobWaiterForTest(t, admitAll{})
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
+
+	router, st, tokens, url := newCustomerAPIRouterWithURL(t)
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE accounts SET status='active' WHERE id='` + testAcctID + `'`); err != nil {
+		t.Fatal(err)
+	}
+	token := issueToken(t, tokens, testAcctID)
+	scope := st.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+
+	r, err := creativecanvas.CreateProject(ctx, scope, creativeCommand(t, creativecanvas.CreateProjectInput{Name: "任务透明导出"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p creativecanvas.ProjectResult
+	if err := json.Unmarshal(r.Outcome.Response, &p); err != nil {
+		t.Fatal(err)
+	}
+	canvas, scene := groupedSceneForExport(t, scope, p.CanvasID)
+	doc := *scene.DocumentID
+	cam := "sobj_C00000000000000000003"
+	if _, err := creativedocument.Command(ctx, scope, creativeCommand(t, map[string]any{
+		"document_id": doc, "expected": map[string]any{"objects": "1"},
+		"operations": []any{map[string]any{"op": "add_objects", "objects": []any{map[string]any{
+			"id": cam, "kind": "camera", "name": "", "parent_id": nil, "order": 1,
+			"transform": map[string]any{"position": []float64{0, 1, 5}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+			"visible":   true, "locked": false, "camera": map[string]any{},
+		}}}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	queueExport := func(tr bool) (creativescene.Job, string) {
+		t.Helper()
+		var job creativescene.Job
+		if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			var err error
+			job, err = creativescene.CreateExportJobInTx(ctx, tx, creativescene.ExportJobInput{
+				DocumentID: doc, CanvasID: p.CanvasID, RunID: "ccrn_http", ToolCallID: "step-" + uuid.NewString(),
+				Passes: []string{"clay"}, TransparentBackground: &tr,
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		const tab = `"editor_session_id":"tab_0123456789abcdef"`
+		w := shootPlanningRequest(t, router, "POST", "/api/v1/creative/scene-jobs/claim", token, "", `{`+tab+`,"kinds":["export_shots"]}`)
+		if w.Code != 200 {
+			t.Fatalf("claim = %d %s", w.Code, w.Body.String())
+		}
+		var out struct {
+			Job struct {
+				ClaimToken string `json:"claim_token"`
+			} `json:"job"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return job, out.Job.ClaimToken
+	}
+	complete := func(jobID, tok string, exp map[string]any) *httptest.ResponseRecorder {
+		t.Helper()
+		key := uuid.NewString()
+		raw, _ := json.Marshal(map[string]any{
+			"operation_id": key, "client_created_at": time.Now().UTC().Format(time.RFC3339Nano),
+			"payload": map[string]any{"claim_token": tok, "outcome": "succeeded", "export": exp},
+		})
+		return shootPlanningRequest(t, router, "POST", "/api/v1/creative/scene-jobs/"+jobID+"/complete", token, key, string(raw))
+	}
+
+	// Explicit null / non-bool -> 400 validation_failed (job stays claimed).
+	job1, tok1 := queueExport(true)
+	up1 := stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})
+	shots := []any{map[string]any{"camera_object_id": cam, "images": []any{map[string]any{"pass": "clay", "upload_id": up1}}}}
+	for name, bad := range map[string]any{"null": nil, "bool str": "true"} {
+		w := complete(job1.ID, tok1, map[string]any{"scene_revision": "2", "effective_transparent_background": bad, "shots": shots})
+		if w.Code != 400 || documentErrorCode(t, w) != "validation_failed" {
+			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+	}
+	// Missing effective_transparent_background on explicit true override -> 200 state=failed invalid_result, zero nodes.
+	wMissing := complete(job1.ID, tok1, map[string]any{"scene_revision": "2", "shots": shots})
+	if wMissing.Code != 200 {
+		t.Fatalf("missing report: %d %s", wMissing.Code, wMissing.Body.String())
+	}
+	var failOut struct {
+		State  string `json:"state"`
+		Result struct {
+			Code string `json:"code"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(wMissing.Body.Bytes(), &failOut); err != nil || failOut.State != "failed" || failOut.Result.Code != "invalid_result" {
+		t.Fatalf("missing report body = %s", wMissing.Body.String())
+	}
+	cAfterFail, _ := creativecanvas.GetCanvas(ctx, scope, p.CanvasID)
+	if len(cAfterFail.Nodes) != len(canvas.Nodes) {
+		t.Fatalf("failed completion placed nodes: %d", len(cAfterFail.Nodes))
+	}
+
+	// Valid retry on fresh job with unconsumed up1 + effective_transparent_background=true succeeds.
+	job2, tok2 := queueExport(true)
+	wOK := complete(job2.ID, tok2, map[string]any{"scene_revision": "2", "effective_transparent_background": true, "shots": shots})
+	if wOK.Code != 200 {
+		t.Fatalf("valid completion = %d %s", wOK.Code, wOK.Body.String())
+	}
+	var okOut struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(wOK.Body.Bytes(), &okOut); err != nil || okOut.State != "succeeded" {
+		t.Fatalf("valid completion body = %s", wOK.Body.String())
+	}
+	assertGroupedExports(t, scope, canvas, *scene.ParentID, 1)
 }

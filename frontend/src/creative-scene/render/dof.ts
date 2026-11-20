@@ -1,4 +1,4 @@
-import { LinearFilter, Vector2 } from 'three'
+import { LinearFilter, RedFormat, UnsignedByteType, Vector2 } from 'three'
 import * as tsl from 'three/tsl'
 import type { DepthOfField } from '../cameraOptics.ts'
 import { maxBlurShare } from '../cameraOptics.ts'
@@ -20,9 +20,10 @@ import type { TSLNode } from '../materials/patterns.ts'
 // mean difference about 0.5 on the reference camera).
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, clamp, convertToTexture, cos, float, floor, If, max, min, mix, perspectiveDepthToViewZ, rtt, select, sin, sqrt, uniform, uv, vec2, vec4 } = tsl as unknown as Record<string, Op>
+const { abs, clamp, convertToTexture, cos, float, floor, If, max, min, mix, outputStruct, passTexture, perspectiveDepthToViewZ, rtt, select, sin, sqrt, struct, uniform, uv, vec2, vec4 } = tsl as unknown as Record<string, Op>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 const Loop = tsl.Loop as unknown as (...args: unknown[]) => void
+const Pair = (struct as unknown as (fields: Record<string, string>) => Op)({ a: 'vec4', b: 'vec4' })
 
 const tile = 16
 
@@ -42,7 +43,7 @@ export type Dof = {
 }
 
 /** color is the picture, depth the opaque surfaces' depth texture of the same frame. */
-export function depthOfField(color: TSLNode, depth: TSLNode, samples = 128): Dof {
+export function depthOfField(color: TSLNode, depth: TSLNode, samples = 128, transparent = false): Dof {
   const sharp = convertToTexture(color)
   const near = uniform(0.1)
   const far = uniform(1000)
@@ -79,47 +80,73 @@ export function depthOfField(color: TSLNode, depth: TSLNode, samples = 128): Dof
     1,
     1,
   )
-  const blurred = rtt(
-    Fn(() => {
-      const at = uv().toVar()
-      const reach = float(1).toVar()
-      Loop({ start: -1, end: 1, condition: '<=' }, { start: -1, end: 1, condition: '<=' }, ({ i, j }: { i: TSLNode; j: TSLNode }) => {
-        reach.assign(max(reach, tiles.sample(at.add(vec2(float(j), float(i)).mul(tileStep))).r))
+  const blurPass = Fn(() => {
+    const at = uv().toVar()
+    const reach = float(1).toVar()
+    Loop({ start: -1, end: 1, condition: '<=' }, { start: -1, end: 1, condition: '<=' }, ({ i, j }: { i: TSLNode; j: TSLNode }) => {
+      reach.assign(max(reach, tiles.sample(at.add(vec2(float(j), float(i)).mul(tileStep))).r))
+    })
+    const dc = distanceAt(at).toVar()
+    const bc = abs(blurAt(dc)).toVar()
+    const center = sharp.sample(at)
+    const sum = (transparent ? center : center.rgb).toVar()
+    const total = float(1).toVar()
+    const spill = float(0).toVar()
+    Loop(samples, ({ i }: { i: TSLNode }) => {
+      const k = float(i).add(0.5)
+      const r = sqrt(k.div(samples)).mul(reach).toVar()
+      const a = k.mul(2.39996323)
+      const p = at.add(vec2(cos(a), sin(a)).mul(r).div(resolution)).toVar()
+      const ds = distanceAt(p).toVar()
+      const bs = abs(blurAt(ds))
+      const cover = select(ds.greaterThan(dc), min(bs, bc), bs)
+      const w = clamp(cover.sub(r).add(1), 0, 1).toVar()
+      const tap = sharp.sample(p)
+      sum.addAssign((transparent ? tap : tap.rgb).mul(w))
+      total.addAssign(w)
+      If(ds.lessThan(dc), () => {
+        spill.addAssign(w)
       })
-      const dc = distanceAt(at).toVar()
-      const bc = abs(blurAt(dc)).toVar()
-      const sum = sharp.sample(at).rgb.toVar()
-      const total = float(1).toVar()
-      const spill = float(0).toVar()
-      Loop(samples, ({ i }: { i: TSLNode }) => {
-        const k = float(i).add(0.5)
-        const r = sqrt(k.div(samples)).mul(reach).toVar()
-        const a = k.mul(2.39996323)
-        const p = at.add(vec2(cos(a), sin(a)).mul(r).div(resolution)).toVar()
-        const ds = distanceAt(p).toVar()
-        const bs = abs(blurAt(ds))
-        const cover = select(ds.greaterThan(dc), min(bs, bc), bs)
-        const w = clamp(cover.sub(r).add(1), 0, 1).toVar()
-        sum.addAssign(sharp.sample(p).rgb.mul(w))
-        total.addAssign(w)
-        If(ds.lessThan(dc), () => {
-          spill.addAssign(w)
-        })
-      })
-      const mixAmount = clamp(max(bc.sub(1), spill.mul(2).div(total)), 0, 1)
-      return vec4(sum.div(total), mixAmount)
-    })(),
+    })
+    const mixAmount = clamp(max(bc.sub(1), spill.mul(2).div(total)), 0, 1)
+    return transparent ? Pair(sum.div(total), vec4(mixAmount, 0, 0, 1)) : vec4(sum.div(total), mixAmount)
+  })
+  const blurred = (rtt as unknown as (...args: unknown[]) => ReturnType<typeof rtt>)(
+    transparent
+      ? (() => {
+          const r = blurPass()
+          return outputStruct(r.get('a'), r.get('b'))
+        })()
+      : blurPass(),
     1,
     1,
+    transparent ? { count: 2 } : undefined,
   )
-  for (const t of [tiles, blurred]) {
-    t.renderTarget.texture.minFilter = LinearFilter
-    t.renderTarget.texture.magFilter = LinearFilter
+  tiles.renderTarget.texture.minFilter = LinearFilter
+  tiles.renderTarget.texture.magFilter = LinearFilter
+  if (transparent) {
+    const rt = blurred.renderTarget
+    rt.textures[0].minFilter = LinearFilter
+    rt.textures[0].magFilter = LinearFilter
+    // Half-resolution R8Unorm mix mask saves 112 MiB vs RGBA16F at 8192x8192.
+    rt.textures[1].format = RedFormat
+    rt.textures[1].type = UnsignedByteType
+    rt.textures[1].minFilter = LinearFilter
+    rt.textures[1].magFilter = LinearFilter
+    rt.textures[1].generateMipmaps = false
+  } else {
+    blurred.renderTarget.texture.minFilter = LinearFilter
+    blurred.renderTarget.texture.magFilter = LinearFilter
   }
 
+  const mixTex = transparent ? passTexture(blurred, blurred.renderTarget.textures[1] as unknown as TSLNode) : null
   const output = Fn(() => {
     const s = sharp.sample(uv())
     const b = blurred.sample(uv())
+    if (mixTex) {
+      const m = mixTex.sample(uv()).r
+      return mix(s, b, m)
+    }
     return vec4(mix(s.rgb, b.rgb, b.a), s.a)
   })()
 

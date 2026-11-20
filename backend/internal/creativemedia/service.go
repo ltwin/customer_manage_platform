@@ -107,17 +107,17 @@ func outcome(status int, kind, id string, revision creativeops.Revision, value a
 func (t Target) validate() error {
 	switch t.Kind {
 	case "asset":
-		if t.Asset == nil || t.Node != nil {
+		if t.Asset == nil || t.Node != nil || t.SceneExport != nil {
 			return creativeops.ErrValidation
 		}
 		return creativelibrary.ValidateImportTarget(t.Asset.library())
 	case "node":
-		if t.Node == nil || t.Asset != nil || t.Node.CanvasID == "" || t.Node.NodeID == "" || t.Node.ExpectedDataRevision < 1 || len(t.Node.ChangeGroupID) > 100 {
+		if t.Node == nil || t.Asset != nil || t.SceneExport != nil || t.Node.CanvasID == "" || t.Node.NodeID == "" || t.Node.ExpectedDataRevision < 1 || len(t.Node.ChangeGroupID) > 100 {
 			return creativeops.ErrValidation
 		}
 		return nil
 	case "staged":
-		if t.Node != nil || t.Asset != nil {
+		if t.Node != nil || t.Asset != nil || t.SceneExport != nil && (t.SceneExport.CanvasID == "" || t.SceneExport.SceneNodeID == "") {
 			return creativeops.ErrValidation
 		}
 		return nil
@@ -135,6 +135,9 @@ func (n NodeTarget) canvas() creativecanvas.NodeTarget {
 // reports a classifiable conflict for changed targets.
 func validateTargetInTx(ctx context.Context, tx store.TxAccountScope, t Target, kind string) error {
 	if t.Kind == "staged" {
+		if t.SceneExport != nil {
+			return creativecanvas.ValidateSceneExportTargetInTx(ctx, tx, *t.SceneExport)
+		}
 		return nil
 	}
 	if t.Kind == "asset" {
@@ -160,7 +163,13 @@ func (s *Service) validateCreate(v CreateUploadInput) error {
 	if v.Kind == "model" && v.Target.Kind != "staged" {
 		return creativeops.ErrValidation
 	}
-	if v.Size > s.verifier.MaxBytes(v.Kind) || s.partCount(v.Size) > s.cfg.MaxParts {
+	if err := v.Target.validate(); err != nil {
+		return err
+	}
+	if v.Target.SceneExport != nil && v.Kind != "image" {
+		return creativeops.ErrValidation
+	}
+	if v.Size > s.uploadMaxBytes(v.Kind, v.Target) || s.partCount(v.Size) > s.cfg.MaxParts {
 		return ErrSizeLimit
 	}
 	rights := v.Rights.OrDefault()
@@ -170,7 +179,22 @@ func (s *Service) validateCreate(v CreateUploadInput) error {
 	if planningmedia.ValidatePurpose(planningmedia.RightsDeclarationInput{SourceClass: rights.SourceClass, RightsBasis: rights.RightsBasis, EvidenceSummary: rights.EvidenceSummary}, planningmedia.PurposeMoodboardDisplay) != nil {
 		return creativecontent.ErrUsageDenied
 	}
-	return v.Target.validate()
+	return nil
+}
+
+func (s *Service) uploadMaxBytes(kind string, target Target) int64 {
+	if kind == "image" && target.SceneExport != nil && s.cfg.SceneExportMaxBytes > 0 {
+		return s.cfg.SceneExportMaxBytes
+	}
+	return s.verifier.MaxBytes(kind)
+}
+
+func (s *Service) probeMaxBytes(kind string) int64 {
+	limit := s.verifier.MaxBytes(kind)
+	if kind == "image" && s.cfg.SceneExportMaxBytes > limit {
+		return s.cfg.SceneExportMaxBytes
+	}
+	return limit
 }
 
 // CreateUpload reserves quota and accepts the session; initialization runs in
