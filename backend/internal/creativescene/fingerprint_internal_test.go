@@ -585,3 +585,57 @@ func TestEvaluationKeepsOldFingerprints(t *testing.T) {
 		}
 	}
 }
+
+func TestTransparentBackgroundFingerprintsAndFreshness(t *testing.T) {
+	// False matches pinned v1: hashes byte-for-byte.
+	for pass, want := range pinned {
+		got, ok := Fingerprint(pinnedScene(t, `{"mode":"lit","transparent_background":false}`), pinnedCamera, pass)
+		if !ok || got != want {
+			t.Fatalf("transparent=false %s: %s, want %s", pass, got, want)
+		}
+	}
+
+	// Enabling transparent_background changes clay and lit, leaves line untouched.
+	trScene := pinnedScene(t, `{"mode":"lit","transparent_background":true}`)
+	for _, pass := range Passes {
+		got, ok := Fingerprint(trScene, pinnedCamera, pass)
+		if !ok {
+			t.Fatalf("missing camera for %s", pass)
+		}
+		if (got != pinned[pass]) != (pass != PassLine) {
+			t.Fatalf("transparent=true %s: %s vs %s", pass, got, pinned[pass])
+		}
+	}
+
+	// Freshness.Check isolates cache keys for nil vs true vs false overrides on the same shot/pass.
+	offSnap, err := encodeScene(pinnedScene(t, `{"mode":"lit"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fpOff, _ := Fingerprint(pinnedScene(t, `{"mode":"lit"}`), pinnedCamera, PassLit)
+	fpOn, _ := Fingerprint(trScene, pinnedCamera, PassLit)
+	trTrue, trFalse := true, false
+	sources := []creativecanvas.ExportSource{
+		{NodeID: "cwnode_follow", DocumentID: "cwdoc_tb", CameraObjectID: pinnedCamera, Pass: PassLit, Fingerprint: fpOff},
+		{NodeID: "cwnode_true", DocumentID: "cwdoc_tb", CameraObjectID: pinnedCamera, Pass: PassLit, Fingerprint: fpOn, TransparentBackground: &trTrue},
+		{NodeID: "cwnode_false", DocumentID: "cwdoc_tb", CameraObjectID: pinnedCamera, Pass: PassLit, Fingerprint: fpOff, TransparentBackground: &trFalse},
+	}
+	states := Freshness{}.Check(sources, map[string]creativecontent.Revision{"cwdoc_tb": {Payload: offSnap.Payload}})
+	for _, id := range []string{"cwnode_follow", "cwnode_true", "cwnode_false"} {
+		if states[id] != creativecanvas.BasedOnCurrent {
+			t.Fatalf("states[%s] = %s, want current (all=%v)", id, states[id], states)
+		}
+	}
+
+	// Flipping scene transparent_background=true stales follow only, leaves explicit true/false current.
+	onSnap, err := encodeScene(trScene)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statesAfterToggle := Freshness{}.Check(sources, map[string]creativecontent.Revision{"cwdoc_tb": {Payload: onSnap.Payload}})
+	if statesAfterToggle["cwnode_follow"] != creativecanvas.BasedOnStale ||
+		statesAfterToggle["cwnode_true"] != creativecanvas.BasedOnCurrent ||
+		statesAfterToggle["cwnode_false"] != creativecanvas.BasedOnCurrent {
+		t.Fatalf("after scene toggle: %v", statesAfterToggle)
+	}
+}

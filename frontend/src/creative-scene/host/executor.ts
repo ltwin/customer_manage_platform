@@ -1,5 +1,5 @@
 import { ApiError } from '../../api/transport.ts'
-import type { Upload } from '../../creative-canvas/editor/media.ts'
+import type { Generated, Upload, UploadTarget } from '../../creative-canvas/editor/media.ts'
 import { jobRenderCapMs, viewBudgetMs } from '../render/engines.ts'
 import { carryOver, codeDiffers, type Carried } from '../models/faces.ts'
 import type { SceneModel } from '../models/cache.ts'
@@ -9,7 +9,7 @@ import { TraceNotReady } from '../render/trace/base.ts'
 import type { CompileInput } from '../sandbox/host.ts'
 import { isRecord, measureStage, type CompileError } from '../sandbox/protocol.ts'
 import { bake, uploadBake, type Baked, type BakeDeps, type BakeOutcome } from './bake.ts'
-import { shotsOf, uploadShots, type ExportPass, type ExportPlan, type RenderedShots } from './exportShots.ts'
+import { ExportSizeLimitError, shotsOf, uploadShots, type ExportPass, type ExportPlan, type RenderedShots } from './exportShots.ts'
 import type { RenderRequest } from './framing.ts'
 import { leaseEveryMs, type CompletePayload, type Completion, type JobApi, type JobErrorCode, type SceneJob } from './jobs.ts'
 import type { Ticker } from './ticker.ts'
@@ -34,6 +34,7 @@ export type ExecutorDeps = BakeDeps & {
   replaced(documentID: string, objectID: string): Promise<SceneModel | null>
   /** Draws an export's images from the scene's confirmed snapshot. */
   exportImages(documentID: string, plan: ExportPlan): Promise<RenderedShots>
+  uploadExport(file: File, declared: Generated, target: NonNullable<UploadTarget['scene_export']>, signal: AbortSignal): Promise<Upload>
   /** The device was lost while drawing (render/gpu.ts): the page stops claiming until it has one again. */
   deviceLost(): void
 }
@@ -168,7 +169,9 @@ export class SceneExecutor {
 
   private async exportShots(job: SceneJob, hold: Hold): Promise<JobOutcome> {
     const plan = exportPlan(job.request)
-    if (!plan) return this.fail(job, 'host_error', '任务内容不完整')
+    const { canvas_id, scene_node_id } = job.request
+    if (!plan || typeof canvas_id !== 'string' || !canvas_id || typeof scene_node_id !== 'string' || !scene_node_id)
+      return this.fail(job, 'host_error', '任务内容不完整')
     const timer = new AbortController()
     const stopTimer = () => timer.abort()
     hold.signal.addEventListener('abort', stopTimer, { once: true })
@@ -189,8 +192,12 @@ export class SceneExecutor {
     if (hold.lost() || rendered === 'stopped') return { state: 'lost' }
     if (rendered === 'timeout') return this.fail(job, 'host_error', `导出超过 ${exportTimeoutMs / 60_000} 分钟没有完成`)
     if (!rendered.ok) return this.fail(job, rendered.hostError ? 'host_error' : 'render_error', rendered.message)
-    const { images, revision } = rendered
-    const send = () => uploadShots(this.deps.upload, images, hold.signal)
+    const { images, revision, effectiveTransparentBackground } = rendered
+    const send = () => uploadShots(
+      (file, declared, signal) => this.deps.uploadExport(file, declared, { canvas_id, scene_node_id }, signal),
+      images,
+      hold.signal,
+    )
     const sent = await send()
     if (hold.lost()) {
       this.discard(sent.uploads)
@@ -198,9 +205,19 @@ export class SceneExecutor {
     }
     if (!sent.ok) {
       this.discard(sent.uploads)
+      if (sent.cause instanceof ExportSizeLimitError) return this.fail(job, 'host_error', sent.cause.message)
       return this.fail(job, 'host_error', `导出图上传失败：${reason(sent.cause)}`)
     }
-    return this.deliver(job, hold, '导出图', sent.uploads, (uploads) => ({ export: { scene_revision: revision, shots: shotsOf(images, uploads) } }), send)
+    return this.deliver(
+      job,
+      hold,
+      '导出图',
+      sent.uploads,
+      (uploads) => ({
+        export: { scene_revision: revision, effective_transparent_background: effectiveTransparentBackground, shots: shotsOf(images, uploads) },
+      }),
+      send,
+    )
   }
 
   /**
@@ -218,7 +235,13 @@ export class SceneExecutor {
   ): Promise<JobOutcome> {
     for (let resent = false; ; resent = true) {
       const reported = await this.report(job, { claim_token: job.claim_token, outcome: 'succeeded', ...result(uploads) })
-      if (reported.state === 'lost' || reported.state === 'abandoned') this.discard(uploads)
+      if (
+        reported.state === 'lost' ||
+        reported.state === 'abandoned' ||
+        (job.kind === 'export_shots' && reported.state === 'completed' && reported.completion.state === 'failed')
+      ) {
+        this.discard(uploads)
+      }
       if (reported.state !== 'unavailable') return reported
       if (hold.lost()) return { state: 'lost' }
       if (resent) return this.fail(job, 'host_error', `${what}上传后无法使用`)
@@ -229,6 +252,7 @@ export class SceneExecutor {
       }
       if (!again.ok) {
         this.discard(again.uploads)
+        if (again.cause instanceof ExportSizeLimitError) return this.fail(job, 'host_error', again.cause.message)
         return this.fail(job, 'host_error', `${what}上传失败：${reason(again.cause)}`)
       }
       uploads = again.uploads
@@ -292,13 +316,15 @@ async function uploadOne(deps: Pick<BakeDeps, 'upload'>, file: File, signal: Abo
 }
 
 function exportPlan(request: Record<string, unknown>): ExportPlan | null {
-  const { camera_object_ids: cameras, marker_ids: markers, passes } = request
+  const { camera_object_ids: cameras, marker_ids: markers, passes, transparent_background: transparent } = request
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string')
   if (!strings(passes)) return null
+  if ('transparent_background' in request && transparent !== undefined && typeof transparent !== 'boolean') return null
+  const override = typeof transparent === 'boolean' ? { transparentBackground: transparent } : {}
   // By shot or by camera, never both (data: 场景时间线「客户端任务的分镜字段」).
-  if (strings(markers)) return { cameraObjectIDs: [], markerIDs: markers, passes: passes as ExportPass[] }
+  if (strings(markers)) return { cameraObjectIDs: [], markerIDs: markers, passes: passes as ExportPass[], ...override }
   if (!strings(cameras)) return null
-  return { cameraObjectIDs: cameras, passes: passes as ExportPass[] }
+  return { cameraObjectIDs: cameras, passes: passes as ExportPass[], ...override }
 }
 
 function bakeInput(request: Record<string, unknown>): CompileInput | null {

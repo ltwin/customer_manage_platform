@@ -14,18 +14,11 @@ import (
 // every model and image revision it references, read in the same snapshot
 // with a fixed number of queries.
 func view(ctx context.Context, tx store.ReadTxAccountScope, cur creativedocument.Current) (json.RawMessage, error) {
-	scene, err := completedScene(cur.Content.Payload)
+	scene, objects, err := completedScene(cur.Content.Payload)
 	if err != nil {
 		return nil, err
 	}
-	// The reference rows hold both kinds; the snapshot says which is which.
-	var stored struct {
-		Objects []Object `json:"objects"`
-	}
-	if err := json.Unmarshal(scene, &stored); err != nil {
-		return nil, err
-	}
-	return referencedView(ctx, tx, scene, stored.Objects)
+	return referencedView(ctx, tx, scene, objects)
 }
 
 // referencedView is a read's scene with the models and images objects
@@ -48,7 +41,7 @@ func referencedView(ctx context.Context, tx store.ReadTxAccountScope, scene any,
 // carries every field.
 // A physical sky's night (W3) and aerial perspective (W4) are each checked
 // as a whole: completeSky fills them in one go.
-func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
+func completedScene(p creativecontent.Payload) (any, []Object, error) {
 	var stored struct {
 		Render      storedRender `json:"render"`
 		Environment struct {
@@ -59,41 +52,60 @@ func completedScene(p creativecontent.Payload) (json.RawMessage, error) {
 			} `json:"sky"`
 		} `json:"environment"`
 		Timeline *json.RawMessage `json:"timeline"`
-		Objects  []struct {
-			Camera *Camera `json:"camera"`
-			Light  *Light  `json:"light"`
-		} `json:"objects"`
+		Objects  []Object         `json:"objects"`
 	}
 	if err := json.Unmarshal(p.Scene, &stored); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sky := stored.Environment.Sky
-	complete := stored.Timeline != nil && stored.Render.complete() && (sky.Kind != SkyPhysical ||
+	complete := stored.Objects != nil && stored.Timeline != nil && stored.Render.complete() && (sky.Kind != SkyPhysical ||
 		sky.Night != nil && nightComplete(*sky.Night) && sky.AerialPerspective != nil && aerialComplete(*sky.AerialPerspective))
 	for _, o := range stored.Objects {
 		complete = complete && (o.Camera == nil || cameraComplete(*o.Camera)) && (o.Light == nil || lightComplete(*o.Light))
 	}
 	if complete {
-		return p.Scene, nil
+		if stored.Render.TransparentBackground != nil {
+			return p.Scene, stored.Objects, nil
+		}
+		// A current snapshot intentionally omits false. Complete just render
+		// and pass the already decoded objects to the reference readers.
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(p.Scene, &fields); err != nil {
+			return nil, nil, err
+		}
+		var render Render
+		if err := json.Unmarshal(fields["render"], &render); err != nil {
+			return nil, nil, err
+		}
+		raw, err := json.Marshal(render)
+		if err != nil {
+			return nil, nil, err
+		}
+		fields["render"] = raw
+		return fields, stored.Objects, nil
 	}
 	s, err := decodeScene(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	snap, err := encodeScene(s)
-	return snap.Payload.Scene, err
+	if s.Objects == nil {
+		s.Objects = []Object{}
+	}
+	return s, s.Objects, nil
 }
 
 // storedRender tells which render fields a stored snapshot holds.
 type storedRender struct {
-	ExposureEV    *float64 `json:"exposure_ev"`
-	Engine        *string  `json:"engine"`
-	Resolution    *string  `json:"resolution"`
-	ExposureEV100 *float64 `json:"exposure_ev100"`
-	ExposureMode  *string  `json:"exposure_mode"`
+	ExposureEV            *float64 `json:"exposure_ev"`
+	Engine                *string  `json:"engine"`
+	Resolution            *string  `json:"resolution"`
+	TransparentBackground *bool    `json:"transparent_background"`
+	ExposureEV100         *float64 `json:"exposure_ev100"`
+	ExposureMode          *string  `json:"exposure_mode"`
 }
 
-// complete reports whether the render needs no completion before it is shown.
+// complete reports whether render has all fields except the optional stored
+// transparent_background flag.
 func (r storedRender) complete() bool {
 	return r.ExposureEV != nil && r.Engine != nil && r.Resolution != nil && r.ExposureEV100 != nil && r.ExposureMode != nil && *r.ExposureMode != exposureAuto
 }

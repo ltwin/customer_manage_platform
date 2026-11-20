@@ -15,7 +15,7 @@ decisionsPending: false
 - 「渲染」选项卡新增场景设置「透明背景」（缺省关闭），挂在输出分辨率旁边；和其他渲染设置一样静默保存、可撤销、多标签页同步，助手可读可改。助手的导出工具（`export_shots`）另支持可选的 `transparent_background` 参数，按次直接指定是否使用透明背景导出，不改写场景文档，也不受场景「透明背景」开关或其他标签页切换开关的影响（未传时沿用导出时刻场景的「透明背景」设置）。
 - 透明背景导出时，白模和材质光照导出图里相机直接看到天空的像素（天空、纯色背景、太阳圆盘、夜空的星星和月亮）变为透明；物体照旧由天空光、太阳、月光、环境反射照亮，金属和镜面里映出的天空保留。线稿不受影响，仍是白底。
 - 透明度随覆盖率过渡：抗锯齿边缘（含兼容模式无 MSAA 下的暗色剪影与实时 GI 运动前景边缘）、景深虚化后的边缘是半透明的，不带天空色或黑色描边；半透明材质（玻璃等）和体积物件保留场景内的物理透射、折射与表面反射，并对空背景输出供单通道 W3C `source-over` 外部合成使用的近似标量透明度（光滑玻璃后方完全落在不透明物体内部的区域与关闭时一致，磨砂玻璃跨越物体与天空轮廓的采样带平滑过渡为半透明，不对外部新背景做折射变形或分通道彩色透射吸收）。
-- 编码：透明背景导出时，1K/2K 的白模和材质光照用 PNG，4K/8K 原本用的 JPEG 不能带透明，改用 WebP（有损 0.95），画面含透明像素时保留透明度（按解码像素验收，不要求全不透明画面在容器头里冗余写入透明块）。场景开启「透明背景」且导出方式勾选了白模或材质光照时，导出对话框在长边旁写明「白模、材质光照使用透明背景」（只勾选线稿时不显示）。
+- 透明背景下，白模和材质光照在 1K 至 8K 均导出无损 PNG。分镜原图单张预算为 320 MiB，普通图片上传为 25 MiB。场景开启「透明背景」且勾选白模或材质光照时，在长边旁显示背景提示。
 - 视口：最终渲染模式下背景显示棋盘格，与材质光照透明导出一致；白模、材质预览保持原有的中性灰背景（不显示棋盘格，而白模导出在开启透明背景时为透明底），线框不变。
 - 画布：含透明像素的导出图在画布上透出底色。服务端为大图生成的展示图现在一律是 JPEG、会丢掉透明，改为对含透明像素的原图保留透明。
 - 渲染指纹计入透明背景：按场景设置导出时，切换场景「透明背景」后已导出的白模、材质光照图提示「场景已更新」；助手按 `export_shots(transparent_background)` 显式指定导出的节点在 `based_on` 记录该次设置，过时判断按该值计算，不受场景「透明背景」开关切换影响。关闭时指纹与现在完全相同，旧图不会因本次上线变为过时。
@@ -36,7 +36,7 @@ decisionsPending: false
 - GIVEN 场景里一块玻璃板一部分后面只有天空、一部分后面有不透明物体（含光滑玻璃与磨砂玻璃），以及空背景前的有色体积物件 WHEN 打开透明背景导出材质光照 THEN 只有天空的玻璃区域与有色体积区域均呈半透明（0 < alpha < 255，保留体积散射色与玻璃表面反射），光滑玻璃后方完全落在不透明物体内部的区域照常显示后面的物体（alpha = 255），磨砂玻璃跨越物体与天空轮廓的过渡带呈平滑半透明（0 < alpha < 255）且无天空色硬边。
 - GIVEN 夜晚的物理天空，有星星和月亮 WHEN 打开透明背景导出材质光照 THEN 星星、月亮不出现在图里，月光对物体的照明保留。
 - GIVEN 透明背景关闭（且助手导出未显式指定 `transparent_background: true`） WHEN 导出 THEN 输出与本次改动前完全相同（格式、画面、文件大小量级）。
-- GIVEN 输出分辨率 4K（或 8K）、打开透明背景 WHEN 导出白模和材质光照 THEN 图片编码为 WebP，画面含透明像素处解码后保留透明且能上传成功（全不透明取景解码为 alpha = 255，不要求容器冗余写入 ALPH 块）；当前浏览器编不出所需格式或图超过上传上限时，导出失败并说明原因和建议（如换低一档分辨率），不会悄悄去掉透明或降分辨率。
+- GIVEN 输出分辨率 4K 或 8K、打开透明背景 WHEN 导出白模和材质光照 THEN 原图保留所选分辨率、以无损 PNG 编码并保留像素透明度。超过普通图片上限的原图按单张 320 MiB 分镜预算上传。设备、上传或额度不足导致失败时说明原因，整批不落位。
 
 ### 画布与过时提示
 
@@ -60,12 +60,12 @@ decisionsPending: false
 - 代码：
   - 前端 `frontend/src/creative-scene/`：`render/sceneRenderer.ts`、`render/realtimeGI.ts`、`render/giSplit.ts`、`render/dof.ts`、`render/gpu.ts`、`render/volumes/composite.ts`、`world/atmosphere/aerial.ts`（预乘 alpha、玻璃与雾按渲染通道上下文门控、SMAA/TRAA 透明边缘与历史钳制、景深单字节混合附件）、`host/render.ts`、`host/exportShots.ts`、`host/executor.ts`、`render/engines.ts`（编码、按次透明覆盖与时限）、`panels/ExportDialog.tsx`、`panels/RenderPanel.tsx`、视口棋盘格。
   - 后端 `backend/internal/creativescene`（`render` 字段与 `encodeScene` `false` 省略存储、导出任务按次 `transparent_background` 覆盖、落位核对渲染端回报、`based_on.transparent_background` 与渲染指纹）、`backend/internal/creativecanvas/scene_exports.go`（`SceneExportBasedOn`）、`backend/internal/creativemedia/verify.go`（含透明像素原图的展示图保留透明）、`backend/internal/creativeagent`（`export_shots` 的 `transparent_background` 参数与 `set_render` 说明）。
-- 契约：OpenAPI `CreativeSceneRender` 新增必返 `transparent_background: boolean`（旧场景与省略存储的快照读出 `false`），`CreativeSceneRenderPatch` 新增可选 `transparent_background: boolean`；`data: 场景文档`、`data: 场景客户端任务`、`data: 导出图来源`、`api: 读取场景`、`api: 助手场景工具的输入与写入结果`、`api: 导出分镜`、`api: 完成场景客户端任务`、`patterns: 场景着色写法` 同步扩展；`make generate` 生成 Go/TS 两份产物。4K/8K 透明导出使用 `image/webp`。
+- 契约：OpenAPI `CreativeSceneRender` 新增必返 `transparent_background: boolean`（旧场景与省略存储的快照读出 `false`），`CreativeSceneRenderPatch` 新增可选 `transparent_background: boolean`；`data: 场景文档`、`data: 场景客户端任务`、`data: 导出图来源`、`api: 读取场景`、`api: 助手场景工具的输入与写入结果`、`api: 导出分镜`、`api: 完成场景客户端任务`、`patterns: 场景着色写法` 同步扩展；`make generate` 生成 Go/TS 两份产物。4K/8K 透明导出使用无损 `image/png` 并适用单张 320 MiB 的场景导出上传预算。
 - 外部：无。
 
 ## Risk Notes
 
-- perf-sensitive：最终画面多带一路 alpha 穿过 AO、空气透视、体积、景深（透明模式下附加单通道 `R8` 混合权重附件，关闭时零新增显存）、SMAA/TRAA 和累积；导出时限按编码估算（`engines.ts estimateMs`），8K 正方形 + 景深 + WebP 编码的显存、耗时与文件大小需在管线完成后尽早核对；画质须与关闭时等价（不透明物体内部区域逐像素对照）。
+- perf-sensitive：最终画面多带一路 alpha 穿过 AO、空气透视、体积、景深（透明模式下附加单通道 `R8` 混合权重附件，关闭时零新增显存）、SMAA/TRAA 和累积；导出时限按编码估算（`engines.ts estimateMs`），8K 正方形 + 景深 + PNG 编码的显存、耗时与文件大小需在管线完成后尽早核对；画质须与关闭时等价（不透明物体内部区域逐像素对照）。
 - broad-impact：`SceneRenderer` 同时服务视口、导出和助手回看，玻璃与雾的着色钩子须严格按透明渲染通道的上下文门控并隔离着色器缓存键，确保关闭透明背景和 `render_view` 编译出原样着色器；展示图编码改动作用于所有上传的含透明像素 PNG/WebP（顺带修正画布展示图透明变黑问题），不影响 JPEG 和全不透明图的现有展示图。
 - 指纹：透明背景只在有效值为 `true` 时计入指纹，保证存量导出图不批量变为过时、指纹版本不升级；助手按次指定 `transparent_background` 的导出节点把该值记入 `based_on`，与场景开关解耦。
 - 数据：场景快照为 `false` 时省略该键，旧后端可解码该修订。关闭开关只影响新写入的修订，仍保留的 `true` 历史修订继续适用前向修复策略。前后端与 worker 同版本上线，已打开的旧页面由导出落位校验兜底。

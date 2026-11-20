@@ -3,7 +3,7 @@ import { createRoot, extend } from '@react-three/fiber'
 import * as THREE from 'three'
 import { readScene, type Scene, type SceneDocument } from '../api.ts'
 import type { SceneModel } from '../models/cache.ts'
-import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, softShadowsIn, traceWaitMs, type Use } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, PROBE_WARMUP, softShadowsIn, traceWaitMs, type ImageType, type Use } from '../render/engines.ts'
 import { frameExposure } from '../render/litLook.ts'
 import { applyExposure, preExposure, sceneLowSun, sceneLux } from '../world/exposure.ts'
 import { SceneRenderer } from '../render/sceneRenderer.ts'
@@ -48,13 +48,15 @@ extend(THREE as unknown as Parameters<typeof extend>[0])
 export type ShotKind = 'clay' | 'line' | 'lit'
 export type ShotOptions = {
   kind: ShotKind
-  type: 'image/jpeg' | 'image/png'
+  type: ImageType
   depthOfField?: boolean
+  /** Overrides scene.render.transparent_background for non-view clay/lit exports. */
+  transparent?: boolean
   /** An export's image or render_view's; the real-time GI averages more frames for an export. */
   use?: Use
   /** performance.now() past which the picture is given up, checked between its frames. */
   deadline?: number
-  /** JPEG quality; render_view's 0.85 unless said. */
+  /** Lossy encoding quality (0.85 for render_view JPEG, 0.95 for 4K/8K opaque JPEG). */
   quality?: number
 }
 /** What the shooter has mounted: clay and line shots need clay, lit ones lit. */
@@ -168,7 +170,7 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
   }
   try {
     await root.configure({
-      gl: ({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'offscreen' }).then((g) => g.renderer),
+      gl: ({ canvas }) => createRenderer({ canvas: canvas as HTMLCanvasElement, alpha: true, output: 'pipeline', role: 'offscreen' }).then((g) => g.renderer),
       // Tone mapping and sRGB happen in the pipeline's output node; R3F would set them back on the renderer.
       linear: true,
       flat: true,
@@ -252,6 +254,7 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
         // The workbench's frames see one camera: after the first, the shadow maps are what they were, only the
         // kernels turn (scene-light-radius design「workbench 的出图累积」). Drawn again once the picture is done.
         const freezes = engine === 'workbench' && frames > 1
+        const transparent = options.use !== 'view' && options.kind !== 'line' && (options.transparent ?? (scene.render.transparent_background === true))
         const frame = {
           width,
           height,
@@ -261,6 +264,7 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
           engine,
           quality: 'final' as const,
           accumulate: frames > 1,
+          transparent,
         }
         let thaw: (() => void) | null = null
         try {
@@ -300,7 +304,7 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
               }
             },
             options.type,
-            options.type === 'image/jpeg' ? (options.quality ?? jpegQuality) : undefined,
+            options.type === 'image/png' ? undefined : (options.quality ?? jpegQuality),
           )
           if (sceneTest && picture?.probeStats?.drawn) {
             gpuTestHooks.picturesWithProbes++

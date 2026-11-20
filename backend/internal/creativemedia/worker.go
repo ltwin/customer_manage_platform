@@ -234,11 +234,15 @@ func (s *Service) workVerify(ctx context.Context, scope store.AccountScope, job 
 	if u.StagingVersion == nil {
 		return s.fail(ctx, scope, u, "verify_failed", errors.New("missing staging version"))
 	}
+	var target Target
+	if err := json.Unmarshal(u.Target, &target); err != nil {
+		return s.fail(ctx, scope, u, "verify_failed", err)
+	}
 	body, _, err := s.adapter.OpenVersion(ctx, u.StagingKey, *u.StagingVersion, nil)
 	if err != nil {
 		return s.fail(ctx, scope, u, "verify_failed", err)
 	}
-	verified, tmp, err := s.verifier.Verify(ctx, body, u.Kind, "", s.verifier.MaxBytes(u.Kind))
+	verified, tmp, err := s.verifier.Verify(ctx, body, u.Kind, "", s.uploadMaxBytes(u.Kind, target))
 	_ = body.Close()
 	if err != nil {
 		code := "verify_failed"
@@ -419,10 +423,6 @@ func (s *Service) publish(ctx context.Context, scope store.AccountScope, u uploa
 // when the target changed since the session was created, into a pending
 // candidate. Either way the revision gets a real root in this transaction.
 func (s *Service) bindOrCandidate(ctx context.Context, tx store.TxAccountScope, current upload, target Target, draft creativecontent.Draft, objects []creativecontent.ObjectBinding, operation string, now time.Time) (Publication, error) {
-	targetErr := validateTargetInTx(ctx, tx, target, current.Kind)
-	if targetErr != nil && !errors.Is(targetErr, creativecanvas.ErrTargetChanged) {
-		return Publication{}, targetErr
-	}
 	if target.Kind == "staged" {
 		// 暂存：只发布内容，等用户在画布上用 fill_from_upload 放进节点。
 		id := "ccuc_" + uuid.NewString()
@@ -432,6 +432,10 @@ func (s *Service) bindOrCandidate(ctx context.Context, tx store.TxAccountScope, 
 			return Publication{}, err
 		}
 		return Publication{Kind: "candidate", ID: id, Revision: 1}, nil
+	}
+	targetErr := validateTargetInTx(ctx, tx, target, current.Kind)
+	if targetErr != nil && !errors.Is(targetErr, creativecanvas.ErrTargetChanged) {
+		return Publication{}, targetErr
 	}
 	if targetErr == nil && target.Kind == "asset" {
 		var asset creativelibrary.AssetResult

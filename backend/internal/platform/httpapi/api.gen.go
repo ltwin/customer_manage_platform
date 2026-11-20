@@ -7810,8 +7810,11 @@ type CreativeSceneExportLens struct {
 
 // CreativeSceneExportPayload defines model for CreativeSceneExportPayload.
 type CreativeSceneExportPayload struct {
-	CanvasId    string `json:"canvas_id"`
-	SceneNodeId string `json:"scene_node_id"`
+	CanvasId string `json:"canvas_id"`
+
+	// EffectiveTransparentBackground 渲染端实际给白模、材质光照使用的背景模式。含任一该导出方式且 scene_revision 对应的场景开关为 true 时必传；仅线稿有效值为 false 可省略。 缺失或与实际渲染修订不一致返回 400 validation_failed（提示刷新页面后重新导出）。
+	EffectiveTransparentBackground *bool  `json:"effective_transparent_background,omitempty"`
+	SceneNodeId                    string `json:"scene_node_id"`
 
 	// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	SceneRevision CreativeRevision `json:"scene_revision"`
@@ -7893,7 +7896,7 @@ type CreativeSceneJob struct {
 	Kind       CreativeSceneJobKind `json:"kind"`
 	LeaseUntil time.Time            `json:"lease_until"`
 
-	// Request 按 kind 定义，见契约 data:场景客户端任务
+	// Request 按 kind 定义，见契约 data:场景客户端任务（export_shots 可带可选布尔 transparent_background 覆盖场景设置）
 	Request map[string]interface{} `json:"request"`
 }
 
@@ -7932,8 +7935,11 @@ type CreativeSceneJobCompletePayload struct {
 		Message string                                   `json:"message"`
 	} `json:"error,omitempty"`
 
-	// Export export_shots 成功时必填：实际渲染的场景修订和图片清单，必须正好覆盖任务 request 的摄像机和导出方式。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。
+	// Export export_shots 成功时必填：实际渲染的场景修订、图片清单和实际背景模式，必须正好覆盖任务 request 的摄像机和导出方式。 含白模或材质光照且任务显式指定 transparent_background 或期望为 true 时，effective_transparent_background 必传（缺失或不匹配记为 failed invalid_result，显式 null 或非布尔返回 400）。 服务端在完成事务里按导出分镜的规则放置节点；无法放置时任务记为 failed（invalid_result）并返回 200。
 	Export *struct {
+		// EffectiveTransparentBackground 渲染端实际给白模、材质光照使用的背景模式；仅线稿的有效值为 false，可省略。
+		EffectiveTransparentBackground *bool `json:"effective_transparent_background,omitempty"`
+
 		// SceneRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 		SceneRevision CreativeRevision `json:"scene_revision"`
 
@@ -8230,6 +8236,9 @@ type CreativeSceneRender struct {
 
 	// Resolution 输出分辨率，导出图的长边 1024、2048、4096、8192 px；不影响视口、render_view 和缩略图。之前保存的场景读出为 2k。
 	Resolution CreativeSceneRenderResolution `json:"resolution"`
+
+	// TransparentBackground 透明背景（缺省 false）。开启后，跟随场景设置的白模（clay）和材质光照（lit）导出将天空背景设为透明，编辑器最终渲染模式视口显示棋盘格；线稿与助手 render_view 回看始终带背景。
+	TransparentBackground bool `json:"transparent_background"`
 }
 
 // CreativeSceneRenderEngine 渲染器，只作用于材质光照（编辑器的最终渲染、lit 导出与 render_view 的 lit）；realtime_gi 加入屏幕空间的间接光、反射与接触阴影。白模、线稿、线框、材质预览和正交视图总按 workbench。path_tracing 还不能选，写入返回 400。之前保存的场景读出为 workbench。
@@ -8712,6 +8721,12 @@ type CreativeUploadTarget struct {
 	Asset *CreativeUploadAssetTarget `json:"asset,omitempty"`
 	Kind  CreativeUploadTargetKind   `json:"kind"`
 	Node  *CreativeUploadNodeTarget  `json:"node,omitempty"`
+
+	// SceneExport 限 image 的 staged 目标。原图单张最多 320 MiB，仅可通过指定场景的导出操作放上画布
+	SceneExport *struct {
+		CanvasId    string `json:"canvas_id"`
+		SceneNodeId string `json:"scene_node_id"`
+	} `json:"scene_export,omitempty"`
 }
 
 // CreativeVersionInput defines model for CreativeVersionInput.

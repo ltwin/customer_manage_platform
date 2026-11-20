@@ -16,6 +16,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 func creativeCommand(t *testing.T, payload any) creativeops.Command {
@@ -145,4 +146,158 @@ func TestCreativeSceneExportHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	want("archived", post(payload(stageForHTTP(t, db, scope, "image", creativeglb.Manifest{}))), 409, "archived_read_only")
+}
+
+func TestCreativeSceneExportTransparentBackgroundHTTP(t *testing.T) {
+	ctx := context.Background()
+	creativecanvas.SetExportFreshness(creativescene.Freshness{})
+	t.Cleanup(func() { creativecanvas.SetExportFreshness(nil) })
+	router, st, tokens, url := newCustomerAPIRouterWithURL(t)
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE accounts SET status='active' WHERE id='` + testAcctID + `'`); err != nil {
+		t.Fatal(err)
+	}
+	token := issueToken(t, tokens, testAcctID)
+	scope := st.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+
+	r, err := creativecanvas.CreateProject(ctx, scope, creativeCommand(t, creativecanvas.CreateProjectInput{Name: "透明导出"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p creativecanvas.ProjectResult
+	if err := json.Unmarshal(r.Outcome.Response, &p); err != nil {
+		t.Fatal(err)
+	}
+	canvas, scene := groupedSceneForExport(t, scope, p.CanvasID)
+	node, doc := scene.ID, *scene.DocumentID
+	cam, marker := "sobj_C00000000000000000002", "smk_000000000000000000001"
+	if _, err := creativedocument.Command(ctx, scope, creativeCommand(t, map[string]any{
+		"document_id": doc,
+		"expected":    map[string]any{"objects": "1", "render": "1", "timeline": "1"},
+		"operations": []any{
+			map[string]any{"op": "add_objects", "objects": []any{map[string]any{
+				"id": cam, "kind": "camera", "name": "", "parent_id": nil, "order": 1,
+				"transform": map[string]any{"position": []float64{0, 1, 5}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+				"visible":   true, "locked": false, "camera": map[string]any{},
+			}}},
+			map[string]any{"op": "set_render", "render": map[string]any{"transparent_background": true}},
+			map[string]any{"op": "set_timeline", "timeline": map[string]any{"markers": []any{
+				map[string]any{"id": marker, "name": "透明主体 PNG", "frame": 0, "camera_object_id": cam},
+			}}},
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	post := func(payload any) *httptest.ResponseRecorder {
+		t.Helper()
+		key := uuid.NewString()
+		raw, err := json.Marshal(map[string]any{"operation_id": key, "client_created_at": time.Now().UTC(), "payload": payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return shootPlanningRequest(t, router, "POST", "/api/v1/creative/documents/"+doc+"/scene-exports", token, key, string(raw))
+	}
+	want := func(name string, w *httptest.ResponseRecorder, status int, code string) {
+		t.Helper()
+		if w.Code != status || code != "" && documentErrorCode(t, w) != code {
+			t.Fatalf("%s: %d %s, want %d %s", name, w.Code, w.Body.String(), status, code)
+		}
+	}
+
+	imgUp := stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})
+	shotLit := []any{map[string]any{"marker_id": marker, "images": []any{map[string]any{"pass": "lit", "upload_id": imgUp}}}}
+	want("null effective", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "effective_transparent_background": nil, "shots": shotLit}), 400, "validation_failed")
+	want("string effective", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "effective_transparent_background": "yes", "shots": shotLit}), 400, "validation_failed")
+	want("missing on transparent rev", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "shots": shotLit}), 400, "validation_failed")
+	want("mismatch false", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "effective_transparent_background": false, "shots": shotLit}), 400, "validation_failed")
+	// Upload must still be unconsumed so valid retry succeeds.
+	want("valid transparent export", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "effective_transparent_background": true, "shots": shotLit}), 200, "")
+	// Line-only omits report safely even on transparent revision.
+	lineUp := stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})
+	want("line only without report", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "2", "shots": []any{map[string]any{"marker_id": marker, "images": []any{map[string]any{"pass": "line", "upload_id": lineUp}}}}}), 200, "")
+	if _, err := creativedocument.Command(ctx, scope, creativeCommand(t, map[string]any{
+		"document_id": doc, "expected": map[string]any{"render": "2"},
+		"operations": []any{map[string]any{"op": "set_render", "render": map[string]any{"transparent_background": false}}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	opaqueUp := stageForHTTP(t, db, scope, "image", creativeglb.Manifest{})
+	want("valid opaque export", post(map[string]any{"canvas_id": p.CanvasID, "scene_node_id": node, "scene_revision": "3", "effective_transparent_background": false, "shots": []any{map[string]any{"marker_id": marker, "images": []any{map[string]any{"pass": "lit", "upload_id": opaqueUp}}}}}), 200, "")
+	assertGroupedExports(t, scope, canvas, *scene.ParentID, 3)
+}
+
+// Each group also has a sibling whose world position must survive the export.
+func groupedSceneForExport(t *testing.T, scope store.AccountScope, canvasID string) (creativecanvas.Canvas, creativecanvas.Node) {
+	t.Helper()
+	ctx := t.Context()
+	canvas, err := creativecanvas.GetCanvas(ctx, scope, canvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := "cwnode_" + uuid.NewString()
+	inner := "cwnode_" + uuid.NewString()
+	scene := "cwnode_" + uuid.NewString()
+	_, err = creativecanvas.ApplyCommands(ctx, scope, creativeCommand(t, creativecanvas.BatchInput{
+		CanvasID: canvasID, ExpectedTopologyRevision: canvas.TopologyRevision,
+		Actions: []creativecanvas.Action{
+			{Type: "add_node", NodeID: outer, TypeKey: "core.group", X: 100, Y: 50},
+			{Type: "add_node", NodeID: inner, TypeKey: "core.group", ParentID: &outer, X: 24, Y: 52},
+			{Type: "add_node", NodeID: scene, TypeKey: creativescene.NodeTypeKey, ParentID: &inner, X: 24, Y: 52},
+			{Type: "add_node", NodeID: "cwnode_" + uuid.NewString(), TypeKey: "core.text", ParentID: &inner, X: 24, Y: 320},
+			{Type: "add_node", NodeID: "cwnode_" + uuid.NewString(), TypeKey: "core.text", ParentID: &outer, X: 24, Y: 700},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas, err = creativecanvas.GetCanvas(ctx, scope, canvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range canvas.Nodes {
+		if node.ID == scene && node.DocumentID != nil && node.ParentID != nil {
+			return canvas, node
+		}
+	}
+	t.Fatal("grouped scene missing")
+	return creativecanvas.Canvas{}, creativecanvas.Node{}
+}
+
+func assertGroupedExports(t *testing.T, scope store.AccountScope, before creativecanvas.Canvas, parentID string, want int) {
+	t.Helper()
+	after, err := creativecanvas.GetCanvas(t.Context(), scope, before.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforePositions, afterPositions := creativecanvas.WorldPositions(before.Nodes), creativecanvas.WorldPositions(after.Nodes)
+	if got := len(after.Nodes) - len(before.Nodes); got != want {
+		t.Fatalf("placed %d nodes, want %d", got, want)
+	}
+	for id, point := range beforePositions {
+		if next, ok := afterPositions[id]; !ok || next != point {
+			t.Fatalf("existing node %s moved from %+v to %+v", id, point, next)
+		}
+	}
+	groupWidths := map[string]float64{}
+	for _, n := range before.Nodes {
+		if n.TypeKey == "core.group" {
+			groupWidths[n.ID] = n.Width
+		}
+	}
+	for _, n := range after.Nodes {
+		if _, existing := beforePositions[n.ID]; existing {
+			if width, group := groupWidths[n.ID]; group && n.Width <= width {
+				t.Fatalf("group %s did not expand from width %g", n.ID, width)
+			}
+			continue
+		}
+		if n.ParentID == nil || *n.ParentID != parentID || n.TypeKey != "core.image" || n.ContentRevisionID == nil {
+			t.Fatalf("invalid export node in canvas: %+v", n)
+		}
+	}
 }

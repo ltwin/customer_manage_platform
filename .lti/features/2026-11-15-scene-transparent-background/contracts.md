@@ -31,7 +31,7 @@
 | `scene.render.exposure_ev` | number −10…10（曝光补偿，档） | 否 | 0；只作用于 `lit`（编辑器的最终渲染、`lit` 导出、`render_view` 的 `lit`）：渲染时 three.js `toneMappingExposure = 2^exposure_ev`。白模、线稿和材质预览不受影响（修订 v10） |
 | `scene.render.engine` | `"workbench"` \| `"realtime_gi"`（渲染器） | 否 | `workbench`；只决定最终渲染怎么出图（编辑器的最终渲染、`lit` 导出、`render_view` 的 `lit`）。`workbench` 是光栅化渲染；`realtime_gi` 在其上加入屏幕空间的间接光、反射与接触阴影，并在满足上限的 WebGPU 设备上用世界空间追踪补上屏幕外的反射和漫反射（`scene-world-space-gi`；兼容模式、设备不支持或场景过大时只做屏幕空间，不改写场景），视口停止操作后收敛，导出和 `render_view` 多帧累积（`scene-webgpu-renderer` design「渲染器与显示模式」）。白模、线稿、线框和材质预览不受影响；正交视图按 `workbench` 显示。只计入 `lit` 的渲染指纹，值为 `workbench` 时不计入；`realtime_gi` 计入时连同世界空间追踪的版本号一起计入（`scene-world-space-gi` S2 起为 1），所以 S2 上线后已有的实时 GI `lit` 导出各显示一次「场景已更新」，`workbench` 的 `lit` 和 `clay`、`line` 不受影响，指纹版本前缀不升级。`path_tracing` 由后续 Epic 加入，现在写入返回 400 |
 | `scene.render.resolution` | `"1k"` \| `"2k"` \| `"4k"` \| `"8k"`（输出分辨率） | 否 | `2k`；导出图（`clay`、`line`、`lit`）的长边分别为 1024、2048、4096、8192 px，短边按摄像机的画幅比例。不影响视口、`render_view`（JPEG，长边 1024）和缩略图。不计入渲染指纹 |
-| `scene.render.transparent_background` | boolean（透明背景） | 否 | `false`（持久化快照在值为 `false` 时省略该键、仅在 `true` 时写入 `"transparent_background": true`；场景读取接口、修订读取接口与 `read_scene` 始终补齐返回布尔值）；开启后，跟随场景设置的白模（`clay`）和材质光照（`lit`）导出图里相机直接看到天空的像素（天空、纯色背景、太阳圆盘、夜空的月亮与星星和银河）透明（`alpha = 0`），物体照旧由天空、太阳、月光、环境反射和灯光照亮，金属与镜面映出的天空保留；抗锯齿与景深边缘按覆盖率输出半透明，玻璃等透射材质与体积物件保留场景内的物理透射、折射与反射，并对空背景输出单通道 W3C `source-over` 合成用的近似标量透明度；`1k`/`2k` 编为 `image/png`，`4k`/`8k` 编为 `image/webp`（有损 0.95，画面含透明像素时保留透明）。编辑器的最终渲染模式在视口背景显示棋盘格，白模、材质预览保持原有中性灰背景，线框不变。线稿（`line`）不受影响，仍是白底 `image/png`；助手回看（`render_view`）和缩略图不受影响。助手 `export_shots` 另可按次显式指定 `transparent_background` 覆盖本设置而不改写快照（见 `data: 场景客户端任务`、`data: 导出图来源`）。计入 `clay` 和 `lit` 的渲染指纹（`line` 不计入），有效值为 `false` 时省略该键，存量导出图不因本次上线变为过时 |
+| `scene.render.transparent_background` | boolean（透明背景） | 否 | `false`（持久化快照在值为 `false` 时省略该键、仅在 `true` 时写入 `"transparent_background": true`；场景读取接口、修订读取接口与 `read_scene` 始终补齐返回布尔值）；开启后，跟随场景设置的白模（`clay`）和材质光照（`lit`）导出图里相机直接看到天空的像素（天空、纯色背景、太阳圆盘、夜空的月亮与星星和银河）透明（`alpha = 0`），物体照旧由天空、太阳、月光、环境反射和灯光照亮，金属与镜面映出的天空保留；抗锯齿与景深边缘按覆盖率输出半透明，玻璃等透射材质与体积物件保留场景内的物理透射、折射与反射，并对空背景输出单通道 W3C `source-over` 合成用的近似标量透明度；`1k` 至 `8k` 均按选定分辨率编码为无损 `image/png`。编辑器的最终渲染模式在视口背景显示棋盘格，白模、材质预览保持原有中性灰背景，线框不变。线稿（`line`）不受影响，仍是白底 `image/png`；助手回看（`render_view`）和缩略图不受影响。助手 `export_shots` 另可按次显式指定 `transparent_background` 覆盖本设置而不改写快照（见 `data: 场景客户端任务`、`data: 导出图来源`）。计入 `clay` 和 `lit` 的渲染指纹（`line` 不计入），有效值为 `false` 时省略该键，存量导出图不因本次上线变为过时 |
 | `scene.objects[]` | 对象数组，≤ 2000 | 是 | 新建为一个内置地面 |
 | `objects[].id` | string | 是 | 见身份规则 |
 | `objects[].kind` | `"primitive"` \| `"model_instance"` \| `"light"` \| `"camera"` \| `"group"` | 是 | `model_instance` 自 C2 起可写入 |
@@ -425,6 +425,9 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 
 一次请求里的 `shots` 只能全部用 `marker_id`，或全部用 `camera_object_id`。
 
+- 手动导出与助手任务均通过 `POST /api/v1/creative/uploads` 建立图片暂存会话。`target` 含 `kind: "staged"` 及 `scene_export: {canvas_id, scene_node_id}`。建会话时校验当前账号可写画布及其场景节点，文件仍走分片上传、媒体校验和账号存储额度。建会话与媒体校验均以单张 320 MiB 限制原图。
+- 绑定场景的图片暂存项仅可由该场景的手动导出或助手任务消费。旧页面的通用暂存项仍可用原有分镜落位流程消费。普通上传的默认单张上限为 25 MiB。
+
 ### 成功响应
 200：`{change_id, scene_revision, nodes:[{marker_id, camera_object_id, pass, node_id, content_revision_id, lens}]}`。
 - `marker_id` 在按摄像机导出时为 null；`camera_object_id` 总是返回，是渲染所用的摄像机。
@@ -439,7 +442,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 | 404 | `not_found` | 场景、画布或场景节点不存在，不属于当前账号，或场景节点不指向这个场景 | 停止 |
 | 409 | `archived_read_only` | 画布已归档（沿用画布现有错误码） | 恢复画布后重新导出 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 丢弃暂存图片 |
-| 409 | `creative_upload_unavailable` | 暂存图片不存在、未就绪、已过期、已被消费或不是图片 | 重新上传后用新的 operation id 重试 |
+| 409 | `creative_upload_unavailable` | 暂存图片不存在、未就绪、已过期、已被消费、不是图片或绑定到另一个场景 | 重新上传后用新的 operation id 重试 |
 | 413 | `creative_size_limit` | 图片合计超过 48 张，或画布节点数超过上限 | 分次导出 |
 
 ### 交互规则

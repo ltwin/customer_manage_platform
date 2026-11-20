@@ -59,11 +59,13 @@ type RenderOutput struct {
 	SceneRevision creativeops.Revision `json:"scene_revision"`
 }
 
-// ExportOutput is what the host exported: the revision it rendered and the
-// staged images, shaped as in the export request.
+// ExportOutput is what the host exported: the revision it rendered, the
+// staged images shaped as in the export request, and the effective background
+// mode reported for clay/lit.
 type ExportOutput struct {
-	SceneRevision creativeops.Revision `json:"scene_revision"`
-	Shots         []ExportShot         `json:"shots"`
+	SceneRevision                  creativeops.Revision `json:"scene_revision"`
+	Shots                          []ExportShot         `json:"shots"`
+	EffectiveTransparentBackground *bool                `json:"effective_transparent_background,omitempty"`
 }
 
 // moduleInfo is the sandbox's module, as the host checked it.
@@ -99,6 +101,14 @@ func Complete(ctx context.Context, scope store.AccountScope, c creativeops.Comma
 		Validate: func(raw json.RawMessage) error {
 			if err := creativeops.Decode(raw, &in); err != nil {
 				return err
+			}
+			var top map[string]json.RawMessage
+			if json.Unmarshal(raw, &top) == nil {
+				if expRaw, ok := top["export"]; ok {
+					if err := rejectNullKey(expRaw, "effective_transparent_background"); err != nil {
+						return err
+					}
+				}
 			}
 			in.operationID = c.OperationID
 			return in.validate()
@@ -457,7 +467,15 @@ func completeExport(ctx context.Context, tx store.TxAccountScope, job Job, out E
 	if job.RunID != nil {
 		actor = creativedocument.Actor{Kind: "agent", RunID: job.RunID}
 	}
-	in := ExportInput{DocumentID: job.DocumentID, CanvasID: req.CanvasID, SceneNodeID: req.SceneNodeID, SceneRevision: out.SceneRevision, Shots: shots}
+	in := ExportInput{
+		DocumentID:                     job.DocumentID,
+		CanvasID:                       req.CanvasID,
+		SceneNodeID:                    req.SceneNodeID,
+		SceneRevision:                  out.SceneRevision,
+		EffectiveTransparentBackground: out.EffectiveTransparentBackground,
+		Shots:                          shots,
+		overrideTransparent:            req.TransparentBackground,
+	}
 	var placed ExportResult
 	err := tx.Savepoint(ctx, "scene_job_export", func() error {
 		var err error

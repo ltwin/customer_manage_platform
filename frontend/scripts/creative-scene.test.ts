@@ -1318,3 +1318,23 @@ test('undoing a parenting is skipped when the old parent is gone', async () => {
   assert.equal(undo.undo(), 'empty')
   assert.equal(undo.notice, '层级已被修改，无法撤销')
 })
+
+
+test('set_render transparent_background projects, dedupes no-ops, and undoes via restore_units', async () => {
+  const { transport, session } = await started([box(1)])
+  const undo = new UndoStack(session)
+  assert.equal(session.state.view?.scene.render.transparent_background ?? false, false)
+  // Server snapshots expose false explicitly; omitting it should still keep set_render({ transparent_background: true }) cleanly.
+  assert.equal(session.edit([{ op: 'set_render', render: { transparent_background: true } }], '开启透明背景')?.ops.length, 1)
+  assert.equal(session.state.view?.scene.render.transparent_background, true)
+  assert.equal(session.edit([{ op: 'set_render', render: { transparent_background: true } }], '重复开启'), null)
+  assert.deepEqual(transport.sent[0].payload.operations, [{ op: 'set_render', render: { transparent_background: true } }])
+  assert.deepEqual(transport.sent[0].payload.expected, { render: '1' })
+
+  transport.sent[0].resolve(receipt(4, ['render']))
+  await tick()
+  assert.equal(undo.undo(), 'sent')
+  await tick()
+  assert.equal(transport.sent.length, 2)
+  assert.deepEqual(transport.sent[1].payload.operations, [{ op: 'restore_units', from_revision: '3', units: ['render'] }])
+})

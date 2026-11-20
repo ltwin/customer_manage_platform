@@ -19,7 +19,7 @@ import { MAX_VOLUMES, V } from './state.ts'
 // low resolution and the blur cannot spread the volumes past their outline.
 
 type Op = (...args: TSLNode[]) => TSLNode
-const { abs, clamp, dot, float, floor, int, ivec2, max, min, uniform, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
+const { abs, clamp, dot, float, floor, int, ivec2, max, min, mix, uniform, vec2, vec3, vec4 } = tsl as unknown as Record<string, Op>
 const { screenUV } = tsl as unknown as Record<string, TSLNode>
 const Fn = tsl.Fn as unknown as (fn: () => TSLNode) => () => TSLNode
 const If = tsl.If as unknown as (cond: TSLNode, then: () => void) => void
@@ -38,8 +38,8 @@ export function applyVolumes(color: TSLNode, depth: TSLNode, camera: Camera, nod
   const projection = uniform(camera.projectionMatrix) as Uniform<Matrix4>
   const world = uniform(camera.matrixWorld)
   return Fn(() => {
-    const picture = vec3(color).toVar()
-    const out = vec3(picture).toVar()
+    const picture = vec4(color).toVar()
+    const out = vec4(picture).toVar()
     // node.ready: not while the march for new lights compiles (march.ts).
     If(V.on.mul(node.ready).greaterThan(0.5), () => {
       const uv = screenUV
@@ -87,7 +87,9 @@ export function applyVolumes(color: TSLNode, depth: TSLNode, camera: Camera, nod
         const light = L.div(sum)
         const through = clamp(T.div(sum), 0, 1)
         const air = aerialAt(ray.start.add(ray.direction.mul(where.div(opacity))), projection)
-        out.assign(air.rgb.mul(vec3(1).sub(through)).add(light.mul(air.a)).add(through.mul(picture)))
+        const rgb = air.rgb.mul(vec3(1).sub(through)).add(light.mul(air.a)).add(through.mul(picture.rgb))
+        const alpha = mix(float(1), picture.a, dot(through, vec3(1 / 3)))
+        out.assign(vec4(rgb, alpha))
       })
     })
     return out

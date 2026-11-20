@@ -62,6 +62,9 @@ type SceneExportBasedOn struct {
 	ContentRevisionID string `json:"content_revision_id"`
 	// Lens is how the camera shot it; nodes placed before it existed lack it.
 	Lens *SceneExportLens `json:"lens,omitempty"`
+	// TransparentBackground is set only when agent export_shots explicitly
+	// overrode the scene setting (data: 导出图来源).
+	TransparentBackground *bool `json:"transparent_background,omitempty"`
 }
 
 // SceneExportLens is the camera's lens when the image was exported, for
@@ -105,6 +108,22 @@ type SceneExportPlaced struct {
 	Rows [][]PlacedExportImage
 }
 
+// ValidateSceneExportTargetInTx checks that the upload scope names a scene
+// attached to this account's canvas. Placement rechecks the live attachment.
+func ValidateSceneExportTargetInTx(ctx context.Context, tx store.TxAccountScope, target creativestaging.SceneExportTarget) error {
+	if _, err := lockCanvas(ctx, tx, target.CanvasID, true); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return ErrTargetChanged
+		}
+		return err
+	}
+	exists, err := tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND id=$3 AND type_key=$4 AND document_id IS NOT NULL", target.CanvasID, target.SceneNodeID, sceneNodeTypeKey)
+	if err == nil && !exists {
+		return ErrTargetChanged
+	}
+	return err
+}
+
 // PlaceSceneExportsInTx creates every export image node in one canvas change
 // under the canvas lock, so two exports never land on the same spot. The
 // scene node must be on the canvas and hold the scene document.
@@ -123,17 +142,18 @@ func PlaceSceneExportsInTx(ctx context.Context, tx store.TxAccountScope, in Scen
 	}
 	// Lock the uploads first: canvas edits report an unavailable upload as a
 	// version conflict, and export callers need to tell it apart.
-	revisions := map[string]string{}
+	staged := map[string]creativestaging.Staged{}
+	target := creativestaging.SceneExportTarget{CanvasID: c.ID, SceneNodeID: scene.ID}
 	for _, row := range in.Rows {
 		for _, img := range row.Images {
-			s, err := creativestaging.Lock(ctx, tx, img.UploadID)
+			s, err := creativestaging.LockSceneExport(ctx, tx, img.UploadID, target)
 			if errors.Is(err, creativestaging.ErrUnavailable) || err == nil && s.Kind != "image" {
 				return SceneExportPlaced{}, ErrExportUploadUnavailable
 			}
 			if err != nil {
 				return SceneExportPlaced{}, err
 			}
-			revisions[img.UploadID] = s.ContentRevisionID
+			staged[img.UploadID] = s
 		}
 	}
 
@@ -145,26 +165,27 @@ func PlaceSceneExportsInTx(ctx context.Context, tx store.TxAccountScope, in Scen
 		for _, img := range row.Images {
 			id := "cwnode_" + uuid.NewString()
 			basedOn := img.BasedOn
-			basedOn.ContentRevisionID = revisions[img.UploadID]
+			basedOn.ContentRevisionID = staged[img.UploadID].ContentRevisionID
 			actions = append(actions,
 				Action{Type: "add_node", NodeID: id, TypeKey: exportImageTypeKey, Title: img.Title, ParentID: scene.ParentID,
 					X: x + float64(img.Column)*(exportCellWidth+exportGap), Y: rowY, Config: map[string]any{exportBasedOnKey: basedOn}},
 				Action{Type: "fill_from_upload", NodeID: id, UploadID: img.UploadID})
-			out.Rows[i] = append(out.Rows[i], PlacedExportImage{NodeID: id, ContentRevisionID: revisions[img.UploadID]})
+			out.Rows[i] = append(out.Rows[i], PlacedExportImage{NodeID: id, ContentRevisionID: basedOn.ContentRevisionID})
 		}
 		rowY += exportCellWidth/row.Aspect + exportGap
 	}
-	// The new nodes' parent chain may grow to fit them, so it is read here.
-	var reads []ObjectRead
-	for p := scene.ParentID; p != nil; p = g.Nodes[*p].ParentID {
-		ident := ids[*p]
-		reads = append(reads, ObjectRead{Kind: "node", ID: *p, PlacementRevision: ident.P, DataRevision: ident.D})
+	// Group expansion checks the placement of existing children as well as
+	// their parent groups. Use the node revisions read under the canvas lock.
+	reads := make([]ObjectRead, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		ident := ids[id]
+		reads = append(reads, ObjectRead{Kind: "node", ID: id, PlacementRevision: ident.P, DataRevision: ident.D})
 	}
 	actor := in.Actor
 	if actor.Kind == "" {
 		actor = creativedocument.Photographer
 	}
-	r, err := applyBatchAs(ctx, tx, BatchInput{CanvasID: c.ID, ExpectedTopologyRevision: c.TopologyRevision, ReadSet: reads, Actions: actions}, in.Operation, actor)
+	r, err := applyBatchAs(ctx, tx, BatchInput{CanvasID: c.ID, ExpectedTopologyRevision: c.TopologyRevision, ReadSet: reads, Actions: actions}, in.Operation, actor, staged)
 	if err != nil {
 		return SceneExportPlaced{}, err
 	}
@@ -220,10 +241,11 @@ type ExportSource struct {
 	NodeID     string
 	DocumentID string
 	// MarkerID is the shot exported, empty for an export by camera.
-	MarkerID       string
-	CameraObjectID string
-	Pass           string
-	Fingerprint    string
+	MarkerID              string
+	CameraObjectID        string
+	Pass                  string
+	Fingerprint           string
+	TransparentBackground *bool
 }
 
 // ExportFreshness tells whether export images still match their scene. The
@@ -267,7 +289,7 @@ func exportSource(n Node) (ExportSource, bool) {
 	if !ok {
 		return ExportSource{}, false
 	}
-	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, MarkerID: b.MarkerID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint}, true
+	return ExportSource{NodeID: n.ID, DocumentID: b.SceneDocumentID, MarkerID: b.MarkerID, CameraObjectID: b.CameraObjectID, Pass: b.Pass, Fingerprint: b.Fingerprint, TransparentBackground: b.TransparentBackground}, true
 }
 
 // fillBasedOn sets BasedOnState on export image nodes. documents already

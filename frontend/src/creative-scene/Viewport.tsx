@@ -232,7 +232,7 @@ export function Viewport(props: ViewportProps) {
   return (
     <div
       ref={wrap}
-      className="cc-scene-viewport"
+      className={display === 'rendered' && props.scene.render.transparent_background === true ? 'cc-scene-viewport is-transparent' : 'cc-scene-viewport'}
       onDragOver={(e) => {
         if (!accepts(e)) return
         e.preventDefault()
@@ -281,7 +281,7 @@ export function Viewport(props: ViewportProps) {
           flat
           shadows="percentage"
           gl={({ canvas }) =>
-            createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport' }).then((g) => {
+            createRenderer({ canvas: canvas as HTMLCanvasElement, output: 'pipeline', role: 'viewport', alpha: true }).then((g) => {
               current.current?.dispose()
               current.current = g
               props.ui.setState({ backend: { kind: g.backend, compatibility: g.compatibility } })
@@ -1257,6 +1257,7 @@ function LookView({ scene, ui, grid, display, capture }: { scene: Scene; ui: Edi
       wireframe: wire,
       engine,
       quality: 'interactive',
+      transparent: lit && scene.render.transparent_background === true,
     }
     if (r.render(state.camera, frame)) screenshot.current?.afterFrame(state.gl.domElement)
     // The layer ready, its probes warming in the background: the render panel still says it prepares.

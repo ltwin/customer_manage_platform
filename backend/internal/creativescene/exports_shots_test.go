@@ -1,8 +1,10 @@
 package creativescene_test
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
@@ -126,5 +128,84 @@ func TestExportByShot(t *testing.T) {
 			_, err := export(t, f.a, exportPayload(sc, rev, c.shots...))
 			wantErr(t, err, creativeops.ErrValidation)
 		})
+	}
+}
+
+func TestExportTransparentBackgroundStaleAndReportValidation(t *testing.T) {
+	f := setup(t)
+	sc := newSceneCanvas(t, f.a)
+	cam := objectID(1)
+	addObjects(t, f.a, sc.doc, camera(cam, 1))
+
+	// 1. Opaque revision without effective_transparent_background (legacy caller) succeeds
+	// and flips clay/lit stale when scene switch toggles, while line stays current.
+	revOff := readScene(t, f.a, sc.doc).Revision
+	resOpaque, err := export(t, f.a, exportPayload(sc, revOff, shot(cam,
+		img("clay", stage(t, f, f.a, "image")),
+		img("line", stage(t, f, f.a, "image")),
+		img("lit", stage(t, f, f.a, "image")),
+	)))
+	if err != nil || len(resOpaque.Nodes) != 3 {
+		t.Fatalf("legacy opaque export = %+v, err=%v", resOpaque, err)
+	}
+	v := readScene(t, f.a, sc.doc)
+	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": true}}}})
+	revOn := readScene(t, f.a, sc.doc).Revision
+
+	nodeState := func(id string) string { return canvasNode(t, f.a, sc.canvas, id).BasedOnState }
+	if nodeState(resOpaque.Nodes[0].NodeID) != creativecanvas.BasedOnStale ||
+		nodeState(resOpaque.Nodes[1].NodeID) != creativecanvas.BasedOnCurrent ||
+		nodeState(resOpaque.Nodes[2].NodeID) != creativecanvas.BasedOnStale {
+		t.Fatalf("after enable: clay=%s line=%s lit=%s", nodeState(resOpaque.Nodes[0].NodeID), nodeState(resOpaque.Nodes[1].NodeID), nodeState(resOpaque.Nodes[2].NodeID))
+	}
+
+	// Toggle off restores opaque clay/lit back to current.
+	v = readScene(t, f.a, sc.doc)
+	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": false}}}})
+	if nodeState(resOpaque.Nodes[0].NodeID) != creativecanvas.BasedOnCurrent || nodeState(resOpaque.Nodes[2].NodeID) != creativecanvas.BasedOnCurrent {
+		t.Fatalf("after disable: clay=%s lit=%s", nodeState(resOpaque.Nodes[0].NodeID), nodeState(resOpaque.Nodes[2].NodeID))
+	}
+
+	// 2. Transparent scene revision requires effective_transparent_background=true for clay/lit,
+	// rejects missing/false/null/non-bool BEFORE consuming staged uploads, and allows line-only without report.
+	beforeCount := canvasNodeCount(t, f.a, sc.canvas)
+	clayUpload := stage(t, f, f.a, "image")
+	badPayloads := map[string]map[string]any{
+		"missing": exportPayload(sc, revOn, shot(cam, img("clay", clayUpload))),
+		"mismatch": func() map[string]any {
+			p := exportPayload(sc, revOn, shot(cam, img("clay", clayUpload)))
+			p["effective_transparent_background"] = false
+			return p
+		}(),
+		"null": func() map[string]any {
+			p := exportPayload(sc, revOn, shot(cam, img("clay", clayUpload)))
+			p["effective_transparent_background"] = nil
+			return p
+		}(),
+		"string": func() map[string]any {
+			p := exportPayload(sc, revOn, shot(cam, img("clay", clayUpload)))
+			p["effective_transparent_background"] = "true"
+			return p
+		}(),
+	}
+	for name, p := range badPayloads {
+		_, err := export(t, f.a, p)
+		wantErr(t, err, creativeops.ErrValidation)
+		if (name == "missing" || name == "mismatch") && !strings.Contains(publicMessage(err), "导出背景设置不一致") {
+			t.Fatalf("%s message = %q, want mismatch guidance", name, publicMessage(err))
+		}
+	}
+	if got := canvasNodeCount(t, f.a, sc.canvas); got != beforeCount {
+		t.Fatalf("rejected exports placed nodes: %d != %d", got, beforeCount)
+	}
+	// Staged upload clayUpload must still be unconsumed so retrying with true succeeds.
+	okPayload := exportPayload(sc, revOn, shot(cam, img("clay", clayUpload)))
+	okPayload["effective_transparent_background"] = true
+	if res, err := export(t, f.a, okPayload); err != nil || len(res.Nodes) != 1 {
+		t.Fatalf("retry with unconsumed upload = %+v, err=%v", res, err)
+	}
+	// Line-only export against revOn without effective_transparent_background succeeds.
+	if res, err := export(t, f.a, exportPayload(sc, revOn, shot(cam, img("line", stage(t, f, f.a, "image"))))); err != nil || len(res.Nodes) != 1 {
+		t.Fatalf("line-only omit report = %+v, err=%v", res, err)
 	}
 }

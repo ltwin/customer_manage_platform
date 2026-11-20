@@ -68,6 +68,7 @@ class FakePage {
   thumbnailFails = false
   uploads: { name: string; signal: AbortSignal; gate: ReturnType<typeof deferred<Upload>>; mime?: string }[] = []
   autoUpload = true
+  exportTargets: { canvas_id: string; scene_node_id: string }[] = []
   discarded: string[] = []
   leases: string[] = []
   leaseError: unknown = null
@@ -78,6 +79,7 @@ class FakePage {
   exported: RenderedShots | Error = {
     ok: true,
     revision: '9',
+    effectiveTransparentBackground: false,
     images: [
       { camera: 'camA', pass: 'clay', blob: new Blob(['a']) },
       { camera: 'camA', pass: 'line', blob: new Blob(['b']) },
@@ -94,6 +96,12 @@ class FakePage {
   private n = 0
 
   deps(): ExecutorDeps {
+    const upload: ExecutorDeps['upload'] = (file, declared, signal) => {
+      const gate = deferred<Upload>()
+      this.uploads.push({ name: file.name, signal, gate, mime: declared.mime })
+      if (this.autoUpload) gate.resolve({ id: `ccup_${++this.n}` } as Upload)
+      return gate.promise
+    }
     return {
       ticker: this.ticker,
       compile: async (input) => {
@@ -102,11 +110,10 @@ class FakePage {
         return this.compileResult
       },
       thumbnail: () => (this.thumbnailFails ? Promise.reject(new Error('WebGL 上下文丢失')) : Promise.resolve(new Blob(['png']))),
-      upload: (file, declared, signal) => {
-        const gate = deferred<Upload>()
-        this.uploads.push({ name: file.name, signal, gate, mime: declared.mime })
-        if (this.autoUpload) gate.resolve({ id: `ccup_${++this.n}` } as Upload)
-        return gate.promise
+      upload,
+      uploadExport: (file, declared, target, signal) => {
+        this.exportTargets.push(target)
+        return upload(file, declared, signal)
       },
       discard: (u) => { this.discarded.push(u.id); return Promise.resolve() },
       render: (documentID, request) => {
@@ -517,7 +524,7 @@ function exportJob(request: Record<string, unknown> = { camera_object_ids: ['cam
 test('an export job by shot draws the shots and completes with them per shot (scene-timeline-shots)', async () => {
   const page = new FakePage()
   const blob = new Blob(['png'], { type: 'image/png' })
-  page.exported = { ok: true, revision: '9', images: [{ camera: 'camA', marker: 'smk_1', pass: 'clay', blob }, { camera: 'camB', marker: 'smk_2', pass: 'clay', blob }] }
+  page.exported = { ok: true, revision: '9', effectiveTransparentBackground: false, images: [{ camera: 'camA', marker: 'smk_1', pass: 'clay', blob }, { camera: 'camB', marker: 'smk_2', pass: 'clay', blob }] }
   const out = await new SceneExecutor(page.deps()).run(exportJob({ marker_ids: ['smk_1', 'smk_2'], passes: ['clay'], canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }))
   assert.equal(out.state, 'completed')
   assert.deepEqual(page.exports, [{ documentID: 'cwdoc_1', plan: { cameraObjectIDs: [], markerIDs: ['smk_1', 'smk_2'], passes: ['clay'] } }])
@@ -539,6 +546,7 @@ test('an export job draws the plan, uploads every image and completes with them 
     outcome: 'succeeded',
     export: {
       scene_revision: '9',
+      effective_transparent_background: false,
       shots: [
         { camera_object_id: 'camA', images: [{ pass: 'clay', upload_id: 'ccup_1' }, { pass: 'line', upload_id: 'ccup_2' }] },
         { camera_object_id: 'camB', images: [{ pass: 'clay', upload_id: 'ccup_3' }, { pass: 'line', upload_id: 'ccup_4' }] },
@@ -1106,4 +1114,62 @@ test('after a device loss the page claims nothing until a wake 10 seconds on fin
   await settle()
   assert.equal(host.recovers, 2)
   assert.ok(host.claims.length > 0, 'claiming again')
+})
+
+
+test('export_shots transparent_background override validation, effective payload reporting and failed-completion cleanup', async () => {
+  // Valid true override flows to ExportPlan and completion payload carries effective_transparent_background.
+  const page = new FakePage()
+  const largePNG = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'image/png' })
+  page.exported = { ok: true, revision: '12', effectiveTransparentBackground: true, images: [{ camera: 'camA', pass: 'lit', blob: largePNG }] }
+  const ok = await new SceneExecutor(page.deps()).run(
+    exportJob({ camera_object_ids: ['camA'], passes: ['lit'], transparent_background: true, canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }),
+  )
+  assert.equal(ok.state, 'completed')
+  assert.deepEqual(page.exports, [{ documentID: 'cwdoc_1', plan: { cameraObjectIDs: ['camA'], passes: ['lit'], transparentBackground: true } }])
+  assert.deepEqual(page.uploads.map((u) => [u.name, u.mime]), [['camA-lit.png', 'image/png']])
+  assert.deepEqual(page.exportTargets, [{ canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }])
+  assert.equal(page.completes[0].payload.export?.effective_transparent_background, true)
+  assert.deepEqual(page.discarded, [])
+
+  // Explicit false override is preserved too.
+  const opaque = new FakePage()
+  await new SceneExecutor(opaque.deps()).run(
+    exportJob({ camera_object_ids: ['camA'], passes: ['clay'], transparent_background: false, canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }),
+  )
+  assert.deepEqual(opaque.exports, [{ documentID: 'cwdoc_1', plan: { cameraObjectIDs: ['camA'], passes: ['clay'], transparentBackground: false } }])
+  assert.equal(opaque.completes[0].payload.export?.effective_transparent_background, false)
+
+  // Malformed transparent_background values reject before rendering.
+  for (const bad of [null, 'yes', 1]) {
+    const malformed = new FakePage()
+    const outcome = await new SceneExecutor(malformed.deps()).run(
+      exportJob({ camera_object_ids: ['camA'], passes: ['clay'], transparent_background: bad, canvas_id: 'ccv_1', scene_node_id: 'cwnode_1' }),
+    )
+    assert.equal(outcome.state, 'completed')
+    assert.equal(malformed.exports.length, 0)
+    assert.deepEqual(malformed.completes[0].payload.error, { code: 'host_error', message: '任务内容不完整' })
+  }
+
+  // Recorded failure on export_shots completion (e.g. effective_transparent_background mismatch) discards staged uploads.
+  const rejected = new FakePage()
+  rejected.answers = [{ job_id: 'csj_1', state: 'failed', result: { code: 'invalid_result', message: '导出背景设置不一致，请刷新页面后重新导出' } }]
+  const outRejected = await new SceneExecutor(rejected.deps()).run(exportJob())
+  assert.equal(outRejected.state, 'completed')
+  assert.deepEqual(rejected.discarded.sort(), ['ccup_1', 'ccup_2', 'ccup_3', 'ccup_4'])
+
+  // A server size rejection reports host_error and cleans up the rest of the batch.
+  const bigPage = new FakePage()
+  bigPage.exported = { ok: true, revision: '9', effectiveTransparentBackground: true, images: [{ camera: 'camA', pass: 'clay', blob: new Blob(['ok'], { type: 'image/png' }) }, { camera: 'camB', pass: 'lit', blob: largePNG }] }
+  const deps = bigPage.deps()
+  await new SceneExecutor({
+    ...deps,
+    uploadExport: async (file, declared, target, signal) => {
+      if (file.name === 'camB-lit.png') throw new ApiError(413, 'creative_size_limit', '超过大小上限')
+      return deps.uploadExport(file, declared, target, signal)
+    },
+  }).run(exportJob())
+  assert.equal(bigPage.completes[0].payload.error?.code, 'host_error')
+  assert.equal(bigPage.completes[0].payload.error?.message, '导出原图超过分镜上传大小上限')
+  assert.deepEqual(bigPage.discarded, ['ccup_1'])
 })

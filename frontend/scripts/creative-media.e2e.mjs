@@ -6,8 +6,15 @@ const url = process.env.CREATIVE_EDITOR_URL,
   api = process.env.CREATIVE_EDITOR_API,
   samples = process.env.CREATIVE_MEDIA_SAMPLES,
   output = '/tmp/creative-media-qa'
+const only = process.env.CREATIVE_MEDIA_E2E_ONLY
+assert.ok(only === undefined || only === 'transparent', 'CREATIVE_MEDIA_E2E_ONLY supports only "transparent"')
 await mkdir(output, { recursive: true })
-const browser = await chromium.launch({ headless: true }),
+const browser = await chromium.launch({
+    headless: true,
+    args: process.platform === 'darwin'
+      ? ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu']
+      : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  }),
   context = await browser.newContext({
     viewport: { width: 1600, height: 1000 },
     acceptDownloads: true,
@@ -92,17 +99,147 @@ async function trayIdle() {
 }
 const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`)
 const sample = (name) => path.join(samples, name)
-try {
-  await page.goto(`${url}/login`)
-  await page
-    .getByLabel('邮箱', { exact: true })
-    .fill(process.env.CREATIVE_EDITOR_EMAIL)
-  await page
-    .getByLabel('登录密码', { exact: true })
-    .fill(process.env.CREATIVE_EDITOR_PASSWORD)
-  await page.getByRole('button', { name: '登录', exact: true }).click()
-  await page.waitForURL('**/dashboard')
 
+async function imageCorner(image) {
+  const screenshot = await image.screenshot({ scale: 'css' })
+  return page.evaluate(async (src) => {
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob())
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bitmap, 0, 0)
+    bitmap.close()
+    const { data } = ctx.getImageData(Math.floor(canvas.width * 0.1), Math.floor(canvas.height * 0.1), 1, 1)
+    return Array.from(data)
+  }, `data:image/png;base64,${screenshot.toString('base64')}`)
+}
+
+async function transparentSceneExports() {
+  // Export receipts must refresh the current canvas even without its event stream.
+  await context.route('**/creative/canvases/*/events', (route) => route.fulfill({ status: 503 }))
+  await page.goto(`${url}/creative/projects`)
+  await page.locator('.pp-head').getByRole('button', { name: '新建项目', exact: true }).click()
+  await page.waitForURL('**/creative/canvases/*')
+  await page.evaluate(() => localStorage.setItem('creative-scene:first-run-seen', '1'))
+  await page.getByRole('button', { name: '新建节点', exact: true }).click()
+  await page.getByRole('menuitem', { name: '3D 场景', exact: true }).click()
+  const canvasNode = (kind) => snapshot?.nodes.find((n) => n.metadata.type_key === kind)
+  await until(() => canvasNode('core.scene'), 'scene node saved')
+  const sceneID = canvasNode('core.scene').id
+  await page.locator('.react-flow__pane').click({ button: 'right', position: { x: 250, y: 450 } })
+  await page.getByRole('menuitem', { name: '图片', exact: true }).click()
+  await until(() => canvasNode('core.image'), 'sibling node saved')
+  await node(sceneID).locator('.cc-node-header h3').click()
+  await node(canvasNode('core.image').id).locator('.cc-node-header h3').click({ modifiers: ['Shift'] })
+  await page.getByRole('button', { name: '打组', exact: true }).click()
+  await until(() => canvasNode('core.scene')?.parent_id, 'scene group saved')
+  const parentID = canvasNode('core.scene').parent_id
+  await node(sceneID).locator('.cc-node-header h3').click()
+  await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '打开场景', exact: true }).click()
+  const editor = page.getByRole('region', { name: '3D 场景编辑' })
+  await editor.locator('canvas').waitFor({ timeout: 30000 })
+  for (const name of ['方块', '摄像机']) {
+    await editor.getByRole('button', { name: '添加', exact: true }).click()
+    await editor.getByRole('menuitem', { name, exact: true }).click()
+    await until(async () => (await editor.locator('.cc-scene-save').textContent()) === '已保存', `${name} saved`)
+  }
+  await editor.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+  const transparentBackground = editor.getByRole('checkbox', { name: '透明背景' })
+  const resolutions = editor.getByRole('group', { name: '输出分辨率' })
+  const exports = []
+  for (const [resolution, size, mime, transparent] of [
+    ['2K', 2048, 'image/png', true],
+    ['4K', 4096, 'image/png', true],
+    ['2K', 2048, 'image/png', false],
+  ]) {
+    await transparentBackground.setChecked(transparent)
+    await resolutions.getByRole('button', { name: resolution, exact: true }).click()
+    await until(async () => (await editor.locator('.cc-scene-save').textContent()) === '已保存', `${resolution} settings saved`)
+    await editor.getByRole('button', { name: '导出', exact: true }).click()
+    const dialog = editor.getByRole('dialog', { name: '导出分镜' })
+    await dialog.getByRole('checkbox', { name: '线稿', exact: true }).uncheck()
+    const lit = dialog.getByRole('checkbox', { name: '材质光照', exact: true })
+    if (await lit.isChecked()) await lit.uncheck()
+    const response = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/scene-exports'), { timeout: 120000 })
+    // Suspend just before delivery. Rendering ran normally and the event
+    // stream stays unavailable when the page comes back.
+    const suspended = !transparent ? 'hidden' : resolution === '4K' ? 'offline' : null
+    if (suspended) {
+      await context.route('**/creative/documents/*/scene-exports', async (route) => {
+        await page.evaluate((state) => {
+          if (state === 'hidden') {
+            Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+            document.dispatchEvent(new Event('visibilitychange'))
+          } else {
+            Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+            window.dispatchEvent(new Event('offline'))
+          }
+        }, suspended)
+        await route.fallback()
+      }, { times: 1 })
+    }
+    await dialog.getByRole('button', { name: '导出', exact: true }).click()
+    const result = await response
+    assert.ok(result.ok(), `${resolution} scene export: ${await result.text()}`)
+    assert.equal(result.request().postDataJSON().payload.effective_transparent_background, transparent)
+    const { nodes } = await result.json()
+    assert.equal(nodes.length, 1, `${resolution} places one canvas image`)
+    exports.push({ id: nodes[0].node_id, size, mime, transparent })
+    await dialog.waitFor({ state: 'hidden' })
+    if (suspended) {
+      assert.ok(!snapshot?.nodes.some((n) => n.id === nodes[0].node_id), 'snapshot still predates the receipt')
+      await page.evaluate((state) => {
+        if (state === 'hidden') {
+          Reflect.deleteProperty(document, 'hidden')
+          document.dispatchEvent(new Event('visibilitychange'))
+        } else {
+          Reflect.deleteProperty(navigator, 'onLine')
+          window.dispatchEvent(new Event('online'))
+        }
+      }, suspended)
+      await until(() => snapshot?.nodes.some((n) => n.id === nodes[0].node_id && n.content), `canvas refreshes after ${suspended}`, 10000)
+    }
+  }
+  await editor.getByRole('button', { name: '还原节点', exact: true }).click()
+  await editor.waitFor({ state: 'hidden' })
+  await until(() => exports.every(({ id }) => snapshot?.nodes.some((n) => n.id === id && n.content)), 'scene exports appear without reloading the page', 10000)
+  await until(async () => {
+    const box = await node(exports.at(-1).id).boundingBox()
+    const { width, height } = page.viewportSize()
+    return box && Math.abs(box.x + box.width / 2 - width / 2) < 80
+      && Math.abs(box.y + box.height / 2 - height / 2) < 80
+  }, 'returning to the canvas reveals the latest export')
+  await page.getByRole('button', { name: '适应全部节点' }).click()
+  for (const { id, size, mime, transparent } of exports) {
+    const exportedNode = snapshot.nodes.find((n) => n.id === id)
+    assert.equal(exportedNode.parent_id, parentID)
+    const media = exportedNode.content.media
+    const original = media.find((r) => r.role === 'original')
+    const display = media.find((r) => r.role === 'display')
+    assert.equal(original.mime, mime)
+    assert.equal(Math.max(original.width, original.height), size)
+    assert.equal(display?.mime, transparent ? 'image/png' : 'image/jpeg')
+    assert.equal(Math.max(display.width, display.height), 1600)
+
+    const cardImage = node(id).locator('.cc-media img')
+    await cardImage.evaluate((img) => img.decode())
+    assert.equal(await cardImage.evaluate((img) => Math.max(img.naturalWidth, img.naturalHeight)), 1600)
+    if (!transparent) continue
+    assert.deepEqual(await imageCorner(cardImage), [21, 21, 22, 255], `${size} display image shows the canvas card's #151516 through its sky`)
+    await node(id).dblclick()
+    const preview = page.getByRole('dialog', { name: /媒体预览/ })
+    const originalImage = preview.locator('img')
+    await originalImage.evaluate((img) => img.decode())
+    assert.equal(await originalImage.evaluate((img) => Math.max(img.naturalWidth, img.naturalHeight)), size)
+    const corner = await imageCorner(originalImage)
+    assert.ok(corner.slice(0, 3).every((value) => value > 0 && value < 40), `${size} original shows the dark preview backdrop: ${corner}`)
+    await preview.getByRole('button', { name: '关闭预览', exact: true }).click()
+    await preview.waitFor({ state: 'hidden' })
+    // The selected card's generation panel can cover the next row of exports.
+    await page.locator('.react-flow__pane').click({ position: { x: 100, y: 180 } })
+  }
+}
+
+async function existingMediaScenarios() {
   // 1. Library import: three media kinds plus a fake image become assets.
   await page.goto(`${url}/creative/library`)
   await saved()
@@ -329,23 +466,36 @@ try {
   await page.setViewportSize({ width: 390, height: 780 })
   await pause(300)
   await page.screenshot({ path: `${output}/canvas-media-mobile.png` })
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  return [
+    'library import png/webm/mp3',
+    'fake media rejected per item',
+    'kind filter and quick look',
+    'multi-select drag to canvas',
+    'file drop creates and fills node',
+    'replace media and undo',
+    'maximize preview and download original',
+    'video playback with range',
+    'save node to library',
+    'reopen consistency',
+  ]
+}
+
+try {
+  await page.goto(`${url}/login`)
+  await page.getByLabel('邮箱', { exact: true }).fill(process.env.CREATIVE_EDITOR_EMAIL)
+  await page.getByLabel('登录密码', { exact: true }).fill(process.env.CREATIVE_EDITOR_PASSWORD)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.waitForURL('**/dashboard')
+  const scenarios = only ? [] : await existingMediaScenarios()
+  await transparentSceneExports()
+  scenarios.push('manual transparent PNG/WebP and opaque PNG appear and are revealed without canvas events or a reload')
   assert.deepEqual(errors, [])
   await writeFile(
     `${output}/result.json`,
     JSON.stringify(
       {
-        scenarios: [
-          'library import png/webm/mp3',
-          'fake media rejected per item',
-          'kind filter and quick look',
-          'multi-select drag to canvas',
-          'file drop creates and fills node',
-          'replace media and undo',
-          'maximize preview and download original',
-          'video playback with range',
-          'save node to library',
-          'reopen consistency',
-        ],
+        scenarios,
         mediaRequests: mediaRequests.length,
         errors,
       },

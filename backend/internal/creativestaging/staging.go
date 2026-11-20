@@ -30,12 +30,27 @@ type Staged struct {
 	FileName          string
 }
 
+// SceneExportTarget scopes a staged original to the scene that rendered it.
+type SceneExportTarget struct {
+	CanvasID    string `json:"canvas_id"`
+	SceneNodeID string `json:"scene_node_id"`
+}
+
 // Lock takes the staged row of an upload for update. Only a pending,
-// unexpired staged row qualifies.
+// unexpired staged row without a scene export target qualifies.
 func Lock(ctx context.Context, tx store.TxAccountScope, uploadID string) (Staged, error) {
+	return lock(ctx, tx, "target_snapshot->'scene_export' IS NULL", uploadID, Reason)
+}
+
+// LockSceneExport also accepts unscoped uploads from older scene clients.
+func LockSceneExport(ctx context.Context, tx store.TxAccountScope, uploadID string, target SceneExportTarget) (Staged, error) {
+	return lock(ctx, tx, "COALESCE(target_snapshot->'scene_export' = jsonb_build_object('canvas_id',$4::text,'scene_node_id',$5::text), true)", uploadID, Reason, target.CanvasID, target.SceneNodeID)
+}
+
+func lock(ctx context.Context, tx store.TxAccountScope, targetFilter string, args ...any) (Staged, error) {
 	var s Staged
 	var revision *string
-	err := tx.QueryRowForUpdate(ctx, "creative_upload_candidates", "id,declared_kind,content_revision_id,original_name", "upload_id=$2 AND reason=$3 AND state='pending' AND expires_at>clock_timestamp()", uploadID, Reason).Scan(&s.ID, &s.Kind, &revision, &s.FileName)
+	err := tx.QueryRowForUpdate(ctx, "creative_upload_candidates", "id,upload_id,declared_kind,content_revision_id,original_name", "upload_id=$2 AND reason=$3 AND state='pending' AND expires_at>clock_timestamp() AND "+targetFilter, args...).Scan(&s.ID, &s.UploadID, &s.Kind, &revision, &s.FileName)
 	if errors.Is(err, store.ErrNoRows) || err == nil && revision == nil {
 		return Staged{}, ErrUnavailable
 	}
@@ -43,7 +58,6 @@ func Lock(ctx context.Context, tx store.TxAccountScope, uploadID string) (Staged
 		return Staged{}, err
 	}
 	s.ContentRevisionID = *revision
-	s.UploadID = uploadID
 	return s, nil
 }
 

@@ -12,6 +12,7 @@ import { sizeOf } from './lightModel/lights.ts'
 import { giAmbient, giBase, giEnvSpec, GILightingPass, installGISplit } from './giSplit.ts'
 import { ssgi } from './nodes/SSGINode.js'
 import { ssrTrace } from './nodes/SSRTraceNode.js'
+import { transparentTRAA } from './nodes/TransparentTRAANode.js'
 import type { HitShading } from './trace/hit.ts'
 import { probeIrradiance, type ProbeNodes } from './probes/lookup.ts'
 import { aerialBehind } from '../world/atmosphere/aerial.ts'
@@ -147,6 +148,8 @@ export type RealtimeGIOptions = {
    * than a probe cell.
    */
   world: { probes: ProbeNodes; ambient: Color; fill: number; ao?: number | null } | null
+  /** Transparent sky/background pass: clears to (0, 0, 0, 0) and uses 4D TRAA. */
+  transparent?: boolean
 }
 
 export type RealtimeGI = {
@@ -245,7 +248,7 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   // SSGI, SSR and DenoiseNode normalize what they sample; the temporal nodes unpack it themselves.
   const normal: N = sample((uv: N) => unpackRGBToNormal(normalPacked.sample(uv).rgb))
 
-  const lit = own(new GILightingPass(PassNode.COLOR, scene, camera, { samples: 0 }))
+  const lit = own(new GILightingPass(PassNode.COLOR, scene, camera, { samples: 0 }, options.transparent === true))
   lit.setLayers(options.pictureLayers)
   lit.setMRT(lightingOutputs)
   const output: N = lit.getTextureNode('output')
@@ -381,23 +384,24 @@ export function realtimeGI(scene: Scene, camera: Camera, options: RealtimeGIOpti
   const { fog } = lit
   const cameraNear = uniform(0).onRenderUpdate(() => persp.near)
   const cameraFar = uniform(0).onRenderUpdate(() => persp.far)
-  const aerial: N = aerialBehind(
-    mix(shaded, fog.color, smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque)),
-    depth,
-    camera,
+  const foggedLinear: N = mix(
+    shaded,
+    fog.color.mul(output.a),
+    smoothstep(fog.near, fog.far, perspectiveDepthToViewZ(depth.r, cameraNear, cameraFar).negate()).mul(fog.on).mul(opaque),
   )
+  const aerial: N = aerialBehind(vec4(foggedLinear, output.a), depth, camera)
   // The volumes after the lighting pass, which draws the shadow maps they read (same fixed noise: an export needs no settled frames).
   // With the helpers over it, over the picture so far as a texture of its own: in the one pass, its textures, the
   // volumes' and the helpers' were 17, over WebGPU's 16 a stage, and the viewport drew nothing. An export has no helpers.
-  const fogged: N = applyVolumes(options.aside ? own(textureOf(aerial)) : aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
-  let picture: N = vec4(fogged, output.a)
+  let picture: N = applyVolumes(options.aside ? own(textureOf(aerial)) : aerial, depth, camera, own(new VolumeNode(depth, camera, [output], options.redraw)))
   if (options.aside) {
     // Premultiplied, in front of the opaque scene as one pass's depth test would have it; over glass always.
     const { color: over, depth: overDepth } = options.aside
     const front: N = overDepth.r.lessThanEqual(depth.r).select(1, 0)
-    picture = vec4(fogged.mul(over.a.mul(front).oneMinus()).add(over.rgb.mul(front)), output.a)
+    const overAlpha: N = over.a.mul(front)
+    picture = vec4(picture.rgb.mul(overAlpha.oneMinus()).add(over.rgb.mul(front)), mix(picture.a, float(1), overAlpha))
   }
-  const color: N = own(traa(own(textureOf(picture)), depth, vel, camera))
+  const color: N = own((options.transparent ? transparentTRAA : traa)(own(textureOf(picture)), depth, vel, camera))
   // TRAA's stand-in for the previous depth, drawn with on the first frame and then replaced: its dispose() leaves it.
   own(color._previousDepthNode.value as { dispose(): void })
 

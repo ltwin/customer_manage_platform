@@ -132,6 +132,7 @@ const canonical = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object
 const served = (scene) => {
   const out = structuredClone(scene)
   out.environment.sky = completeSky(out.environment.sky)
+  out.render = { ...out.render, transparent_background: out.render.transparent_background ?? false }
   out.timeline ??= { fps: 24, markers: [] }
   return out
 }
@@ -197,6 +198,7 @@ class SceneServer {
     // Milliseconds an image takes to arrive: later than a picture would be drawn without waiting for it.
     this.imageDelayMs = 0
     this.discarded = []
+    this.rejectUploadAfter = null
     this.mediaMissing = new Set()
     this.modelSeq = 0
     // Set to a promise to keep uploads from completing until it settles.
@@ -676,6 +678,14 @@ async function route(page, server) {
       return json(200, { ...server.revisionItem(h), unit_revs: h.unit_revs, view: { scene: h.scene, models: server.modelSummaries(h.scene) } })
     }
     if (path === '/uploads' && request.method() === 'POST') {
+      if (server.rejectUploadAfter) {
+        if (server.rejectUploadAfter.after > 0) server.rejectUploadAfter.after--
+        else {
+          const { status, body } = server.rejectUploadAfter
+          server.rejectUploadAfter = null
+          return json(status, body)
+        }
+      }
       const { payload } = request.postDataJSON()
       const id = `ccup_${server.uploads.size + 1}`
       const upload = {
@@ -8467,8 +8477,10 @@ const giFixture = new URL('../.scene-gi-qa.html', import.meta.url)
 await writeFile(
   giFixture,
   `<html><body><script>window.__sceneTest = true</script><script type="module">
+import * as THREE from 'three';
 import { openShooter } from '/src/creative-scene/host/render.ts';
 import { cameraFraming } from '/src/creative-scene/host/framing.ts';
+window.__THREE = THREE;
 window.__shots = async (scene, n, side) => {
   const shooter = await openShooter(scene, {}, 'lit');
   const framing = cameraFraming(scene, scene.objects.find((o) => o.kind === 'camera').id, side);
@@ -14652,6 +14664,871 @@ await check('timeline AC-10 and AC-8b: an export by shot draws each shot at its 
   assert.equal(await page.locator('.cc-scene-keyed[data-path="transform.position"]').first().getAttribute('data-key'), 'key')
   assert.deepEqual(errors, [])
   await context.close()
+})
+
+// --- scene-transparent-background (design「验证与交付」) ----------------------
+
+await check('transparent background: UI toggle, undo, multi-tab sync, dialog line-only note and viewport modes', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const modKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+    const physNoon = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+    const makeServer = () => {
+      const s = new SceneServer()
+      s.scene.environment = structuredClone(physNoon.environment)
+      s.scene.render.mode = 'lit'
+      s.scene.render.exposure_mode = 'manual'
+      s.scene.render.exposure_ev100 = 15
+      s.external([
+        {
+          op: 'add_objects',
+          objects: [
+            {
+              id: objectID('tbbox'),
+              kind: 'primitive',
+              name: '白方块',
+              parent_id: null,
+              order: 1,
+              transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1.6, 1.6, 1.6] },
+              visible: true,
+              locked: false,
+              primitive: { builtin: 'box@1' },
+              material_slots: { main: { preset: 'principled@1', params: { color: '#e6e8ec', roughness: 0.45 } } },
+            },
+            cameraObject(objectID('tbcam'), '主机位', 2, { aspect: '3:2', focal_mm: 35 }, [0, 1.6, 7]),
+          ],
+        },
+      ])
+      return s
+    }
+    const server = makeServer()
+    assert.equal('transparent_background' in server.scene.render, false, 'legacy scene snapshot has no key')
+
+    const tabA = await open(server, { query: '?export=1', context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+    const tabB = await open(server, { context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+    const renderTab = (p) => p.getByRole('tablist', { name: '属性' }).getByRole('tab', { name: '渲染', exact: true }).click()
+    await renderTab(tabA.page)
+    await renderTab(tabB.page)
+    const toggleA = tabA.page.getByRole('checkbox', { name: '透明背景' })
+    const toggleB = tabB.page.getByRole('checkbox', { name: '透明背景' })
+    assert.equal(await toggleA.isChecked(), false, 'old scene opens with toggle off')
+
+    await toggleA.click()
+    await waitFor(() => server.scene.render.transparent_background === true, 'set_render transparent true')
+    await saved(tabA.page)
+    await tabB.page.evaluate(() => window.__invalidate())
+    await waitFor(async () => await toggleB.isChecked(), 'tab B syncs true')
+
+    await focusEditor(tabA.page)
+    await tabA.page.keyboard.press(`${modKey}+KeyZ`)
+    await waitFor(() => server.scene.render.transparent_background === false, 'undo sets false')
+    await tabB.page.evaluate(() => window.__invalidate())
+    await waitFor(async () => !(await toggleB.isChecked()), 'tab B syncs undo false')
+
+    // Compare solid/preview/rendered viewport with transparent off vs on.
+    const { box } = await viewportCenter(tabA.page)
+    const skyClip = { x: box.x + 8, y: box.y + 8, width: 64, height: 64 }
+    const objClip = { x: Math.round(box.x + box.width * 0.48), y: Math.round(box.y + box.height * 0.56), width: 24, height: 24 }
+    const patchStats = (page, png) => page.evaluate(async (src) => {
+      const bm = await createImageBitmap(await (await fetch(src)).blob())
+      const c = new OffscreenCanvas(bm.width, bm.height)
+      const g = c.getContext('2d')
+      g.drawImage(bm, 0, 0)
+      const d = g.getImageData(0, 0, bm.width, bm.height).data
+      let minL = 255, maxL = 0, sumL = 0
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]
+        if (l < minL) minL = l
+        if (l > maxL) maxL = l
+        sumL += l
+      }
+      return { minL, maxL, meanL: sumL / (d.length / 4) }
+    }, `data:image/png;base64,${png.toString('base64')}`)
+
+    await shading(tabA.page, '白模')
+    const offSolidSky = await settledShot(tabA.page, skyClip)
+    await shading(tabA.page, '材质预览')
+    const offPreviewSky = await settledShot(tabA.page, skyClip)
+    await shading(tabA.page, '最终渲染')
+    await sleep(300)
+    const offRenderedObj = await settledShot(tabA.page, objClip)
+
+    // Turn toggle back on and check ExportDialog conditional note + viewport modes.
+    await toggleA.click()
+    await waitFor(() => server.scene.render.transparent_background === true, 'toggle back true')
+    await saved(tabA.page)
+
+    await tabA.page.getByRole('button', { name: '导出' }).first().click()
+    const dialog = tabA.page.getByRole('dialog', { name: '导出分镜' })
+    await dialog.waitFor()
+    assert.match(await dialog.getByRole('status').textContent(), /· 白模、材质光照使用透明背景/)
+    await dialog.getByLabel('白模（clay）').uncheck()
+    await dialog.getByLabel('材质光照').uncheck()
+    assert.doesNotMatch(await dialog.getByRole('status').textContent(), /透明背景/)
+    await dialog.getByLabel('材质光照').check()
+    assert.match(await dialog.getByRole('status').textContent(), /· 白模、材质光照使用透明背景/)
+    await dialog.getByRole('button', { name: '取消' }).click()
+    await dialog.waitFor({ state: 'detached' })
+
+    const vp = tabA.page.locator('.cc-scene-viewport')
+    await waitFor(async () => /is-transparent/.test((await vp.getAttribute('class')) ?? ''), 'rendered viewport has is-transparent')
+    const bgImg = await vp.evaluate((el) => getComputedStyle(el).backgroundImage)
+    assert.match(bgImg, /repeating-conic-gradient/, 'checkerboard gradient applied')
+    const onRenderedSky = await patchStats(tabA.page, await settledShot(tabA.page, skyClip))
+    assert.ok(onRenderedSky.maxL - onRenderedSky.minL >= 5 && onRenderedSky.meanL < 50, `rendered sky shows dark checkerboard: ${JSON.stringify(onRenderedSky)}`)
+    const onRenderedObj = await settledShot(tabA.page, objClip)
+    const [offS, onS, objDiff] = await Promise.all([
+      patchStats(tabA.page, offRenderedObj),
+      patchStats(tabA.page, onRenderedObj),
+      pixelDiff(tabA.page, offRenderedObj, onRenderedObj, 6),
+    ])
+    assert.ok(objDiff < 0.02, `lit center object unchanged between off and on: diff=${objDiff} off=${JSON.stringify(offS)} on=${JSON.stringify(onS)}`)
+
+    await shading(tabA.page, '白模')
+    assert.doesNotMatch((await vp.getAttribute('class')) ?? '', /is-transparent/)
+    const onSolidSky = await settledShot(tabA.page, skyClip)
+    assert.ok((await pixelDiff(tabA.page, offSolidSky, onSolidSky, 4)) < 0.001, 'solid keeps neutral grey bg')
+
+    await shading(tabA.page, '材质预览')
+    assert.doesNotMatch((await vp.getAttribute('class')) ?? '', /is-transparent/)
+    const onPreviewSky = await settledShot(tabA.page, skyClip)
+    assert.ok((await pixelDiff(tabA.page, offPreviewSky, onPreviewSky, 4)) < 0.001, 'preview keeps neutral grey bg')
+
+    await shading(tabA.page, '线框')
+    assert.doesNotMatch((await vp.getAttribute('class')) ?? '', /is-transparent/)
+
+    assert.deepEqual(tabA.errors, [])
+    assert.deepEqual(tabB.errors, [])
+    await tabB.context.close()
+    await tabA.context.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('transparent background: 2K physical sky courtyard clay, workbench/GI lit, line art and off-mode blend', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const physNoon = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+    const courtyard = (engine, transparent) => ({
+      environment: structuredClone(physNoon.environment),
+      render: { mode: 'lit', exposure_ev: 0, engine, resolution: '2k', exposure_mode: 'manual', exposure_ev100: 15, exposure_compensation: 0, transparent_background: transparent },
+      timeline: { fps: 24, markers: [] },
+      objects: [
+        { id: 'sobj_ground', kind: 'primitive', name: '地面', parent_id: null, order: 0, transform: identity(), visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 40 } } },
+        { id: 'sobj_cube', kind: 'primitive', name: '白立方', parent_id: null, order: 1, transform: { position: [-1.3, 0, 0], rotation: [0, 0.2, 0, Math.cos(0.2)], scale: [1.8, 2.2, 1.8] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#ececec', roughness: 0.4 } } } },
+        { id: 'sobj_ball', kind: 'primitive', name: '金属球', parent_id: null, order: 2, transform: { position: [1.3, 0, 0], rotation: [0, 0, 0, 1], scale: [2.2, 2.2, 2.2] }, visible: true, locked: false, primitive: { builtin: 'sphere@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', metalness: 1, roughness: 0.05 } } } },
+        { id: 'sobj_cam', kind: 'camera', name: '相机', parent_id: null, order: 3, transform: { position: [0, 1.6, 6.2], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: false, f_stop: 2.8, focus: 6.2, focus_object_id: '', exposure_mode: 'manual', iso: 100, shutter_s: 1 / 125, exposure_compensation: 0 } },
+      ],
+    })
+    const ctx = await gpu.newContext()
+    const page = await ctx.newPage()
+    const server = new SceneServer()
+    stock(server)
+    await route(page, server)
+    await routeFiles(page, server)
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+
+    const compare = await page.evaluate(async ([wbOff, wbOn, giOff, giOn]) => {
+      const { openShooter } = await import('/src/creative-scene/host/render.ts')
+      const { cameraFraming } = await import('/src/creative-scene/host/framing.ts')
+      const decode = async (blob) => {
+        const bm = await createImageBitmap(blob)
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        const d = g.getImageData(0, 0, bm.width, bm.height).data
+        bm.close()
+        return { w: c.width, h: c.height, type: blob.type, data: d }
+      }
+      const shootOne = async (scene, kind, transparent) => {
+        const s = await openShooter(scene, {}, kind === 'lit' ? 'lit' : 'clay')
+        try {
+          const framing = cameraFraming(scene, 'sobj_cam', 2048)
+          const blob = await s.shoot(framing, { kind, type: 'image/png', transparent })
+          return await decode(blob)
+        } finally {
+          s.close()
+        }
+      }
+      const analyzePair = (off, on) => {
+        const { w, h, data: p } = off
+        const q = on.data
+        let skyMaxA = 0
+        for (let y = Math.floor(h * 0.04); y < Math.floor(h * 0.16); y++) {
+          for (let x = Math.floor(w * 0.05); x < Math.floor(w * 0.30); x++) {
+            const a = q[(y * w + x) * 4 + 3]
+            if (a > skyMaxA) skyMaxA = a
+          }
+        }
+        // 3 px eroded opaque core mask where transparent image has solid objects/ground away from silhouette edges.
+        let minCoreA = 255, maxDiff = 0, sumDiff = 0, count = 0
+        const diffs = []
+        let ballSumB = 0, ballN = 0
+        const isSolid = (x, y) => q[(y * w + x) * 4 + 3] === 255
+        for (let y = 3; y < h - 3; y++) {
+          for (let x = 3; x < w - 3; x++) {
+            const k = (y * w + x) * 4
+            if (q[k + 3] !== 255) continue
+            let eroded = true
+            for (let dy = -3; dy <= 3 && eroded; dy++) {
+              if (!isSolid(x, y + dy) || !isSolid(x + dy, y)) eroded = false
+            }
+            if (!eroded) continue
+            if (q[k + 3] < minCoreA) minCoreA = q[k + 3]
+            const d = Math.max(Math.abs(p[k] - q[k]), Math.abs(p[k + 1] - q[k + 1]), Math.abs(p[k + 2] - q[k + 2]))
+            if (d > maxDiff) maxDiff = d
+            sumDiff += d
+            diffs.push(d)
+            count++
+            if (x > Math.floor(w * 0.52) && y < Math.floor(h * 0.50)) {
+              ballSumB += q[k + 2]
+              ballN++
+            }
+          }
+        }
+        diffs.sort((a, b) => a - b)
+        const p99 = diffs.length ? diffs[Math.floor(diffs.length * 0.99)] : 0
+        return { w, h, type: on.type, skyMaxA, minCoreA, coreCount: count, maxDiff, meanDiff: sumDiff / Math.max(1, count), p99Diff: p99, ballN, ballMeanB: ballSumB / Math.max(1, ballN) }
+      }
+
+      const clayOff = await shootOne(wbOff, 'clay', false)
+      const clayOn = await shootOne(wbOn, 'clay', true)
+      const litOff = await shootOne(wbOff, 'lit', false)
+      const litOn = await shootOne(wbOn, 'lit', true)
+      const lineOff = await shootOne(wbOff, 'line', false)
+      const lineOn = await shootOne(wbOn, 'line', true)
+      let lineMaxDiff = 0
+      for (let i = 0; i < lineOff.data.length; i++) lineMaxDiff = Math.max(lineMaxDiff, Math.abs(lineOff.data[i] - lineOn.data[i]))
+      const giLitOff = await shootOne(giOff, 'lit', false)
+      const giLitOn = await shootOne(giOn, 'lit', true)
+      return {
+        wbClay: analyzePair(clayOff, clayOn),
+        wbLit: analyzePair(litOff, litOn),
+        giLit: analyzePair(giLitOff, giLitOn),
+        line: { type: lineOn.type, corner: Array.from(lineOn.data.slice(0, 4)), maxDiff: lineMaxDiff },
+      }
+    }, [courtyard('workbench', false), courtyard('workbench', true), courtyard('realtime_gi', false), courtyard('realtime_gi', true)])
+
+    assert.equal(compare.wbClay.type, 'image/png')
+    assert.equal(compare.wbClay.skyMaxA, 0, `wbClay skyMaxA: ${JSON.stringify(compare.wbClay)}`)
+    assert.equal(compare.wbClay.minCoreA, 255, `wbClay minCoreA: ${JSON.stringify(compare.wbClay)}`)
+    assert.ok(compare.wbClay.maxDiff <= 1 && compare.wbClay.meanDiff < 0.2, `wbClay diff: ${JSON.stringify(compare.wbClay)}`)
+
+    assert.equal(compare.wbLit.type, 'image/png')
+    assert.equal(compare.wbLit.skyMaxA, 0, `wbLit skyMaxA: ${JSON.stringify(compare.wbLit)}`)
+    assert.equal(compare.wbLit.minCoreA, 255, `wbLit minCoreA: ${JSON.stringify(compare.wbLit)}`)
+    assert.ok(compare.wbLit.maxDiff <= 1 && compare.wbLit.meanDiff < 0.2, `wbLit diff: ${JSON.stringify(compare.wbLit)}`)
+    assert.ok(compare.wbLit.ballN > 500 && compare.wbLit.ballMeanB > 25, `metallic ball still reflects sky: ${JSON.stringify(compare.wbLit)}`)
+
+    assert.equal(compare.giLit.type, 'image/png')
+    assert.equal(compare.giLit.skyMaxA, 0, `giLit skyMaxA: ${JSON.stringify(compare.giLit)}`)
+    assert.equal(compare.giLit.minCoreA, 255, `giLit minCoreA: ${JSON.stringify(compare.giLit)}`)
+    assert.ok(compare.giLit.meanDiff < 1.0 && compare.giLit.p99Diff <= 4, `giLit diff: ${JSON.stringify(compare.giLit)}`)
+
+    assert.equal(compare.line.type, 'image/png')
+    assert.deepEqual(compare.line.corner, [255, 255, 255, 255])
+    assert.equal(compare.line.maxDiff, 0, `line maxDiff: ${JSON.stringify(compare.line)}`)
+
+    // Off-mode regression with alpha_mode: 'blend' under RealtimeGI (opaque export stays alpha=255 and blend object draws).
+    const blendDoc = {
+      scene: {
+        ...courtyard('realtime_gi', false),
+        objects: [
+          ...courtyard('realtime_gi', false).objects.filter((o) => o.kind !== 'cube'),
+          {
+            id: 'sobj_veil',
+            kind: 'primitive',
+            name: '透明卡',
+            parent_id: null,
+            order: 4,
+            transform: { position: [0, 0.4, 2.2], rotation: [0, 0, 0, 1], scale: [1.8, 1.4, 0.05] },
+            visible: true,
+            locked: false,
+            primitive: { builtin: 'box@1' },
+            material_slots: {
+              main: {
+                preset: 'principled@1',
+                params: { color: '#cc3333', roughness: 0.4 },
+                alpha_mode: 'blend',
+                mapping: { kind: 'triplanar', size_m: 2, rotation_deg: 0, normal_strength: 1 },
+                maps: { base_color: { content_revision_id: 'ccr_veil' } },
+              },
+            },
+          },
+        ],
+      },
+      models: {},
+      revision: '1',
+    }
+    const blendCheck = await page.evaluate(async (doc) => {
+      const { openShooter } = await import('/src/creative-scene/host/render.ts')
+      const { loadSceneImages } = await import('/src/creative-scene/materials/images.ts')
+      const { cameraFraming } = await import('/src/creative-scene/host/framing.ts')
+      await loadSceneImages(doc.scene)
+      const s = await openShooter(doc.scene, {}, 'lit')
+      try {
+        const blob = await s.shoot(cameraFraming(doc.scene, 'sobj_cam', 512), { kind: 'lit', type: 'image/png', transparent: false })
+        const bm = await createImageBitmap(blob)
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        const d = g.getImageData(0, 0, bm.width, bm.height).data
+        let minA = 255
+        let leftR = 0, rightR = 0, n = 0
+        for (let y = Math.floor(bm.height * 0.45); y < Math.floor(bm.height * 0.55); y++) {
+          for (let dx = 0; dx < 20; dx++) {
+            const lk = (y * bm.width + Math.floor(bm.width * 0.43) + dx) * 4
+            const rk = (y * bm.width + Math.floor(bm.width * 0.55) + dx) * 4
+            leftR += d[lk]; rightR += d[rk]; n++
+          }
+        }
+        for (let i = 3; i < d.length; i += 4) if (d[i] < minA) minA = d[i]
+        return { minA, diffSides: Math.abs(leftR - rightR) / Math.max(1, n) }
+      } finally {
+        s.close()
+      }
+    }, blendDoc)
+    assert.equal(blendCheck.minA, 255, 'off-mode export stays fully opaque')
+    assert.ok(blendCheck.diffSides > 5, `alpha_mode: blend renders under RealtimeGI: ${JSON.stringify(blendCheck)}`)
+    await ctx.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('transparent background: AA, WebGL2 <0.1 dark diagonal, DoF over white/black, fog/aerial and GI moving foreground', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const physNoon = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+    const ctx = await gpu.newContext()
+    const page = await ctx.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+
+    const out = await page.evaluate(async (baseEnv) => {
+      const { openShooter } = await import('/src/creative-scene/host/render.ts')
+      const { cameraFraming } = await import('/src/creative-scene/host/framing.ts')
+      const { gpuTestHooks } = await import('/src/creative-scene/render/gpu.ts')
+      const { createRenderer } = await import('/src/creative-scene/render/gpu.ts')
+      const { SceneRenderer } = await import('/src/creative-scene/render/sceneRenderer.ts')
+      const THREE = window.__THREE
+
+      const decode = async (blob) => {
+        const bm = await createImageBitmap(blob)
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        const d = g.getImageData(0, 0, bm.width, bm.height).data
+        bm.close()
+        return { w: c.width, h: c.height, d }
+      }
+      const checkEdges = (img) => {
+        const { w, h, d } = img
+        let skyMaxA = 0, skyMaxRGB = 0
+        for (let y = Math.floor(h * 0.04); y < Math.floor(h * 0.14); y++) {
+          for (let x = Math.floor(w * 0.78); x < Math.floor(w * 0.96); x++) {
+            const k = (y * w + x) * 4
+            if (d[k + 3] > skyMaxA) skyMaxA = d[k + 3]
+            skyMaxRGB = Math.max(skyMaxRGB, d[k], d[k + 1], d[k + 2])
+          }
+        }
+        // Interior brightness reference from solid box pixels (y in 0.25..0.55)
+        let intMinL = 255, intMaxL = 0, intMaxBR = -255
+        for (let y = Math.floor(h * 0.25); y < Math.floor(h * 0.55); y++) {
+          for (let x = Math.floor(w * 0.3); x < Math.floor(w * 0.7); x++) {
+            const k = (y * w + x) * 4
+            if (d[k + 3] === 255) {
+              const l = 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2]
+              if (l < intMinL) intMinL = l
+              if (l > intMaxL) intMaxL = l
+              intMaxBR = Math.max(intMaxBR, d[k + 2] - d[k])
+            }
+          }
+        }
+        let transCount = 0, badBlackHaloWhite = 0, badSkyHaloBlack = 0, worstBlueDiff = -255
+        for (let y = 0; y < Math.floor(h * 0.58); y++) {
+          for (let x = 0; x < w; x++) {
+            const k = (y * w + x) * 4
+            const a = d[k + 3]
+            if (a > 0 && a < 255) {
+              transCount++
+              const af = a / 255
+              // Straight-alpha composite onto white (#ffffff) and black (#000000)
+              const lW = 0.2126 * (d[k] * af + 255 * (1 - af)) + 0.7152 * (d[k + 1] * af + 255 * (1 - af)) + 0.0722 * (d[k + 2] * af + 255 * (1 - af))
+              const lB = 0.2126 * (d[k] * af) + 0.7152 * (d[k + 1] * af) + 0.0722 * (d[k + 2] * af)
+              if (lW < intMinL - 4) badBlackHaloWhite++
+              if (lB > intMaxL + 4) badSkyHaloBlack++
+              const br = d[k + 2] - d[k]
+              if (a > 24 && br > worstBlueDiff) worstBlueDiff = br
+            }
+          }
+        }
+        return { skyMaxA, skyMaxRGB, transCount, badBlackHaloWhite, badSkyHaloBlack, worstBlueDiff, intMaxBR }
+      }
+
+      const makeEdgeScene = (dof, color, ev100) => ({
+        environment: {
+          sky: structuredClone(baseEnv.sky),
+          ambient: structuredClone(baseEnv.ambient),
+          fog: { color: '#b8d0eb', near: 2, far: 40 },
+        },
+        render: { mode: 'lit', exposure_ev: 0, engine: 'workbench', resolution: '1k', exposure_mode: 'manual', exposure_ev100: ev100, exposure_compensation: 0, transparent_background: true },
+        timeline: { fps: 24, markers: [] },
+        objects: [
+          { id: 'sobj_ground', kind: 'primitive', name: '地', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 12 } } },
+          { id: 'sobj_diag', kind: 'primitive', name: '斜柱', parent_id: null, order: 1, transform: { position: [0, 0.4, 0], rotation: [0, 0, Math.sin(0.22), Math.cos(0.22)], scale: [1.2, 2.8, 1.2] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color, roughness: 0.85 } } } },
+          { id: 'sobj_cam', kind: 'camera', name: '相机', parent_id: null, order: 2, transform: { position: [0, 1.4, 7], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, camera: { focal_mm: 50, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: dof, f_stop: 1.4, focus: 2.0, focus_object_id: '', exposure_mode: 'manual', iso: 100, shutter_s: 1 / 125, exposure_compensation: 0 } },
+        ],
+      })
+
+      const shoot = async (scene, side = 1024) => {
+        const s = await openShooter(scene, {}, 'lit')
+        try {
+          return await decode(await s.shoot(cameraFraming(scene, 'sobj_cam', side), { kind: 'lit', type: 'image/png', depthOfField: scene.objects[2].camera.depth_of_field, transparent: true }))
+        } finally {
+          s.close()
+        }
+      }
+
+      const regular = checkEdges(await shoot(makeEdgeScene(false, '#c8c8c8', 15), 1024))
+      const dof = checkEdges(await shoot(makeEdgeScene(true, '#c8c8c8', 15), 1024))
+
+      // Compatibility mode (WebGL2, no MSAA, 4-ch SMAA) on <0.1 dark sRGB tilted box silhouette.
+      gpuTestHooks.forceWebGL = true
+      gpuTestHooks.forceCompatibility = true
+      let darkCompat
+      try {
+        const darkScene = makeEdgeScene(false, '#040404', 20)
+        darkScene.environment.fog = null
+        darkScene.objects[1].material_slots.main.params.roughness = 1
+        const darkImg = await shoot(darkScene, 512)
+        const { w, h, d } = darkImg
+        let darkMaxInt = 0, trans = 0, smoothRows = new Set()
+        for (let y = Math.floor(h * 0.18); y < Math.floor(h * 0.45); y++) {
+          for (let x = Math.floor(w * 0.25); x < Math.floor(w * 0.75); x++) {
+            const k = (y * w + x) * 4
+            const a = d[k + 3]
+            if (a === 255) darkMaxInt = Math.max(darkMaxInt, d[k], d[k + 1], d[k + 2])
+            else if (a > 0 && a < 255) {
+              trans++
+              const af = a / 255
+              const lW = 0.2126 * (d[k] * af + 255 * (1 - af)) + 0.7152 * (d[k + 1] * af + 255 * (1 - af)) + 0.0722 * (d[k + 2] * af + 255 * (1 - af))
+              if (lW > 26 && lW < 245) smoothRows.add(y)
+            }
+          }
+        }
+        darkCompat = { darkMaxInt, trans, smoothRowCount: smoothRows.size }
+      } finally {
+        gpuTestHooks.forceWebGL = false
+        gpuTestHooks.forceCompatibility = false
+      }
+
+      // RealtimeGI moving foreground uncovering empty sky (TransparentTRAANode 4D clipAABB).
+      const canvas = document.createElement('canvas')
+      canvas.width = 512
+      canvas.height = 512
+      const gpu = await createRenderer({ canvas, output: 'pipeline', role: 'offscreen', alpha: true })
+      const threeScene = new THREE.Scene()
+      const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+      cam.position.set(0, 0, 5)
+      cam.lookAt(0, 0, 0)
+      threeScene.add(new THREE.DirectionalLight('#ffffff', 2))
+      const mover = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 1), new THREE.MeshStandardMaterial({ color: '#404040' }))
+      threeScene.add(mover)
+      const sr = new SceneRenderer(gpu, threeScene, cam)
+      const frame = { width: 512, height: 512, pixelRatio: 1, aoPixelRatio: 1, dof: null, exposure: 1, wireframe: false, engine: 'realtime_gi', quality: 'interactive', transparent: true }
+      let giUncoveredMaxA = 255, giBlockedMinA = 0
+      try {
+        for (let i = 0; i < 16; i++) {
+          gpu.advanceFrame()
+          sr.render(cam, frame)
+          await gpu.settle()
+        }
+        const blocked = await decode(await gpu.capture(() => { gpu.advanceFrame(); sr.render(cam, frame) }, 'image/png'))
+        giBlockedMinA = blocked.d[(256 * 512 + 256) * 4 + 3]
+        // Move foreground far offscreen so center exposes empty sky.
+        mover.position.set(16, 0, 0)
+        for (let i = 0; i < 4; i++) {
+          gpu.advanceFrame()
+          sr.render(cam, frame)
+          await gpu.settle()
+        }
+        const uncovered = await decode(await gpu.capture(() => { gpu.advanceFrame(); sr.render(cam, frame) }, 'image/png'))
+        giUncoveredMaxA = 0
+        for (let y = 220; y < 292; y++) {
+          for (let x = 220; x < 292; x++) {
+            const a = uncovered.d[(y * 512 + x) * 4 + 3]
+            if (a > giUncoveredMaxA) giUncoveredMaxA = a
+          }
+        }
+      } finally {
+        sr.dispose()
+        gpu.dispose()
+      }
+
+      return { regular, dof, darkCompat, giBlockedMinA, giUncoveredMaxA }
+    }, physNoon.environment)
+
+    assert.equal(out.regular.skyMaxA, 0, `regular.skyMaxA: ${JSON.stringify(out)}`)
+    assert.equal(out.regular.skyMaxRGB, 0, `fog leaves empty sky transparent and black: ${JSON.stringify(out.regular)}`)
+    assert.ok(out.regular.transCount > 20 && out.regular.badBlackHaloWhite === 0 && out.regular.badSkyHaloBlack === 0 && out.regular.worstBlueDiff <= out.regular.intMaxBR + 10, `regular AA: ${JSON.stringify(out.regular)}`)
+    assert.equal(out.dof.skyMaxA, 0, `dof.skyMaxA: ${JSON.stringify(out.dof)}`)
+    assert.ok(out.dof.transCount > 50 && out.dof.badBlackHaloWhite === 0 && out.dof.badSkyHaloBlack === 0 && out.dof.worstBlueDiff <= out.dof.intMaxBR + 10, `DoF edges: ${JSON.stringify(out.dof)}`)
+    assert.ok(out.darkCompat.darkMaxInt < 26 && out.darkCompat.trans >= 15 && out.darkCompat.smoothRowCount >= 10, `WebGL2 <0.1 dark diagonal SMAA: ${JSON.stringify(out.darkCompat)}`)
+    assert.equal(out.giBlockedMinA, 255, `giBlockedMinA: ${JSON.stringify(out)}`)
+    assert.equal(out.giUncoveredMaxA, 0, `TransparentTRAANode leaves zero ghosting when foreground moves away: ${JSON.stringify(out)}`)
+
+    await ctx.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('transparent background: clear glass, frosted glass silhouette, colored volume and night sky', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const physNoon = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+    const ctx = await gpu.newContext()
+    const page = await ctx.newPage()
+    await page.goto(`${base}/.scene-gi-qa.html`)
+    await page.waitForFunction(() => window.__ready === true)
+
+    const out = await page.evaluate(async (baseEnv) => {
+      const { openShooter } = await import('/src/creative-scene/host/render.ts')
+      const { cameraFraming } = await import('/src/creative-scene/host/framing.ts')
+      const { physicalMoon, sunVector } = await import('/src/creative-scene/world/astro.ts')
+      const { SceneRenderer } = await import('/src/creative-scene/render/sceneRenderer.ts')
+      const { completeSky } = await import('/src/creative-scene/world/physicalSky.ts')
+      const THREE = window.__THREE
+
+      const decode = async (blob) => {
+        const bm = await createImageBitmap(blob)
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        const d = g.getImageData(0, 0, bm.width, bm.height).data
+        bm.close()
+        return { w: c.width, h: c.height, d }
+      }
+      const shoot = async (scene, camId, side = 512) => {
+        const s = await openShooter(scene, {}, 'lit')
+        try {
+          return await decode(await s.shoot(cameraFraming(scene, camId, side), { kind: 'lit', type: 'image/png', transparent: scene.render.transparent_background }))
+        } finally {
+          s.close()
+        }
+      }
+
+      const lookQuat = (eye, target) => {
+        const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(...eye), new THREE.Vector3(...target), new THREE.Vector3(0, 1, 0)))
+        return [q.x, q.y, q.z, q.w]
+      }
+
+      // 1. Clear & frosted glass straddling opaque warm box (left) and open physical sky (right).
+      const glassScene = (roughness, transparent) => ({
+        environment: structuredClone(baseEnv),
+        render: { mode: 'lit', exposure_ev: 0, engine: 'workbench', resolution: '1k', exposure_mode: 'manual', exposure_ev100: 15, exposure_compensation: 0, transparent_background: transparent },
+        timeline: { fps: 24, markers: [] },
+        objects: [
+          { id: 'sobj_ground', kind: 'primitive', name: '地', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 12 } } },
+          { id: 'sobj_back', kind: 'primitive', name: '背箱', parent_id: null, order: 1, transform: { position: [-1.1, 0, -2.0], rotation: [0, 0, 0, 1], scale: [2.2, 2.2, 1.0] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#d8a878', roughness: 0.6 } } } },
+          { id: 'sobj_glass', kind: 'primitive', name: '玻璃板', parent_id: null, order: 2, transform: { position: [0, 0.2, 0], rotation: [0, 0, 0, 1], scale: [3.6, 2.2, 0.12] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#ffffff', transmission: 1, roughness, ior: 1.5, thickness: 0.1 } } } },
+          { id: 'sobj_cam', kind: 'camera', name: '相机', parent_id: null, order: 3, transform: { position: [0, 1.2, 5.8], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: false, camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: false, f_stop: 2.8, focus: 5.8, focus_object_id: '', exposure_mode: 'manual', iso: 100, shutter_s: 1 / 125, exposure_compensation: 0 } },
+        ],
+      })
+      const clearOff = await shoot(glassScene(0, false), 'sobj_cam', 512)
+      const clearOn = await shoot(glassScene(0, true), 'sobj_cam', 512)
+      const highlight = async (blend, opacity) => {
+        const scene = glassScene(0.16, true)
+        const [, , glass, camera] = scene.objects
+        scene.environment.sky = { kind: 'color', color: '#000000' }
+        const material = glass.material_slots.main
+        material.params.opacity = opacity
+        if (blend) material.alpha_mode = 'blend'
+        scene.objects = [glass, camera, {
+          id: 'sobj_point', kind: 'light', name: '高光', parent_id: null, order: 4, visible: true, locked: false,
+          transform: { position: [0.3, 1.2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          light: { type: 'point', color: '#ff0000', intensity: 200, cast_shadow: false, distance: 0, decay: 2 },
+        }]
+        const image = await shoot(scene, 'sobj_cam', 512)
+        let red = 0
+        let n = 0
+        for (let y = Math.floor(image.h * 0.42); y < image.h * 0.55; y++) {
+          for (let x = Math.floor(image.w * 0.43); x < image.w * 0.57; x++) {
+            const i = (y * image.w + x) * 4
+            red += image.d[i] * image.d[i + 3] / 255
+            n++
+          }
+        }
+        return red / n
+      }
+      const reflection = { solid: await highlight(false, 1), blended: await highlight(true, 1), halfOpacity: await highlight(true, 0.5) }
+      // Right-upper pure sky through clear glass: x in 0.60..0.72, y in 0.25..0.38
+      let clearSkyMinA = 255, clearSkyMaxA = 0
+      for (let y = Math.floor(clearOn.h * 0.25); y < Math.floor(clearOn.h * 0.38); y++) {
+        for (let x = Math.floor(clearOn.w * 0.60); x < Math.floor(clearOn.w * 0.72); x++) {
+          const a = clearOn.d[(y * clearOn.w + x) * 4 + 3]
+          if (a < clearSkyMinA) clearSkyMinA = a
+          if (a > clearSkyMaxA) clearSkyMaxA = a
+        }
+      }
+      // Left opaque backing through clear glass: x in 0.28..0.40, y in 0.35..0.48
+      let clearBackMinA = 255, clearBackSumDiff = 0, clearBackN = 0
+      for (let y = Math.floor(clearOn.h * 0.35); y < Math.floor(clearOn.h * 0.48); y++) {
+        for (let x = Math.floor(clearOn.w * 0.28); x < Math.floor(clearOn.w * 0.40); x++) {
+          const k = (y * clearOn.w + x) * 4
+          if (clearOn.d[k + 3] < clearBackMinA) clearBackMinA = clearOn.d[k + 3]
+          clearBackSumDiff += Math.max(Math.abs(clearOff.d[k] - clearOn.d[k]), Math.abs(clearOff.d[k + 1] - clearOn.d[k + 1]), Math.abs(clearOff.d[k + 2] - clearOn.d[k + 2]))
+          clearBackN++
+        }
+      }
+      // Frosted glass straddling the right silhouette edge of back box (y ~ 0.40..0.54, x ~ 0.44..0.56).
+      // Change only the visible background. The glass's environment map and
+      // the backing object's lighting stay fixed, including colored reflections.
+      const frost = async (transparent, color) => {
+        const originalRender = SceneRenderer.prototype.render
+        const background = new THREE.Color(color)
+        SceneRenderer.prototype.render = function (camera, frame) {
+          const previous = this.scene.background
+          this.scene.background = background
+          try {
+            return originalRender.call(this, camera, frame)
+          } finally {
+            this.scene.background = previous
+          }
+        }
+        try {
+          const scene = glassScene(0.35, transparent)
+          scene.environment.sky = { kind: 'color', color: '#8a8f98' }
+          return await shoot(scene, 'sobj_cam', 512)
+        } finally {
+          SceneRenderer.prototype.render = originalRender
+        }
+      }
+      const redOn = await frost(true, '#e40019')
+      const blueOn = await frost(true, '#244bfc')
+      const redOff = await frost(false, '#e40019')
+      const blueOff = await frost(false, '#244bfc')
+      let frostOnDiff = 0, frostOffDiff = 0
+      const transitionAlphas = new Set()
+      for (let y = Math.floor(redOn.h * 0.40); y < Math.floor(redOn.h * 0.54); y++) {
+        for (let x = Math.floor(redOn.w * 0.44); x < Math.floor(redOn.w * 0.56); x++) {
+          const k = (y * redOn.w + x) * 4
+          const alpha = redOn.d[k + 3]
+          if (alpha >= 30 && alpha < 250) {
+            transitionAlphas.add(alpha)
+            for (let c = 0; c < 4; c++) {
+              frostOnDiff = Math.max(frostOnDiff, Math.abs(redOn.d[k + c] - blueOn.d[k + c]))
+              frostOffDiff = Math.max(frostOffDiff, Math.abs(redOff.d[k + c] - blueOff.d[k + c]))
+            }
+          }
+        }
+      }
+
+      // 2. Colored volume in front of empty sky.
+      const volEye = [0, 1.5, 6.5]
+      const volScene = (transparent) => ({
+        environment: structuredClone(baseEnv),
+        render: { mode: 'lit', exposure_ev: 0, engine: 'workbench', resolution: '1k', exposure_mode: 'manual', exposure_ev100: 15, exposure_compensation: 0, transparent_background: transparent },
+        timeline: { fps: 24, markers: [] },
+        objects: [
+          { id: 'sobj_ground', kind: 'primitive', name: '地', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 12 } } },
+          { id: 'sobj_vol', kind: 'volume', name: '彩雾', parent_id: null, order: 1, transform: { position: [0, 2.4, 0], rotation: [0, 0, 0, 1], scale: [2.4, 1.8, 2.4] }, visible: true, locked: false, volume: { shape: 'sphere', scatter_color: '#ff4411', scatter_density: 1.5, anisotropy: 0, absorption_color: '#ff4411', absorption_density: 0.6, edge_falloff: 0.3, cast_shadow: false } },
+          { id: 'sobj_cam', kind: 'camera', name: '相机', parent_id: null, order: 2, transform: { position: volEye, rotation: lookQuat(volEye, [0, 2.4, 0]), scale: [1, 1, 1] }, visible: true, locked: false, camera: { focal_mm: 35, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: false, f_stop: 2.8, focus: 6.5, focus_object_id: '', exposure_mode: 'manual', iso: 100, shutter_s: 1 / 125, exposure_compensation: 0 } },
+        ],
+      })
+      const volImg = await shoot(volScene(true), 'sobj_cam', 512)
+      const neutralVolume = volScene(true)
+      neutralVolume.objects.find((obj) => obj.kind === 'volume').volume.scatter_color = '#ffffff'
+      const neutralImg = await shoot(neutralVolume, 'sobj_cam', 512)
+      let volCornerMaxA = 0, volMidMinA = 255, volMidMaxA = 0, volRedBias = 0, neutralRedBias = 0, volN = 0
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) volCornerMaxA = Math.max(volCornerMaxA, volImg.d[(y * volImg.w + x) * 4 + 3])
+      for (let y = Math.floor(volImg.h * 0.45); y < Math.floor(volImg.h * 0.55); y++) {
+        for (let x = Math.floor(volImg.w * 0.45); x < Math.floor(volImg.w * 0.55); x++) {
+          const k = (y * volImg.w + x) * 4
+          const a = volImg.d[k + 3]
+          volMidMinA = Math.min(volMidMinA, a)
+          volMidMaxA = Math.max(volMidMaxA, a)
+          volRedBias += volImg.d[k] - volImg.d[k + 2]
+          neutralRedBias += neutralImg.d[k] - neutralImg.d[k + 2]
+          volN++
+        }
+      }
+
+      // 3. Night sky (stars + moon up at Beijing 2026-10-26 19:15): aim toward moon azimuth slightly upward.
+      const nightSky = completeSky({
+        ...baseEnv.sky,
+        sun_mode: 'location',
+        latitude_deg: 39.9042,
+        longitude_deg: 116.4074,
+        timezone: 'Asia/Shanghai',
+        place: '北京',
+        date: '2026-10-26',
+        local_time: '19:15',
+        night: { moon: true, stars: true, milky_way: true, moon_strength: 1, moon_temperature_k: 6500, stars_strength: 1, stars_temperature_k: 6500, night_look: 1 },
+      })
+      const moonWhere = physicalMoon(nightSky)
+      const mVec = sunVector(moonWhere.elevationDeg, moonWhere.azimuthDeg)
+      const hLen = Math.hypot(mVec.x, mVec.z) || 1
+      const horiz = [mVec.x / hLen, 0, mVec.z / hLen]
+      const nEye = [-horiz[0] * 6, 1.5, -horiz[2] * 6]
+      const nTarget = [horiz[0] * 10, 1.5 + 16 * Math.tan((((moonWhere.elevationDeg ?? 20) * 0.45) * Math.PI) / 180), horiz[2] * 10]
+      const nightDoc = (transparent) => ({
+        environment: { sky: structuredClone(nightSky), ambient: structuredClone(baseEnv.ambient), fog: null },
+        render: { mode: 'lit', exposure_ev: 0, engine: 'workbench', resolution: '1k', exposure_mode: 'ambient', exposure_ev100: -3, exposure_compensation: 0, transparent_background: transparent },
+        timeline: { fps: 24, markers: [] },
+        objects: [
+          { id: 'sobj_ground', kind: 'primitive', name: '地', parent_id: null, order: 0, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, visible: true, locked: true, primitive: { builtin: 'ground@1', params: { size: 40 } } },
+          { id: 'sobj_cube', kind: 'primitive', name: '白箱', parent_id: null, order: 1, transform: { position: [horiz[0] * 1.5, 0, horiz[2] * 1.5], rotation: [0, 0, 0, 1], scale: [1.8, 1.0, 1.8] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#e8e8e8', roughness: 0.7 } } } },
+          { id: 'sobj_cam', kind: 'camera', name: '夜空相机', parent_id: null, order: 2, transform: { position: nEye, rotation: lookQuat(nEye, nTarget), scale: [1, 1, 1] }, visible: true, locked: false, camera: { focal_mm: 24, sensor_mm: [36, 24], aspect: '3:2', near: 0.1, far: 200, label: '', depth_of_field: false, f_stop: 2.8, focus: 6, focus_object_id: '', exposure_mode: 'ambient', iso: 100, shutter_s: 1 / 125, exposure_compensation: 0 } },
+        ],
+      })
+      const nightOff = await shoot(nightDoc(false), 'sobj_cam', 512)
+      const nightOn = await shoot(nightDoc(true), 'sobj_cam', 512)
+      let skyMaxOffLum = 0
+      for (let y = 0; y < Math.floor(nightOn.h * 0.40); y++) {
+        for (let x = 0; x < nightOn.w; x++) {
+          const k = (y * nightOn.w + x) * 4
+          if (nightOn.d[k + 3] > 0) continue
+          const l = 0.2126 * nightOff.d[k] + 0.7152 * nightOff.d[k + 1] + 0.0722 * nightOff.d[k + 2]
+          if (l > skyMaxOffLum) skyMaxOffLum = l
+        }
+      }
+      // Also verify every pixel in top sky strip y < 0.35*h has alpha === 0 in transparent output and baseline saw stars/moon.
+      let topStripMaxA = 0
+      for (let y = 0; y < Math.floor(nightOn.h * 0.35); y++) {
+        for (let x = 0; x < nightOn.w; x++) topStripMaxA = Math.max(topStripMaxA, nightOn.d[(y * nightOn.w + x) * 4 + 3])
+      }
+      let litSumL = 0, litDiffSum = 0, litN = 0
+      for (let y = Math.floor(nightOn.h * 0.72); y < nightOn.h - 4; y++) {
+        for (let x = Math.floor(nightOn.w * 0.3); x < Math.floor(nightOn.w * 0.7); x++) {
+          const k = (y * nightOn.w + x) * 4
+          if (nightOn.d[k + 3] === 255) {
+            litSumL += 0.2126 * nightOn.d[k] + 0.7152 * nightOn.d[k + 1] + 0.0722 * nightOn.d[k + 2]
+            litDiffSum += Math.max(Math.abs(nightOff.d[k] - nightOn.d[k]), Math.abs(nightOff.d[k + 1] - nightOn.d[k + 1]), Math.abs(nightOff.d[k + 2] - nightOn.d[k + 2]))
+            litN++
+          }
+        }
+      }
+
+      return {
+        reflection,
+        clear: { skyMinA: clearSkyMinA, skyMaxA: clearSkyMaxA, backMinA: clearBackMinA, backMeanDiff: clearBackSumDiff / Math.max(1, clearBackN) },
+        frost: { transitionSteps: transitionAlphas.size, onDiff: frostOnDiff, offDiff: frostOffDiff },
+        vol: { cornerMaxA: volCornerMaxA, midMinA: volMidMinA, midMaxA: volMidMaxA, redShift: (volRedBias - neutralRedBias) / volN },
+        night: { topStripMaxA, skyMaxOffLum, litMeanL: litSumL / Math.max(1, litN), litMeanDiff: litDiffSum / Math.max(1, litN), litN, moonElev: moonWhere?.elevationDeg },
+      }
+    }, physNoon.environment)
+
+    assert.ok(out.clear.skyMinA >= 8 && out.clear.skyMaxA < 255, `clear glass over sky: ${JSON.stringify(out.clear)}`)
+    assert.ok(out.reflection.solid > 10 && Math.abs(out.reflection.blended - out.reflection.solid) <= 2 &&
+      out.reflection.halfOpacity < out.reflection.blended * 0.8 && out.reflection.halfOpacity > out.reflection.blended * 0.2,
+    `glass highlights composited over black: ${JSON.stringify(out.reflection)}`)
+    assert.ok(out.clear.backMinA === 255 && out.clear.backMeanDiff < 1.0, `clear glass over opaque object: ${JSON.stringify(out.clear)}`)
+    assert.ok(out.frost.transitionSteps >= 10 && out.frost.onDiff <= 1 && out.frost.offDiff > 20, `frosted glass keeps a smooth silhouette and excludes only the visible background: ${JSON.stringify(out.frost)}`)
+    assert.ok(out.vol.cornerMaxA === 0 && out.vol.midMinA > 0 && out.vol.midMaxA < 255 && out.vol.redShift > 5, `colored volume: ${JSON.stringify(out.vol)}`)
+    assert.ok(out.night.topStripMaxA === 0 && out.night.skyMaxOffLum > 15 && out.night.litN > 100 && out.night.litMeanL > 5 && out.night.litMeanDiff < 1.0, `night sky: ${JSON.stringify(out.night)}`)
+
+    await ctx.close()
+  } finally {
+    await gpu.close()
+  }
+})
+
+await check('transparent background: 4K and 8K lossless PNG with depth of field and size-rejection cleanup', async () => {
+  const gpu = await chromium.launch({ headless: true, args: metal })
+  try {
+    const physNoon = JSON.parse(readFileSync(new URL('fixtures/scene-reference/physical-noon.json', import.meta.url), 'utf8'))
+    const server = new SceneServer()
+    server.scene.environment = structuredClone(physNoon.environment)
+    server.scene.render = { mode: 'lit', exposure_ev: 0, engine: 'workbench', resolution: '4k', exposure_mode: 'manual', exposure_ev100: 15, exposure_compensation: 0, transparent_background: true }
+    server.external([
+      {
+        op: 'add_objects',
+        objects: [
+          { id: objectID('box4k'), kind: 'primitive', name: '箱', parent_id: null, order: 1, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1.5, 1.5, 1.5] }, visible: true, locked: false, primitive: { builtin: 'box@1' }, material_slots: { main: { preset: 'principled@1', params: { color: '#dce0e6' } } } },
+          cameraObject(objectID('cam4k'), '方形相机', 2, { aspect: '1:1', focal_mm: 35, depth_of_field: true, f_stop: 1.4, focus: 2 }, [0, 1.6, 6.5]),
+        ],
+      },
+    ])
+    const { context, page, errors } = await open(server, { query: '?export=1', context: await gpu.newContext({ viewport: { width: 1280, height: 820 } }) })
+    await shading(page, '最终渲染')
+    await page.getByRole('button', { name: '导出' }).first().click()
+    const dialog = page.getByRole('dialog', { name: '导出分镜' })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await waitFor(() => server.exports.length === 1, '4K transparent export submitted', 120_000)
+    await dialog.waitFor({ state: 'detached' })
+
+    const exported = server.exports[0].payload
+    assert.equal(exported.effective_transparent_background, true)
+    const images = Object.fromEntries(exported.shots[0].images.map((i) => [i.pass, { mime: server.uploads.get(i.upload_id).mime, bytes: server.uploadBytes.get(i.upload_id) }]))
+    assert.equal(images.clay.mime, 'image/png')
+    assert.equal(images.lit.mime, 'image/png')
+    assert.equal(images.line.mime, 'image/png')
+    assert.deepEqual(pngSize(images.clay.bytes), { width: 4096, height: 4096 })
+    const decodedInfo = await page.evaluate(async ([b64Clay, b64Lit]) => {
+      const checkPNG = async (b64) => {
+        const bm = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob())
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        const d = g.getImageData(0, 0, 32, 32).data
+        let skyMaxA = 0
+        for (let i = 3; i < d.length; i += 4) if (d[i] > skyMaxA) skyMaxA = d[i]
+        return { w: bm.width, h: bm.height, skyMaxA }
+      }
+      return { clay: await checkPNG(b64Clay), lit: await checkPNG(b64Lit) }
+    }, [images.clay.bytes.toString('base64'), images.lit.bytes.toString('base64')])
+    assert.deepEqual(decodedInfo, { clay: { w: 4096, h: 4096, skyMaxA: 0 }, lit: { w: 4096, h: 4096, skyMaxA: 0 } })
+
+    await page.getByRole('tab', { name: '渲染', exact: true }).click()
+    const resolutions = page.getByRole('group', { name: '输出分辨率' })
+    await resolutions.getByRole('button', { name: '8K', exact: true }).click()
+    await waitFor(() => server.scene.render.resolution === '8k', '8K settings saved')
+    await page.getByRole('button', { name: '导出' }).first().click()
+    await dialog.getByRole('checkbox', { name: '线稿', exact: true }).uncheck()
+    await dialog.getByRole('checkbox', { name: '材质光照', exact: true }).check()
+    const start8k = performance.now()
+    console.log('8K square DOF export started')
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await waitFor(() => server.exports.length === 2, '8K transparent export submitted', 120_000)
+    await dialog.waitFor({ state: 'detached' })
+    console.log(`8K square DOF export completed in ${Math.round(performance.now() - start8k)} ms`)
+    const [shot8k] = server.exports[1].payload.shots
+    assert.deepEqual(shot8k.images.map((image) => image.pass), ['clay', 'lit'])
+    for (const { upload_id } of shot8k.images) {
+      assert.equal(server.uploads.get(upload_id).mime, 'image/png')
+      const png8k = server.uploadBytes.get(upload_id)
+      assert.deepEqual(pngSize(png8k), { width: 8192, height: 8192 })
+      const skyAlpha = await page.evaluate(async (src) => {
+        const bm = await createImageBitmap(await (await fetch(src)).blob())
+        const c = new OffscreenCanvas(1, 1)
+        const ctx = c.getContext('2d')
+        ctx.drawImage(bm, 0, 0, 1, 1, 0, 0, 1, 1)
+        bm.close()
+        return ctx.getImageData(0, 0, 1, 1).data[3]
+      }, `data:image/png;base64,${png8k.toString('base64')}`)
+      assert.equal(skyAlpha, 0)
+    }
+
+    // A backend size rejection keeps the dialog open and cleans the successful partial uploads.
+    await resolutions.getByRole('button', { name: '4K', exact: true }).click()
+    await waitFor(() => server.scene.render.resolution === '4k', '4K settings restored')
+    server.rejectUploadAfter = { after: 1, status: 413, body: { error: { code: 'creative_size_limit', message: '单张图片超过上限' } } }
+    await page.getByRole('button', { name: '导出' }).first().click()
+    await dialog.getByRole('button', { name: '导出' }).click()
+    await dialog.getByRole('alert').filter({ hasText: '导出原图超过分镜上传大小上限' }).waitFor({ timeout: 120_000 })
+    await waitFor(() => server.discarded.length >= 1, 'partial staged uploads discarded on size limit')
+    assert.equal(server.exports.length, 2, 'size limit stops before submit')
+
+    assert.deepEqual(errors, [])
+    await context.close()
+  } finally {
+    await gpu.close()
+  }
 })
 
 await browser.close()

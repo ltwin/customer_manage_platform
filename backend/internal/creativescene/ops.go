@@ -293,8 +293,8 @@ func decodeOp(raw json.RawMessage) (sceneOp, error) {
 			return nil, err
 		}
 		r := op.Render
-		if r.Mode == nil && r.ExposureEV == nil && r.Engine == nil && r.Resolution == nil && r.ExposureEV100 == nil && r.ExposureMode == nil && r.ExposureCompensation == nil {
-			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution、exposure_ev100、exposure_mode 或 exposure_compensation")
+		if r.Mode == nil && r.ExposureEV == nil && r.Engine == nil && r.Resolution == nil && r.TransparentBackground == nil && r.ExposureEV100 == nil && r.ExposureMode == nil && r.ExposureCompensation == nil {
+			return nil, invalid("render 至少写一项：mode、exposure_ev、engine、resolution、transparent_background、exposure_ev100、exposure_mode 或 exposure_compensation")
 		}
 		return &op, nil
 	case "set_timeline":
@@ -811,6 +811,9 @@ func (op *setRenderOp) apply(_ *opEnv, s *Scene, c *changeSet) error {
 	}
 	if p.Resolution != nil {
 		s.Render.Resolution = *p.Resolution
+	}
+	if p.TransparentBackground != nil {
+		s.Render.TransparentBackground = *p.TransparentBackground
 	}
 	if p.ExposureEV100 != nil {
 		s.Render.ExposureEV100 = *p.ExposureEV100

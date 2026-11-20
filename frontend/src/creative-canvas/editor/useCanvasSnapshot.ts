@@ -55,11 +55,12 @@ export function useCanvasSnapshot(canvasID: string, tick: number, keepAlive = fa
     let retry: ReturnType<typeof setTimeout> | undefined
     let retryDelay = 1000
     const reload = async () => {
-      if (controller.signal.aborted || document.hidden || !navigator.onLine || !canvasID) return
-      if (fetching) {
+      if (controller.signal.aborted || !canvasID) return
+      if (fetching || document.hidden || !navigator.onLine) {
         requested = true
         return
       }
+      requested = false
       clearTimeout(retry)
       fetching = true
       const canvasSeq = ++canvasReadSequence.current
@@ -87,10 +88,7 @@ export function useCanvasSnapshot(canvasID: string, tick: number, keepAlive = fa
         }
       } finally {
         fetching = false
-        if (requested && !controller.signal.aborted) {
-          requested = false
-          void reload()
-        }
+        if (requested) void reload()
       }
     }
     refreshCanvas.current = reload
@@ -113,20 +111,24 @@ export function useCanvasSnapshot(canvasID: string, tick: number, keepAlive = fa
         setSyncError,
       )
     }
+    const resume = () => {
+      connect()
+      if (requested) void reload()
+    }
     reconnect.current = connect
     connect()
-    window.addEventListener('online', connect)
+    window.addEventListener('online', resume)
     window.addEventListener('offline', connect)
-    document.addEventListener('visibilitychange', connect)
+    document.addEventListener('visibilitychange', resume)
     return () => {
       controller.abort()
       stream?.abort()
       clearTimeout(retry)
       refreshCanvas.current = () => Promise.resolve()
       reconnect.current = () => {}
-      window.removeEventListener('online', connect)
+      window.removeEventListener('online', resume)
       window.removeEventListener('offline', connect)
-      document.removeEventListener('visibilitychange', connect)
+      document.removeEventListener('visibilitychange', resume)
     }
   }, [canvasID])
   return { canvas, syncError, loading, refreshCanvas }

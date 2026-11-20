@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -327,5 +328,120 @@ func TestCompleteExportGatesAndHandover(t *testing.T) {
 	}
 	if got := canvasNodeCount(t, f.a, x.sc.canvas); got != before+2 {
 		t.Fatalf("canvas has %d nodes, want %d", got, before+2)
+	}
+}
+
+func TestExportShotsTransparentOverrideAndCompletionValidation(t *testing.T) {
+	f := setup(t)
+	waiter := &fakeWaiter{}
+	creativescene.SetJobWaiterForTest(t, waiter)
+	sc := newSceneCanvas(t, f.a)
+	cam := objectID(1)
+	addObjects(t, f.a, sc.doc, named(withContent(cam, "camera", 1, map[string]any{}), "主视角"))
+
+	// Scene switch is false; agent requests explicit transparent_background=true override.
+	trTrue, trFalse := true, false
+	job, err := exportJob(t, f.a, creativescene.ExportJobInput{
+		DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"clay", "lit"}, TransparentBackground: &trTrue,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := exportRequest(t, job)
+	if req.TransparentBackground == nil || !*req.TransparentBackground {
+		t.Fatalf("job request TransparentBackground = %v, want true", req.TransparentBackground)
+	}
+	if readScene(t, f.a, sc.doc).Scene.Render.TransparentBackground {
+		t.Fatal("CreateExportJobInTx mutated scene transparent_background")
+	}
+
+	claimed := claimOne(t, f.a)
+	clayUp, litUp := stage(t, f, f.a, "image"), stage(t, f, f.a, "image")
+	revRender := readScene(t, f.a, sc.doc).Revision
+	// Explicit null or non-bool effective_transparent_background -> 400 validation_failed, job stays claimed.
+	for name, badVal := range map[string]any{"null": nil, "string": "true"} {
+		_, err := completeExportJob(t, f.a, map[string]any{
+			"job_id": job.ID, "claim_token": claimed.ClaimToken, "outcome": "succeeded",
+			"export": map[string]any{
+				"scene_revision": jsonRevision(revRender), "effective_transparent_background": badVal,
+				"shots": []any{shot(cam, img("clay", clayUp), img("lit", litUp))},
+			},
+		})
+		if !errors.Is(err, creativeops.ErrValidation) {
+			t.Fatalf("%s complete = %v, want ErrValidation", name, err)
+		}
+	}
+
+	// Another tab toggles scene transparent_background while job runs, AND moves camera AFTER render (before completion)!
+	v := readScene(t, f.a, sc.doc)
+	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": true}}}})
+
+	resp, err := completeExportJob(t, f.a, map[string]any{
+		"job_id": job.ID, "claim_token": claimed.ClaimToken, "outcome": "succeeded",
+		"export": map[string]any{
+			"scene_revision": jsonRevision(revRender), "effective_transparent_background": true,
+			"shots": []any{shot(cam, img("clay", clayUp), img("lit", litUp))},
+		},
+	})
+	if err != nil || resp.State != creativescene.JobSucceeded || len(resp.Result.Export.Nodes) != 2 {
+		t.Fatalf("complete explicit true = %+v, err=%v", resp, err)
+	}
+	nClay := canvasNode(t, f.a, sc.canvas, resp.Result.Export.Nodes[0].NodeID)
+	if basedOn(t, nClay)["transparent_background"] != true || nClay.BasedOnState != creativecanvas.BasedOnCurrent {
+		t.Fatalf("explicit true node: based_on=%v state=%s", basedOn(t, nClay), nClay.BasedOnState)
+	}
+	// Toggle scene switch back to false -> explicit override stays current.
+	v = readScene(t, f.a, sc.doc)
+	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: v.expect("render"), Operations: []any{op{"op": "set_render", "render": map[string]any{"transparent_background": false}}}})
+	if s := canvasNode(t, f.a, sc.canvas, nClay.ID).BasedOnState; s != creativecanvas.BasedOnCurrent {
+		t.Fatalf("after scene toggle off: state=%s, want current", s)
+	}
+
+	// Legacy completion omitting effective_transparent_background on explicit false override fails job (invalid_result)
+	// WITHOUT consuming uploads, and explicit false succeeds writing based_on.transparent_background=false.
+	jobFalse, err := exportJob(t, f.a, creativescene.ExportJobInput{
+		DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"clay"}, TransparentBackground: &trFalse,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed2 := claimOne(t, f.a)
+	beforeNodes := canvasNodeCount(t, f.a, sc.canvas)
+	keepUpload := stage(t, f, f.a, "image")
+	failResp, err := completeExportJob(t, f.a, map[string]any{
+		"job_id": jobFalse.ID, "claim_token": claimed2.ClaimToken, "outcome": "succeeded",
+		"export": map[string]any{"scene_revision": jsonRevision(revRender), "shots": []any{shot(cam, img("clay", keepUpload))}},
+	})
+	if err != nil || failResp.State != creativescene.JobFailed || failResp.Result.Failure.Code != "invalid_result" || !strings.Contains(failResp.Result.Failure.Message, "导出背景设置不一致") {
+		t.Fatalf("missing effective report on override=false: %+v, err=%v", failResp, err)
+	}
+	if got := canvasNodeCount(t, f.a, sc.canvas); got != beforeNodes {
+		t.Fatalf("failed job placed nodes: %d != %d", got, beforeNodes)
+	}
+
+	// Retry on fresh job with keepUpload + explicit false succeeds AND if camera moved before placement reads stale immediately.
+	jobFalse2, err := exportJob(t, f.a, creativescene.ExportJobInput{
+		DocumentID: sc.doc, CanvasID: sc.canvas, Passes: []string{"clay"}, TransparentBackground: &trFalse,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed3 := claimOne(t, f.a)
+	revBeforeMove := readScene(t, f.a, sc.doc).Revision
+	vCam := readScene(t, f.a, sc.doc)
+	mustSend(t, f.a, batch{DocumentID: sc.doc, Expected: vCam.expect(placement(cam)), Operations: []any{moveOp(cam, 9)}})
+	okResp, err := completeExportJob(t, f.a, map[string]any{
+		"job_id": jobFalse2.ID, "claim_token": claimed3.ClaimToken, "outcome": "succeeded",
+		"export": map[string]any{
+			"scene_revision": jsonRevision(revBeforeMove), "effective_transparent_background": false,
+			"shots": []any{shot(cam, img("clay", keepUpload))},
+		},
+	})
+	if err != nil || okResp.State != creativescene.JobSucceeded || len(okResp.Result.Export.Nodes) != 1 {
+		t.Fatalf("retry false override = %+v, err=%v", okResp, err)
+	}
+	placedNode := canvasNode(t, f.a, sc.canvas, okResp.Result.Export.Nodes[0].NodeID)
+	if basedOn(t, placedNode)["transparent_background"] != false || placedNode.BasedOnState != creativecanvas.BasedOnStale {
+		t.Fatalf("camera moved before placement: based_on=%v state=%s, want false & stale", basedOn(t, placedNode), placedNode.BasedOnState)
 	}
 }

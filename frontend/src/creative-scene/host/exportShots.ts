@@ -14,7 +14,7 @@ import { shotTitle } from '../timeline/keys.ts'
 // Export (design「导出渲染」「导出接口」): every camera or shot of the plan
 // drawn from the scene's confirmed snapshot (E1), a shot's at its frame
 // through its camera (scene-timeline-shots「导出：每个分镜一套场景」), as clay, line art and the lit look,
-// 2048 on the long side, PNG; then the images go up as staged uploads. The photographer's
+// at the scene's export resolution; then the images go up as staged uploads. The photographer's
 // export submits them to the export endpoint; export_shots hands them to the
 // job's completion. Whatever goes wrong, the uploads already made are given
 // back for the caller to discard.
@@ -24,12 +24,20 @@ export type ExportShots = components['schemas']['CreativeSceneExportShots']
 export type ExportPayload = components['schemas']['CreativeSceneExportPayload']
 export type ExportResult = components['schemas']['CreativeSceneExportResult']
 
+/** Raised when the media service rejects an export's size. */
+export class ExportSizeLimitError extends Error {
+  constructor() {
+    super('导出原图超过分镜上传大小上限')
+    this.name = 'ExportSizeLimitError'
+  }
+}
+
 /** By shot when markerIDs is given, else by camera at frame 0. */
-export type ExportPlan = { cameraObjectIDs: readonly string[]; markerIDs?: readonly string[]; passes: readonly ExportPass[] }
+export type ExportPlan = { cameraObjectIDs: readonly string[]; markerIDs?: readonly string[]; passes: readonly ExportPass[]; transparentBackground?: boolean }
 /** marker: the shot it is of, in an export by shot. */
 export type ShotImage = { camera: string; marker?: string; pass: ExportPass; blob: Blob }
 /** hostError: the device cannot draw the chosen resolution; an assistant's job ends as host_error, not back in the queue. */
-export type RenderedShots = { ok: true; revision: string; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
+export type RenderedShots = { ok: true; revision: string; effectiveTransparentBackground: boolean; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
 export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
 
 /** How many images an export makes, and why it cannot go ahead: none, more than 32 shots or cameras, or more than 48 images. */
@@ -124,7 +132,20 @@ export type RenderDeps = {
  */
 export async function renderShots(deps: RenderDeps, documentID: string, plan: ExportPlan, onProgress?: (p: Progress) => void): Promise<RenderedShots> {
   const now = deps.now ?? (() => performance.now())
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const raceTimeout = async (work: Promise<void>): Promise<boolean> => {
+    if (deps.sleep) return Promise.race([work.then(() => true), deps.sleep(lookBudgetMs).then(() => false)])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        work.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), lookBudgetMs)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   const doc = await deps.read(documentID)
   const { resolution } = doc.scene.render
   const longSide = longSideOf(resolution)
@@ -138,12 +159,14 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const total = targets.length * plan.passes.length
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')
+  const requestedTransparent = plan.transparentBackground ?? (doc.scene.render.transparent_background === true)
+  const effectiveTransparentBackground = requestedTransparent && plan.passes.some((pass) => pass !== 'line')
   // Each image's limit follows what it costs (R2 design「输出分辨率、编码与时限」): its pixels, the frames its
   // renderer averages, its encoding, whether it draws the world-space layer; the whole export gets the lit look's
   // switch, each other scene's mounting, and every image's limit, as if the layer were drawn.
   const budgetOf = ({ framing, scene }: Target, pass: ExportPass, world: boolean) => {
     const engine = effectiveEngine(engineOf(scene.render), pass, true)
-    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export', pass === 'lit' && softShadowsIn(scene)), imageTypeOf(pass, resolution).type, world && pass === 'lit')
+    return shotBudgetMs(engine, framing.width, framing.height, drawnFrames(engine, 'export', pass === 'lit' && softShadowsIn(scene)), imageTypeOf(pass, resolution, effectiveTransparentBackground).type, world && pass === 'lit')
   }
   const looks = (clayPasses.length ? 1 : 0) + (lit ? 1 : 0)
   const totalMs = lookBudgetMs * (1 + (keys.length - 1) * looks) + targets.reduce((sum, t) => sum + plan.passes.reduce((s, pass) => s + budgetOf(t, pass, true), 0), 0)
@@ -160,7 +183,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   /** Mounts the target's scene unless it is the one mounted; the message when that took too long. */
   const mount = async (t: Target): Promise<string | null> => {
     if (t.key === mounted) return null
-    const done = await Promise.race([shooter.setScene(t.scene).then(() => true), sleep(lookBudgetMs).then(() => false)])
+    const done = await raceTimeout(shooter.setScene(t.scene))
     if (!done) return `换到下一个分镜的场景超过 ${lookBudgetMs / 1000} 秒`
     mounted = t.key
     return null
@@ -175,9 +198,9 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
     let blob: Blob
     try {
-      const encoding = imageTypeOf(pass, resolution)
+      const encoding = imageTypeOf(pass, resolution, effectiveTransparentBackground)
       // The shooter checks the deadline against its own clock, performance.now() (host/render.ts); `now` times the export.
-      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, deadline: performance.now() + budget })
+      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, transparent: effectiveTransparentBackground, deadline: performance.now() + budget })
     } catch (err) {
       if (err instanceof ShotTimeout) return slow
       throw err
@@ -196,7 +219,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     }
     if (lit) {
       if (clayPasses.length) {
-        const switched = await Promise.race([shooter.setLook('lit').then(() => true), sleep(lookBudgetMs).then(() => false)])
+        const switched = await raceTimeout(shooter.setLook('lit'))
         if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookBudgetMs / 1000} 秒` }
       }
       for (const shot of targets) {
@@ -217,7 +240,7 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   }
   onProgress?.({ stage: 'render', done: total, total })
   const images = planned.flatMap(({ id, camera, marker }) => plan.passes.map((pass) => ({ camera, ...(marker ? { marker } : {}), pass, blob: drawn.get(key(id, pass))! })))
-  return { ok: true, revision: doc.revision, images }
+  return { ok: true, revision: doc.revision, effectiveTransparentBackground, images }
 }
 
 export type Uploaded = { ok: true; uploads: Upload[] } | { ok: false; cause: unknown; uploads: Upload[] }
@@ -234,12 +257,12 @@ export async function uploadShots(upload: UploadFn, images: readonly ShotImage[]
       const i = next++
       const { camera, marker, pass, blob } = images[i]
       try {
-        // PNG or JPEG as it was encoded (render/engines.ts imageTypeOf).
         const mime = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
         out[i] = await upload(new File([blob], `${marker ?? camera}-${pass}.${extensionOf(mime)}`, { type: mime }), { kind: 'image', mime }, signal)
         onProgress?.({ stage: 'upload', done: ++done, total: images.length })
       } catch (cause) {
-        failure ??= { cause }
+        const mapped = cause instanceof ApiError && (cause.status === 413 || cause.code === 'creative_size_limit') ? new ExportSizeLimitError() : cause
+        failure ??= { cause: mapped }
       }
     }
   }
@@ -338,12 +361,19 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
   const sent = await uploadShots(deps.upload, rendered.images, signal, onProgress)
   if (!sent.ok) {
     drop(sent.uploads)
+    if (sent.cause instanceof ExportSizeLimitError) return { ok: false, message: sent.cause.message }
     return { ok: false, message: `导出图上传失败：${sent.cause instanceof Error ? sent.cause.message : String(sent.cause)}` }
   }
   onProgress?.({ stage: 'place', done: 0, total: 1 })
   const out = await submitExport(
     { send: deps.send, wait: deps.wait },
-    { canvas_id: job.canvasID, scene_node_id: job.sceneNodeID, scene_revision: rendered.revision, shots: shotsOf(rendered.images, sent.uploads) },
+    {
+      canvas_id: job.canvasID,
+      scene_node_id: job.sceneNodeID,
+      scene_revision: rendered.revision,
+      effective_transparent_background: rendered.effectiveTransparentBackground,
+      shots: shotsOf(rendered.images, sent.uploads),
+    },
   )
   if (out.ok) return out
   drop(sent.uploads)

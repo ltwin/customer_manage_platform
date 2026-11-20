@@ -9,6 +9,7 @@ import { capabilityOf, type Capability, type StorageLimits } from './trace/capac
 import type { DepthCheck, HitReport } from './trace/checks.ts'
 import type { ShadeMode } from './trace/hit.ts'
 import { installLightModel } from './lightModel/nodes.ts'
+import { transparentMark } from './passContext.ts'
 import { buildLifetime } from './buildLifetime.ts'
 
 // The one place a renderer is made (design「渲染器创建入口」): the viewport,
@@ -99,6 +100,39 @@ export function clampMaterialOutput(proto: { setupOutput(builder: NodeBuilder, o
 }
 clampMaterialOutput(NodeMaterial.prototype as unknown as Parameters<typeof clampMaterialOutput>[0])
 
+/**
+ * Unpremultiplies transmissive non-transparent fragment colour before Three's fog
+ * mixes toward scene.fog.color and premultiplies back by alpha, avoiding ~25x
+ * fog over-brightening when RenderOutputNode unpremultiplies clear glass over
+ * empty sky (a ~= 0.04). Gated strictly on builder.context.transparentBackground.
+ *
+ * Checked against three 0.186.1:
+ *   - src/materials/nodes/NodeMaterial.js:1134-1148 (setupFog)
+ *   - src/materials/nodes/NodeMaterial.js:1190-1208 (setupOutput)
+ */
+export function installTransparentFog(
+  proto: { setupFog(builder: NodeBuilder, outputNode: Node): Node; transparentFogInstalled?: true } = NodeMaterial.prototype as unknown as {
+    setupFog(builder: NodeBuilder, outputNode: Node): Node
+    transparentFogInstalled?: true
+  },
+) {
+  if (proto.transparentFogInstalled) return
+  const setupFog = proto.setupFog
+  const { select, vec3, vec4 } = tsl as unknown as Record<string, (...args: TSLNode[]) => TSLNode>
+  proto.setupFog = function (this: { transparent?: boolean; transmission?: number }, builder: NodeBuilder, outputNode: Node) {
+    const b = builder as unknown as { fogNode?: unknown; context?: Record<string, unknown> }
+    if (!b.fogNode || b.context?.[transparentMark] !== true || this.transparent || !((this.transmission ?? 0) > 0)) {
+      return setupFog.call(this, builder, outputNode)
+    }
+    const o = (outputNode as unknown as TSLNode).toVar()
+    const a = o.a.toVar()
+    const straightRgb = select(a.greaterThan(1e-6), o.rgb.div(a), vec3(0)).toVar()
+    const fogged = (setupFog.call(this, builder, vec4(straightRgb, a) as unknown as Node) as unknown as TSLNode).toVar()
+    return vec4(fogged.rgb.mul(a), fogged.a) as unknown as Node
+  }
+  proto.transparentFogInstalled = true
+}
+
 
 export type Output =
   /** Linear canvas, tone mapping and sRGB in the pipeline's output node, so overlays drawn after it do not wipe the picture. */
@@ -147,7 +181,7 @@ export type SceneGPU = {
    * file. Every screenshot, export and thumbnail comes out through here, so
    * nothing can wait between the drawing and the encoding.
    */
-  capture(draw: () => void, type: string, quality?: number): Blob
+  capture(draw: () => void, type: string, quality?: number): Blob | Promise<Blob>
   /**
    * Settles once the GPU has done the work submitted so far: between the
    * frames of a picture, so the page's other work (lease renewals, progress,
@@ -446,6 +480,7 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
   await renderer.init()
   // The document's lights and the skies' sun and moon have a size (render/lightModel/).
   installLightModel(renderer)
+  installTransparentFog()
   if (gpuTestHooks.cold) saltMaterials()
   const internals = renderer as unknown as Internals
   internals._animation?.stop()
@@ -547,7 +582,15 @@ async function make({ canvas, alpha = false, output, role }: GPUOptions): Promis
     lost: device.lost,
     capture: (draw, type, quality) => {
       if (lifetime.closed) throw new DeviceLostError()
-      return device.capture(draw, () => canvasBlob(renderer.domElement, type, quality))
+      return device.capture(draw, () => {
+        const canvas = renderer.domElement
+        // A high-resolution PNG can run into hundreds of MiB. Encode its
+        // bitmap directly to a Blob to avoid the base64 URL and byte copies.
+        if (type === 'image/png' && Math.max(canvas.width, canvas.height) >= 4096) {
+          return canvasPngBlob(canvas, device, () => lifetime.closed)
+        }
+        return canvasBlob(canvas, type, quality)
+      })
     },
     compiler: null,
     async compile(scene, camera) {
@@ -625,7 +668,7 @@ export type DeviceState = {
   readonly disposed: boolean
   markLost(): void
   /** Draws, then encodes unless the device is lost by then; a lost device throws DeviceLostError. */
-  capture(draw: () => void, encode: () => Blob): Blob
+  capture<T>(draw: () => void, encode: () => T): T
   cache<T extends { dispose(): void }>(key: string, create: () => T): T
   /** Calls lose now, or right after that many more captures have drawn. */
   loseAfter(captures: number, lose: () => void): void
@@ -703,9 +746,36 @@ export function deviceState(contextLost: () => boolean = () => false): DeviceSta
  */
 export function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Blob {
   const url = canvas.toDataURL(type, quality)
-  if (!url.startsWith(`data:${type};base64,`)) throw new Error('图片编码失败')
+  if (!url.startsWith(`data:${type};base64,`)) {
+    throw new Error('图片编码失败')
+  }
   const text = atob(url.slice(url.indexOf(',') + 1))
   const bytes = new Uint8Array(text.length)
   for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
   return new Blob([bytes], { type })
+}
+
+/**
+ * Encodes a high-resolution canvas bitmap as PNG via toBlob while racing GPU
+ * device loss so callers can recover instead of hanging or misclassifying it.
+ */
+export function canvasPngBlob(
+  canvas: Pick<HTMLCanvasElement, 'toBlob'>,
+  device: Pick<DeviceState, 'isLost' | 'lost'>,
+  isClosed: () => boolean = () => false,
+): Promise<Blob> {
+  if (isClosed() || device.isLost()) return Promise.reject(new DeviceLostError())
+  const encoded = new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (isClosed() || device.isLost()) reject(new DeviceLostError())
+      else if (blob?.type === 'image/png') resolve(blob)
+      else reject(new Error('PNG 编码失败'))
+    }, 'image/png')
+  })
+  return Promise.race([
+    encoded,
+    device.lost.then((err) => {
+      throw err
+    }),
+  ])
 }

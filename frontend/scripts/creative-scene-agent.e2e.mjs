@@ -171,6 +171,9 @@ class Server {
     this.uploads = new Map()
     // The bytes put for each upload.
     this.bodies = new Map()
+    this.discarded = []
+    this.exportRequests = new Map()
+    this.placedExports = []
     this.media = 0
     // Set to a promise to keep uploads from completing until it settles.
     this.uploadHold = null
@@ -190,6 +193,7 @@ class Server {
   }
   export(id, request) {
     const job = { id, document_id: DOC, kind: 'export_shots', attempt: 0, claim_token: `tok_${id}`, lease_until: '2100-01-01T00:00:00Z', deadline: '2100-01-01T00:00:00Z', request }
+    this.exportRequests.set(id, request)
     this.queue.push(job)
     return job
   }
@@ -223,9 +227,26 @@ async function route(context, server) {
     if (job) {
       const { payload } = request.postDataJSON()
       server.completes.push({ id: job[1], payload })
+      const exportRequest = server.exportRequests.get(job[1])
+      if (exportRequest && payload.outcome === 'succeeded') {
+        const override = exportRequest.transparent_background
+        if (typeof override === 'boolean' && exportRequest.passes.some((pass) => pass !== 'line') && payload.export?.effective_transparent_background !== override) {
+          return json(200, { job_id: job[1], state: 'failed', result: { code: 'invalid_result', message: '导出背景设置不一致，请刷新页面后重新导出' } })
+        }
+        server.placedExports.push(job[1])
+      }
       return json(200, { job_id: job[1], state: payload.outcome, result: {} })
     }
     if (path === `/documents/${DOC}` && request.method() === 'GET') return json(200, server.doc)
+    if (path === `/documents/${DOC}/commands` && request.method() === 'POST') {
+      const { operations } = request.postDataJSON().payload
+      assert.equal(operations.length, 1)
+      const [op] = operations
+      assert.equal(op.op, 'set_render')
+      server.doc.scene.render.transparent_background = op.render.transparent_background
+      server.doc.revision = String(Number(server.doc.revision) + 1)
+      return json(200, { revision: server.doc.revision })
+    }
     if (path === '/media-access-tickets' && request.method() === 'POST')
       return json(200, { url: `${base}/__media/${MODEL}`, expires_at: '2100-01-01T00:00:00Z', mime: 'model/gltf-binary', byte_size: pillarGLB.byteLength })
     if (path === '/uploads' && request.method() === 'POST') {
@@ -249,6 +270,11 @@ async function route(context, server) {
         Object.assign(u, { state: 'ready', publication: { kind: 'candidate', id: `ccuc_${u.id}`, revision: '1' } })
       }
       return json(200, u)
+    }
+    const cand = path.match(/^\/upload-candidates\/([^/]+)\/discard$/)
+    if (cand && request.method() === 'POST') {
+      server.discarded.push(cand[1])
+      return json(200, { id: cand[1], state: 'discarded', revision: '2' })
     }
     return json(404, { error: { code: 'not_found', message: `unmocked ${path}` } })
   })
@@ -786,6 +812,155 @@ try {
     assert.deepEqual(p.panel.created[0].payload.scene_context, { document_id: DOC, selected_object_ids: [chair, lamp] })
     // And on the message as it is sent.
     await p.page.locator('.cc-agent-user-scene .cc-agent-scene-tag').filter({ hasText: '椅子 等 2 个物体' }).waitFor()
+    await p.context.close()
+  })
+
+  // --- scene-transparent-background (design「验证与交付」) --------------------
+
+  await check('transparent background: render_view stays opaque JPEG matching off-mode', async () => {
+    const r = await openRender()
+    r.server.doc = duskDoc()
+    const shoot = (mode, transparent) => {
+      r.server.doc.scene.render.transparent_background = transparent
+      return r.page.evaluate(async ({ documentID, mode }) => {
+        const { renderView } = await import('/src/creative-scene/host/render.ts')
+        const out = await renderView(documentID, { camera_object_id: 'sobj_cam', mode })
+        if (!out.ok) return { ok: false, message: out.message }
+        const bm = await createImageBitmap(out.image)
+        const c = new OffscreenCanvas(bm.width, bm.height)
+        const g = c.getContext('2d')
+        g.drawImage(bm, 0, 0)
+        bm.close()
+        const pixels = g.getImageData(0, 0, c.width, c.height).data
+        const hash = await crypto.subtle.digest('SHA-256', pixels)
+        const corner = Array.from(g.getImageData(4, 4, 1, 1).data)
+        return { ok: true, type: out.image.type, w: c.width, h: c.height, hash: Array.from(new Uint8Array(hash)), corner }
+      }, { documentID: DOC, mode })
+    }
+    for (const mode of ['clay', 'lit']) {
+      const off = await shoot(mode, false)
+      const on = await shoot(mode, true)
+      assert.ok(off.ok && on.ok, JSON.stringify({ off, on }))
+      assert.equal(on.type, 'image/jpeg')
+      assert.deepEqual(on, off, `${mode} render_view decoded pixels match with the scene toggle on and off`)
+      assert.equal(on.corner[3], 255)
+      assert.ok(on.corner.slice(0, 3).some((channel) => channel > 0), 'sky background preserved in JPEG')
+    }
+    assert.deepEqual(r.errors, [])
+    await r.context.close()
+  })
+
+  await check('transparent background: export_shots override ignores scene toggle & cross-tab flip, and cleans up on rejected background mode', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 820 } })
+    const server = new Server()
+    server.doc = duskDoc()
+    server.doc.scene.render.resolution = '1k'
+    server.doc.scene.render.transparent_background = false
+    await route(context, server)
+    const editor = await tab(context, '.scene-agent-qa.html')
+    const setBackground = (enabled) => editor.page.evaluate(async ({ documentID, enabled }) => {
+      const response = await fetch(`/api/v1/creative/documents/${documentID}/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: { operations: [{ op: 'set_render', render: { transparent_background: enabled } }] } }),
+      })
+      if (!response.ok) throw new Error(`set_render: ${response.status}`)
+    }, { documentID: DOC, enabled })
+    const t = await tab(context, '.scene-agent-host-qa.html')
+    await t.page.locator('#host', { hasText: 'idle' }).waitFor()
+
+    // Emulate an old page on the wire for the first attempt only.
+    await context.route('**/scene-jobs/csj_tb_reject/complete', async (route) => {
+      const request = route.request().postDataJSON()
+      assert.equal(request.payload.export.effective_transparent_background, true)
+      delete request.payload.export.effective_transparent_background
+      await route.fallback({ postData: request })
+    })
+    server.export('csj_tb_reject', { camera_object_ids: ['sobj_cam'], passes: ['clay', 'line', 'lit'], canvas_id: 'canvas', scene_node_id: 'node-scene', transparent_background: true })
+    await t.page.evaluate(() => window.__invalidate())
+    const rejected = await server.completed('csj_tb_reject')
+    assert.equal(rejected.payload.outcome, 'succeeded')
+    assert.equal(rejected.payload.export.effective_transparent_background, undefined)
+    await waitUntil(() => server.discarded.length === 3, '3 staged candidates discarded on rejected export completion')
+    assert.deepEqual(server.placedExports, [])
+
+    // Refresh and retry. Hold staging after rendering until the second tab
+    // changes the scene from true to false, before the job can place any images.
+    await setBackground(true)
+    await t.page.reload()
+    await t.page.locator('#host', { hasText: 'idle' }).waitFor()
+    const renderRevision = server.doc.revision
+    const uploadsBefore = server.uploads.size
+    let release
+    server.uploadHold = new Promise((resolve) => { release = resolve })
+    try {
+      server.export('csj_tb_ok', { camera_object_ids: ['sobj_cam'], passes: ['clay', 'line', 'lit'], canvas_id: 'canvas', scene_node_id: 'node-scene', transparent_background: true })
+      await t.page.evaluate(() => window.__invalidate())
+      await waitUntil(() => server.uploads.size > uploadsBefore, 'retry rendered and started staging', 25_000)
+      await setBackground(false)
+    } finally {
+      release()
+      server.uploadHold = null
+    }
+    const done = await server.completed('csj_tb_ok')
+    assert.equal(done.payload.outcome, 'succeeded', JSON.stringify(done.payload))
+    assert.equal(done.payload.export.effective_transparent_background, true)
+    assert.equal(done.payload.export.scene_revision, renderRevision)
+    assert.notEqual(server.doc.revision, renderRevision)
+    assert.equal(server.doc.scene.render.transparent_background, false, 'scene document toggle stays false')
+    assert.deepEqual(server.placedExports, ['csj_tb_ok'])
+
+    const decodeImage = (buf, mime) => t.page.evaluate(async ([b64, type]) => {
+      const bm = await createImageBitmap(await (await fetch(`data:${type};base64,${b64}`)).blob())
+      const c = new OffscreenCanvas(bm.width, bm.height)
+      const g = c.getContext('2d')
+      g.drawImage(bm, 0, 0)
+      const px = (x, y) => Array.from(g.getImageData(x, y, 1, 1).data)
+      const w = bm.width, h = bm.height
+      bm.close()
+      return { w, h, corner: px(4, 4), center: px(w >> 1, Math.floor(h * 0.62)) }
+    }, [buf.toString('base64'), mime])
+
+    const byPass = Object.fromEntries(done.payload.export.shots[0].images.map((i) => [i.pass, { mime: server.uploads.get(i.upload_id).mime, buf: server.bodies.get(i.upload_id) }]))
+    assert.equal(byPass.clay.mime, 'image/png')
+    assert.equal(byPass.lit.mime, 'image/png')
+    assert.equal(byPass.line.mime, 'image/png')
+    const clayPx = await decodeImage(byPass.clay.buf, 'image/png')
+    const litPx = await decodeImage(byPass.lit.buf, 'image/png')
+    const linePx = await decodeImage(byPass.line.buf, 'image/png')
+    assert.equal(clayPx.corner[3], 0, `clay sky transparent: ${JSON.stringify(clayPx)}`)
+    assert.equal(clayPx.center[3], 255, `clay wall opaque: ${JSON.stringify(clayPx)}`)
+    assert.equal(litPx.corner[3], 0, `lit sky transparent: ${JSON.stringify(litPx)}`)
+    assert.equal(litPx.center[3], 255, `lit wall opaque: ${JSON.stringify(litPx)}`)
+    assert.deepEqual(linePx.corner, [255, 255, 255, 255], 'line art remains opaque white PNG')
+
+    // Explicit transparent_background: false override when scene toggle is true.
+    await setBackground(true)
+    server.export('csj_tb_false', { camera_object_ids: ['sobj_cam'], passes: ['clay', 'lit'], canvas_id: 'canvas', scene_node_id: 'node-scene', transparent_background: false })
+    await t.page.evaluate(() => window.__invalidate())
+    const doneFalse = await server.completed('csj_tb_false')
+    assert.equal(doneFalse.payload.outcome, 'succeeded')
+    assert.equal(doneFalse.payload.export.effective_transparent_background, false)
+    assert.equal(server.doc.scene.render.transparent_background, true)
+    for (const img of doneFalse.payload.export.shots[0].images) {
+      const px = await decodeImage(server.bodies.get(img.upload_id), server.uploads.get(img.upload_id).mime)
+      assert.equal(px.corner[3], 255, `${img.pass} override=false stays opaque`)
+    }
+    assert.deepEqual(t.errors, [])
+    assert.deepEqual(editor.errors, [])
+    await context.close()
+  })
+
+  await check('transparent background: set_render appears in run-changes as 渲染设置 and restores render unit', async () => {
+    const renderBatch = { from_revision: '1', units: ['render'], expected: { render: '4' } }
+    const p = await openPanel([{ target: { kind: 'render' }, name: '渲染设置', change: 'modified', restore: renderBatch, blocked: null }])
+    const list = p.page.getByRole('region', { name: '本轮对「棚拍布景」的改动' })
+    const row = list.getByRole('listitem').filter({ hasText: '渲染设置' })
+    await row.waitFor()
+    await row.getByRole('button', { name: '恢复这一处' }).click()
+    await list.getByRole('status').filter({ hasText: '已恢复「渲染设置」' }).waitFor()
+    assert.equal(p.panel.commands.length, 1)
+    assert.deepEqual(p.panel.commands[0].payload, { expected: { render: '4' }, operations: [{ op: 'restore_units', from_revision: '1', units: ['render'] }] })
+    assert.deepEqual(p.errors, [])
     await p.context.close()
   })
 } finally {

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"math"
 	"os"
@@ -242,14 +244,15 @@ func verifyModel(path string, out *Verified) error {
 }
 
 func (v *Verifier) verifyImage(path string, out *Verified) error {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	if out.Mime == "image/webp" && isAnimatedWebP(raw) {
+	defer f.Close()
+	if out.Mime == "image/webp" && isAnimatedWebP(f, out.Size) {
 		return fmt.Errorf("%w: animated webp", ErrUnsupported)
 	}
-	config, actual, err := image.DecodeConfig(bytes.NewReader(raw))
+	config, actual, err := image.DecodeConfig(f)
 	want := map[string]string{"image/jpeg": "jpeg", "image/png": "png", "image/webp": "webp"}[out.Mime]
 	if err != nil || actual != want {
 		return fmt.Errorf("%w: image decode", ErrUnsupported)
@@ -257,7 +260,10 @@ func (v *Verifier) verifyImage(path string, out *Verified) error {
 	if !v.validDimensions(config.Width, config.Height) {
 		return fmt.Errorf("%w: image dimensions", ErrSizeLimit)
 	}
-	decoded, err := imaging.Decode(bytes.NewReader(raw), imaging.AutoOrientation(true))
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	decoded, err := imaging.Decode(f, imaging.AutoOrientation(true))
 	if err != nil {
 		return fmt.Errorf("%w: image decode", ErrUnsupported)
 	}
@@ -271,13 +277,22 @@ func (v *Verifier) verifyImage(path string, out *Verified) error {
 	if w <= v.cfg.DisplayMaxEdge && h <= v.cfg.DisplayMaxEdge {
 		return nil
 	}
+	// Preserve alpha in the display rendition only when the image actually
+	// contains non-opaque pixels; opaque 4-channel PNGs still get JPEG.
+	transparent := out.Mime != "image/jpeg" && !imageOpaque(decoded)
 	if w >= h {
 		decoded = imaging.Resize(decoded, v.cfg.DisplayMaxEdge, 0, imaging.Lanczos)
 	} else {
 		decoded = imaging.Resize(decoded, 0, v.cfg.DisplayMaxEdge, imaging.Lanczos)
 	}
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, decoded, &jpeg.Options{Quality: 86}); err != nil {
+	displayMime := "image/jpeg"
+	if transparent {
+		displayMime = "image/png"
+		if err := png.Encode(&buf, decoded); err != nil {
+			return err
+		}
+	} else if err := jpeg.Encode(&buf, decoded, &jpeg.Options{Quality: 86}); err != nil {
 		return err
 	}
 	display, err := os.CreateTemp("", "creative-media-display-*")
@@ -293,26 +308,54 @@ func (v *Verifier) verifyImage(path string, out *Verified) error {
 		return err
 	}
 	sum := sha256.Sum256(buf.Bytes())
-	out.Display = &Rendition{Path: display.Name(), Mime: "image/jpeg", SHA256: "sha256-" + hex.EncodeToString(sum[:]), Size: int64(buf.Len()), Width: decoded.Bounds().Dx(), Height: decoded.Bounds().Dy()}
+	out.Display = &Rendition{Path: display.Name(), Mime: displayMime, SHA256: "sha256-" + hex.EncodeToString(sum[:]), Size: int64(buf.Len()), Width: decoded.Bounds().Dx(), Height: decoded.Bounds().Dy()}
 	return nil
+}
+
+// imageOpaque reports whether every pixel of img has full alpha (0xffff).
+func imageOpaque(img image.Image) bool {
+	if o, ok := img.(interface{ Opaque() bool }); ok {
+		return o.Opaque()
+	}
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			_, _, _, a := img.At(x, y).RGBA()
+			if a != 0xffff {
+				return false
+			}
+		}
+	}
+	return true
 }
 func (v *Verifier) validDimensions(w, h int) bool {
 	return w > 0 && h > 0 && w <= v.cfg.MaxImageEdge && h <= v.cfg.MaxImageEdge && int64(w)*int64(h) <= v.cfg.MaxImagePixels
 }
-func isAnimatedWebP(raw []byte) bool {
-	if len(raw) < 12 || string(raw[:4]) != "RIFF" || string(raw[8:12]) != "WEBP" {
+func isAnimatedWebP(file io.ReaderAt, size int64) bool {
+	var header [12]byte
+	if _, err := file.ReadAt(header[:], 0); err != nil || string(header[:4]) != "RIFF" || string(header[8:]) != "WEBP" {
 		return false
 	}
-	for offset := 12; offset+8 <= len(raw); {
-		chunk := string(raw[offset : offset+4])
-		size := int(raw[offset+4]) | int(raw[offset+5])<<8 | int(raw[offset+6])<<16 | int(raw[offset+7])<<24
-		if size < 0 || offset+8+size > len(raw) {
+	var chunkHeader [8]byte
+	for offset := int64(12); offset+8 <= size; {
+		if _, err := file.ReadAt(chunkHeader[:], offset); err != nil {
 			return false
 		}
-		if chunk == "ANIM" || chunk == "ANMF" || (chunk == "VP8X" && size >= 1 && raw[offset+8]&0x02 != 0) {
+		chunk := string(chunkHeader[:4])
+		chunkSize := int64(binary.LittleEndian.Uint32(chunkHeader[4:]))
+		if offset+8+chunkSize > size {
+			return false
+		}
+		if chunk == "ANIM" || chunk == "ANMF" {
 			return true
 		}
-		offset += 8 + size + size%2
+		if chunk == "VP8X" && chunkSize >= 1 {
+			var flag [1]byte
+			if _, err := file.ReadAt(flag[:], offset+8); err == nil && flag[0]&0x02 != 0 {
+				return true
+			}
+		}
+		offset += 8 + chunkSize + chunkSize%2
 	}
 	return false
 }
@@ -425,14 +468,15 @@ func (v *Verifier) Probe(ctx context.Context, body io.Reader, limit int64) (Prob
 // probeImage 按上传校验相同的方向修正解码，事实携带的就是将要发送的
 // 精确字节的 oriented 显示语义。
 func (v *Verifier) probeImage(path string, out *ProbedFacts) error {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	if out.Mime == "image/webp" && isAnimatedWebP(raw) {
+	defer func() { _ = f.Close() }()
+	if out.Mime == "image/webp" && isAnimatedWebP(f, out.Size) {
 		return fmt.Errorf("%w: animated webp", ErrUnsupported)
 	}
-	decoded, err := imaging.Decode(bytes.NewReader(raw), imaging.AutoOrientation(true))
+	decoded, err := imaging.Decode(f, imaging.AutoOrientation(true))
 	if err != nil {
 		return fmt.Errorf("%w: image decode", ErrUnsupported)
 	}
