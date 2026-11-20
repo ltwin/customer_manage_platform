@@ -58,7 +58,18 @@ import DocumentView from './DocumentView.tsx'
 import SaveModelDialog from './SaveModelDialog.tsx'
 import type { SaveRequest } from '../../creative-scene/saveModel.ts'
 
-type SceneEditorProps = { documentID: string; onClose: () => void; host?: SceneJobLauncher; canvasID?: string; sceneNodeID?: string; onSaveModel?: (request: SaveRequest) => void; onPlaceScreenshot?: (file: File) => void; libraryTick?: number }
+type SceneEditorProps = {
+  documentID: string
+  onClose: () => void
+  host?: SceneJobLauncher
+  canvasID?: string
+  sceneNodeID?: string
+  onSaveModel?: (request: SaveRequest) => void
+  onPlaceScreenshot?: (file: File) => void
+  onExported?: (nodeIDs: readonly string[]) => void
+  onFocusExportedNodes?: (nodeIDs: readonly string[]) => void
+  libraryTick?: number
+}
 // three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
 const SceneEditor = lazy(() =>
   import('../../creative-scene/SceneEditor.tsx').catch(() => ({
@@ -211,7 +222,12 @@ function Workspace({ account }: { account: string }) {
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const revealNode = useRef<((id: string) => void) | null>(null)
-  const [sceneExportToReveal, setSceneExportToReveal] = useState<{ canvasID: string; nodeID: string } | null>(null)
+  const focusNodes = useRef<((ids: readonly string[]) => void) | null>(null)
+  const pendingExportFocus = useRef<{
+    canvasID: string
+    ids: readonly string[]
+    select: boolean
+  } | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
@@ -292,16 +308,6 @@ function Workspace({ account }: { account: string }) {
       canvas && canvas.id === canvasID ? projectCanvas(canvas, outbox) : canvas,
     [canvas, canvasID, outbox],
   )
-  useEffect(() => {
-    if (!sceneExportToReveal || maximized) return
-    if (sceneExportToReveal.canvasID !== canvasID) {
-      setSceneExportToReveal(null)
-      return
-    }
-    if (view?.id !== canvasID || !view.nodes.some((n) => n.id === sceneExportToReveal.nodeID)) return
-    revealNode.current?.(sceneExportToReveal.nodeID)
-    setSceneExportToReveal(null)
-  }, [canvasID, maximized, sceneExportToReveal, view])
   // 只在本地投影里、服务端快照还没有的节点：节点树把它们排在最前。
   const pendingNodes = useMemo(() => {
     if (!view || !canvas || view === canvas) return new Set<string>()
@@ -360,6 +366,23 @@ function Workspace({ account }: { account: string }) {
     const live = new Set(canvas.nodes.map((n) => n.id))
     onSelection(deferred.ids.filter((id) => live.has(id)))
   }, [canvas, onSelection])
+  useEffect(() => {
+    const target = pendingExportFocus.current
+    if (maximized || !target?.ids.length) return
+    if (target.canvasID !== canvasID) {
+      pendingExportFocus.current = null
+      return
+    }
+    if (view?.id !== canvasID) return
+    const live = new Set(view.nodes.map((n) => n.id))
+    const found = target.ids.filter((id) => live.has(id))
+    if (!found.length) return
+    pendingExportFocus.current = null
+    if (target.select) onSelection(found)
+    window.requestAnimationFrame(() => {
+      focusNodes.current?.(found)
+    })
+  }, [canvasID, view, maximized, onSelection])
   const node = view?.nodes.find((n) => n.id === selected)
   const { full, error: nodeError, retry: retryNode } = useNodeContent(node)
   const nodeKey = `node:${canvasID}:${selected ?? ''}`
@@ -1815,6 +1838,7 @@ function Workspace({ account }: { account: string }) {
                   }}
                   centerRef={viewCenter}
                   revealRef={revealNode}
+                  focusNodesRef={focusNodes}
                   onDraggingChange={setNodeDragging}
                   onPreview={(nodeID, revision) =>
                     setPreview({ nodeID, revision })
@@ -1928,8 +1952,15 @@ function Workspace({ account }: { account: string }) {
             host={sceneHost.launcher}
             onSaveModel={setSavingModel}
             onPlaceScreenshot={placeScreenshot}
-            onExportPlaced={(nodeID) => {
-              setSceneExportToReveal({ canvasID, nodeID })
+            onExported={(nodeIDs) => {
+              if (nodeIDs.length) pendingExportFocus.current = { canvasID, ids: nodeIDs, select: false }
+              void refreshCanvas.current()
+            }}
+            onFocusExportedNodes={(nodeIDs) => {
+              pendingExportFocus.current = { canvasID, ids: nodeIDs, select: true }
+              setSavingModel(null)
+              setLibraryOpen(maximized.libraryOpen)
+              setMaximized(null)
               void refreshCanvas.current()
             }}
             libraryTick={sceneLibraryTick}

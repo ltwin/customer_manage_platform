@@ -1,12 +1,12 @@
 import { ApiError } from '../../api/transport.ts'
 import type { components } from '../../api/schema'
-import type { Generated, Upload } from '../../creative-canvas/editor/media.ts'
+import type { Generated, Upload, UploadProgress } from '../../creative-canvas/editor/media.ts'
 import type { Scene, SceneDocument } from '../api.ts'
 import { DeviceLostError, ShotTimeout } from '../render/gpu.ts'
 import { TraceNotReady } from '../render/trace/base.ts'
 import type { DisplayMode } from '../state/sceneStore.ts'
 import { cameraFraming, type Framing } from './framing.ts'
-import { drawnFrames, effectiveEngine, engineOf, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs, softShadowsIn } from '../render/engines.ts'
+import { drawnFrames, effectiveEngine, engineOf, estimateMs, extensionOf, imageTypeOf, longSideOf, lookBudgetMs, shotBudgetMs, softShadowsIn } from '../render/engines.ts'
 import type { Look, Shooter, ShotKind } from './render.ts'
 import { evaluateAt } from '../timeline/evaluate.ts'
 import { shotTitle } from '../timeline/keys.ts'
@@ -35,10 +35,32 @@ export class ExportSizeLimitError extends Error {
 /** By shot when markerIDs is given, else by camera at frame 0. */
 export type ExportPlan = { cameraObjectIDs: readonly string[]; markerIDs?: readonly string[]; passes: readonly ExportPass[]; transparentBackground?: boolean }
 /** marker: the shot it is of, in an export by shot. */
-export type ShotImage = { camera: string; marker?: string; pass: ExportPass; blob: Blob }
+export type ShotImage = { camera: string; marker?: string; label?: string; pass: ExportPass; blob: Blob }
 /** hostError: the device cannot draw the chosen resolution; an assistant's job ends as host_error, not back in the queue. */
 export type RenderedShots = { ok: true; revision: string; effectiveTransparentBackground: boolean; images: ShotImage[] } | { ok: false; message: string; hostError?: true }
-export type Progress = { stage: 'render' | 'upload' | 'place'; done: number; total: number }
+export type Progress = {
+  stage: 'prepare' | 'render' | 'upload' | 'place'
+  done: number
+  total: number
+  /** Weighted overall progress in [0, 1]. */
+  fraction: number
+  /** Readable label for the image/step currently running, e.g. 「分镜 1 · 材质光照」. */
+  currentLabel?: string
+}
+
+const passNames: Record<ExportPass, string> = {
+  clay: '白模',
+  line: '线稿',
+  lit: '材质光照',
+}
+
+function abortError(): DOMException {
+  return new DOMException('Aborted', 'AbortError')
+}
+
+function isAbort(err: unknown): boolean {
+  return err instanceof DOMException ? err.name === 'AbortError' : err instanceof Error && err.name === 'AbortError'
+}
 
 /** How many images an export makes, and why it cannot go ahead: none, more than 32 shots or cameras, or more than 48 images. */
 export function exportCount(cameras: number, passCount: number, byShot = false): { count: number; problem: string | null } {
@@ -80,7 +102,7 @@ export function shotSceneKey(scene: Scene): string {
 }
 
 /** One picture's subject: a camera at frame 0, or a shot at its frame through its camera. */
-type Target = { id: string; camera: string; marker?: string; scene: Scene; key: string; framing: Framing }
+type Target = { id: string; label: string; camera: string; marker?: string; scene: Scene; key: string; framing: Framing }
 
 /** The plan's targets, in its order; the reason when one cannot be drawn. */
 function targetsOf(doc: SceneDocument, plan: ExportPlan, longSide: number): Target[] | { error: string } {
@@ -95,12 +117,16 @@ function targetsOf(doc: SceneDocument, plan: ExportPlan, longSide: number): Targ
     return e
   }
   const markers = doc.scene.timeline?.markers ?? []
+  const byObj = new Map(doc.scene.objects.map((o) => [o.id, o]))
   const subjects = plan.markerIDs?.length
     ? plan.markerIDs.map((id) => {
         const m = markers.find((x) => x.id === id)
         return m ? { id, marker: id, camera: m.camera_object_id, frame: m.frame, title: shotTitle(markers, id) } : { id, marker: id, camera: '', frame: -1, title: '' }
       })
-    : plan.cameraObjectIDs.map((id) => ({ id, marker: undefined, camera: id, frame: 0, title: '' }))
+    : plan.cameraObjectIDs.map((id) => {
+        const cam = byObj.get(id)
+        return { id, marker: undefined, camera: id, frame: 0, title: cam?.camera?.label || cam?.name || id }
+      })
   const out: Target[] = []
   for (const s of subjects) {
     if (s.frame < 0) return { error: `分镜 ${s.id} 已不存在` }
@@ -108,7 +134,7 @@ function targetsOf(doc: SceneDocument, plan: ExportPlan, longSide: number): Targ
     const { scene, key } = at(s.frame)
     const framing = cameraFraming(scene, s.camera, longSide)
     if ('error' in framing) return { error: s.marker ? `「${s.title}」：${framing.error}` : framing.error }
-    out.push({ id: s.id, camera: s.camera, ...(s.marker ? { marker: s.marker } : {}), scene, key, framing })
+    out.push({ id: s.id, label: s.title, camera: s.camera, ...(s.marker ? { marker: s.marker } : {}), scene, key, framing })
   }
   return out
 }
@@ -130,7 +156,7 @@ export type RenderDeps = {
  * mounts that scene (Shooter.setScene). Images come back in target × pass
  * order.
  */
-export async function renderShots(deps: RenderDeps, documentID: string, plan: ExportPlan, onProgress?: (p: Progress) => void): Promise<RenderedShots> {
+export async function renderShots(deps: RenderDeps, documentID: string, plan: ExportPlan, onProgress?: (p: Progress) => void, signal?: AbortSignal): Promise<RenderedShots> {
   const now = deps.now ?? (() => performance.now())
   const raceTimeout = async (work: Promise<void>): Promise<boolean> => {
     if (deps.sleep) return Promise.race([work.then(() => true), deps.sleep(lookBudgetMs).then(() => false)])
@@ -146,7 +172,17 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
       clearTimeout(timer)
     }
   }
+  let maxFraction = 0
+  const emit = (p: Progress) => {
+    const fraction = Math.max(maxFraction, Math.min(1, p.fraction))
+    maxFraction = fraction
+    onProgress?.({ ...p, fraction })
+  }
+  if (signal?.aborted) throw abortError()
+  emit({ stage: 'prepare', done: 0, total: 1, fraction: 0.01, currentLabel: '读取场景数据…' })
   const doc = await deps.read(documentID)
+  if (signal?.aborted) throw abortError()
+  emit({ stage: 'prepare', done: 0, total: 1, fraction: 0.02, currentLabel: '解析分镜与机位…' })
   const { resolution } = doc.scene.render
   const longSide = longSideOf(resolution)
   const planned = targetsOf(doc, plan, longSide)
@@ -155,7 +191,12 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const keys = [...new Set(planned.map((t) => t.key))]
   const targets = keys.flatMap((k) => planned.filter((t) => t.key === k))
   // Each scene the targets draw, as evaluated at its frame: what a shot hides stops nothing.
-  for (const k of keys) await deps.loadModels({ ...doc, scene: planned.find((t) => t.key === k)!.scene })
+  emit({ stage: 'prepare', done: 0, total: 1, fraction: 0.04, currentLabel: '加载场景模型…' })
+  for (const k of keys) {
+    if (signal?.aborted) throw abortError()
+    await deps.loadModels({ ...doc, scene: planned.find((t) => t.key === k)!.scene })
+  }
+  if (signal?.aborted) throw abortError()
   const total = targets.length * plan.passes.length
   const clayPasses = plan.passes.filter((p) => p !== 'lit')
   const lit = plan.passes.includes('lit')
@@ -172,27 +213,49 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   const totalMs = lookBudgetMs * (1 + (keys.length - 1) * looks) + targets.reduce((sum, t) => sum + plan.passes.reduce((s, pass) => s + budgetOf(t, pass, true), 0), 0)
   const began = now()
   const shooter = await deps.open(targets[0] ? { ...doc, scene: targets[0].scene } : doc, clayPasses.length ? 'clay' : 'lit')
+  if (signal?.aborted) {
+    shooter.close()
+    throw abortError()
+  }
   // A device that cannot draw the resolution fails at once rather than drawing smaller (R2 design R-5).
   if (longSide > shooter.maxTextureSize) {
     shooter.close()
     return { ok: false, message: `当前设备最大只能导出长边 ${shooter.maxTextureSize} px 的图，请选更低的输出分辨率`, hostError: true }
   }
+  emit({ stage: 'prepare', done: 1, total: 1, fraction: 0.06, currentLabel: '渲染管线就绪' })
+  const weightOf = (shot: Target, pass: ExportPass) => {
+    const engine = effectiveEngine(engineOf(shot.scene.render), pass, true)
+    const frames = drawnFrames(engine, 'export', pass === 'lit' && softShadowsIn(shot.scene))
+    const encoding = imageTypeOf(pass, resolution, effectiveTransparentBackground)
+    return Math.max(25, estimateMs(engine, shot.framing.width, shot.framing.height, frames, encoding.type, shooter.world && pass === 'lit'))
+  }
+  const drawSteps: { shot: Target; pass: ExportPass; weight: number }[] = [
+    ...targets.flatMap((shot) => clayPasses.map((pass) => ({ shot, pass, weight: weightOf(shot, pass) }))),
+    ...(lit ? targets.map((shot) => ({ shot, pass: 'lit' as ExportPass, weight: weightOf(shot, 'lit') })) : []),
+  ]
+  const totalWeight = drawSteps.reduce((sum, s) => sum + s.weight, 0) || 1
+  let completedWeight = 0
+  const renderFraction = (doneWeight: number) => 0.06 + 0.74 * Math.min(1, doneWeight / totalWeight)
   const drawn = new Map<string, Blob>()
   const key = (target: string, pass: ExportPass) => `${target}\n${pass}`
   let mounted = targets[0]?.key
   /** Mounts the target's scene unless it is the one mounted; the message when that took too long. */
   const mount = async (t: Target): Promise<string | null> => {
     if (t.key === mounted) return null
+    if (signal?.aborted) throw abortError()
     const done = await raceTimeout(shooter.setScene(t.scene))
     if (!done) return `换到下一个分镜的场景超过 ${lookBudgetMs / 1000} 秒`
     mounted = t.key
     return null
   }
   /** Draws one image; the message when it took too long. */
-  const draw = async (shot: Target, pass: ExportPass): Promise<string | null> => {
-    onProgress?.({ stage: 'render', done: drawn.size, total })
+  const draw = async (shot: Target, pass: ExportPass, weight: number): Promise<string | null> => {
+    if (signal?.aborted) throw abortError()
+    const currentLabel = `${shot.label} · ${passNames[pass]}`
+    emit({ stage: 'render', done: drawn.size, total, fraction: renderFraction(completedWeight), currentLabel })
     const late = await mount(shot)
     if (late) return late
+    if (signal?.aborted) throw abortError()
     const budget = budgetOf(shot, pass, shooter.world)
     const started = now()
     const slow = `一张导出图渲染超过 ${Math.round(budget / 1000)} 秒`
@@ -200,33 +263,45 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
     try {
       const encoding = imageTypeOf(pass, resolution, effectiveTransparentBackground)
       // The shooter checks the deadline against its own clock, performance.now() (host/render.ts); `now` times the export.
-      blob = await shooter.shoot(shot.framing, { kind: pass as ShotKind, type: encoding.type, quality: encoding.quality, depthOfField: pass !== 'line' && shot.framing.depthOfField, transparent: effectiveTransparentBackground, deadline: performance.now() + budget })
+      blob = await shooter.shoot(shot.framing, {
+        kind: pass as ShotKind,
+        type: encoding.type,
+        quality: encoding.quality,
+        depthOfField: pass !== 'line' && shot.framing.depthOfField,
+        transparent: effectiveTransparentBackground,
+        deadline: performance.now() + budget,
+        signal,
+        onFrame: (doneFrames, totalFrames) => {
+          const shotRatio = Math.min(1, Math.max(0, doneFrames / Math.max(1, totalFrames)))
+          emit({ stage: 'render', done: drawn.size, total, fraction: renderFraction(completedWeight + weight * shotRatio), currentLabel })
+        },
+      })
     } catch (err) {
       if (err instanceof ShotTimeout) return slow
       throw err
     }
+    if (signal?.aborted) throw abortError()
     if (now() - started > budget) return slow
     if (now() - began > totalMs) return `导出超过 ${Math.round(totalMs / 1000)} 秒没有完成`
     drawn.set(key(shot.id, pass), blob)
+    completedWeight += weight
+    emit({ stage: 'render', done: drawn.size, total, fraction: renderFraction(completedWeight), currentLabel })
     return null
   }
   try {
-    for (const shot of targets) {
-      for (const pass of clayPasses) {
-        const slow = await draw(shot, pass)
-        if (slow) return { ok: false, message: slow }
-      }
-    }
-    if (lit) {
-      if (clayPasses.length) {
+    let litSwitched = false
+    for (const step of drawSteps) {
+      if (step.pass === 'lit' && clayPasses.length && !litSwitched) {
+        litSwitched = true
+        if (signal?.aborted) throw abortError()
+        emit({ stage: 'render', done: drawn.size, total, fraction: renderFraction(completedWeight), currentLabel: '切换材质光照管线…' })
         const switched = await raceTimeout(shooter.setLook('lit'))
         if (!switched) return { ok: false, message: `切换到材质光照超过 ${lookBudgetMs / 1000} 秒` }
       }
-      for (const shot of targets) {
-        const slow = await draw(shot, 'lit')
-        if (slow) return { ok: false, message: slow }
-      }
+      const slow = await draw(step.shot, step.pass, step.weight)
+      if (slow) return { ok: false, message: slow }
     }
+    if (signal?.aborted) throw abortError()
     // Nothing goes up drawn on a device lost on the way (render.ts).
     await shooter.confirm()
   } catch (err) {
@@ -238,33 +313,69 @@ export async function renderShots(deps: RenderDeps, documentID: string, plan: Ex
   } finally {
     shooter.close()
   }
-  onProgress?.({ stage: 'render', done: total, total })
-  const images = planned.flatMap(({ id, camera, marker }) => plan.passes.map((pass) => ({ camera, ...(marker ? { marker } : {}), pass, blob: drawn.get(key(id, pass))! })))
+  emit({ stage: 'render', done: total, total, fraction: 0.8 })
+  const images = planned.flatMap(({ id, label, camera, marker }) =>
+    plan.passes.map((pass) => ({ camera, ...(marker ? { marker } : {}), label, pass, blob: drawn.get(key(id, pass))! })),
+  )
   return { ok: true, revision: doc.revision, effectiveTransparentBackground, images }
 }
 
 export type Uploaded = { ok: true; uploads: Upload[] } | { ok: false; cause: unknown; uploads: Upload[] }
-type UploadFn = (file: File, declared: Generated, signal: AbortSignal) => Promise<Upload>
+type UploadFn = (file: File, declared: Generated, signal: AbortSignal, onProgress?: (p: UploadProgress) => void) => Promise<Upload>
 
 /** Uploads the images two at a time; `uploads` keeps the images' order. */
 export async function uploadShots(upload: UploadFn, images: readonly ShotImage[], signal: AbortSignal, onProgress?: (p: Progress) => void): Promise<Uploaded> {
   const out: (Upload | undefined)[] = new Array(images.length)
+  const totalBytes = images.reduce((sum, img) => sum + Math.max(1, img.blob.size), 0) || 1
+  const unitProgress = new Float64Array(images.length)
+  let maxFraction = 0.8
   let next = 0
   let done = 0
   let failure: { cause: unknown } | null = null
+  const emitUpload = (currentLabel?: string) => {
+    const weighted = images.reduce((sum, img, idx) => sum + unitProgress[idx] * Math.max(1, img.blob.size), 0) / totalBytes
+    const fraction = Math.max(maxFraction, Math.min(0.96, 0.8 + 0.16 * Math.min(1, weighted)))
+    maxFraction = fraction
+    onProgress?.({ stage: 'upload', done, total: images.length, fraction, ...(currentLabel ? { currentLabel } : {}) })
+  }
+  if (images.length > 0) emitUpload('准备上传导出图…')
   const worker = async () => {
-    while (failure === null && next < images.length) {
+    while (failure === null && !signal.aborted && next < images.length) {
       const i = next++
-      const { camera, marker, pass, blob } = images[i]
+      const { camera, marker, label, pass, blob } = images[i]
+      const currentLabel = label ? `${label} · ${passNames[pass]}` : passNames[pass]
       try {
         const mime = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
-        out[i] = await upload(new File([blob], `${marker ?? camera}-${pass}.${extensionOf(mime)}`, { type: mime }), { kind: 'image', mime }, signal)
-        onProgress?.({ stage: 'upload', done: ++done, total: images.length })
+        out[i] = await upload(
+          new File([blob], `${marker ?? camera}-${pass}.${extensionOf(mime)}`, { type: mime }),
+          { kind: 'image', mime },
+          signal,
+          (p) => {
+            const unit =
+              p.stage === 'done'
+                ? 1
+                : p.stage === 'verifying'
+                  ? 0.9
+                  : p.stage === 'uploading'
+                    ? 0.1 + 0.75 * Math.min(1, p.total > 0 ? p.sent / p.total : 0)
+                    : p.stage === 'creating'
+                      ? 0.05
+                      : 0
+            if (unit > unitProgress[i]) {
+              unitProgress[i] = unit
+              emitUpload(currentLabel)
+            }
+          },
+        )
+        unitProgress[i] = 1
+        done++
+        emitUpload(currentLabel)
       } catch (cause) {
         const mapped = cause instanceof ApiError && (cause.status === 413 || cause.code === 'creative_size_limit') ? new ExportSizeLimitError() : cause
         failure ??= { cause: mapped }
       }
     }
+    if (signal.aborted) failure ??= { cause: abortError() }
   }
   await Promise.all(Array.from({ length: Math.min(uploadConcurrency, images.length) }, worker))
   const uploads = out.filter((u): u is Upload => u !== undefined)
@@ -328,7 +439,9 @@ export type ManualExportDeps = RenderDeps & {
 }
 
 export type ManualExport = { documentID: string; canvasID: string; sceneNodeID: string; plan: ExportPlan }
-export type ManualOutcome = { ok: true; result: ExportResult } | { ok: false; message: string }
+export type ManualOutcome =
+  | { ok: true; result: ExportResult; previews: ShotImage[] }
+  | { ok: false; message: string; cancelled?: true }
 
 const refusals: Record<string, string> = {
   creative_upload_unavailable: '上传的图已失效，请重新导出',
@@ -347,10 +460,17 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
   const drop = (uploads: readonly Upload[]) => {
     for (const u of uploads) void deps.discard(u).catch(() => {})
   }
+  let maxFraction = 0
+  const forward = (p: Progress) => {
+    const fraction = Math.max(maxFraction, Math.min(1, p.fraction))
+    maxFraction = fraction
+    onProgress?.({ ...p, fraction })
+  }
   let rendered: RenderedShots
   try {
-    rendered = await renderShots(deps, job.documentID, job.plan, onProgress)
+    rendered = await renderShots(deps, job.documentID, job.plan, forward, signal)
   } catch (err) {
+    if (signal.aborted || isAbort(err)) return { ok: false, message: '已取消导出', cancelled: true }
     // The device came back or will (render/gpu.ts): nothing was handed on, a retry draws them all.
     if (err instanceof DeviceLostError) return { ok: false, message: '渲染设备暂时不可用，请重试' }
     // The world-space layer is still being built (D7): it goes on, and a retry usually finds it ready.
@@ -358,13 +478,15 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
     return { ok: false, message: `导出图渲染失败：${err instanceof Error ? err.message : String(err)}` }
   }
   if (!rendered.ok) return { ok: false, message: rendered.message }
-  const sent = await uploadShots(deps.upload, rendered.images, signal, onProgress)
+  if (signal.aborted) return { ok: false, message: '已取消导出', cancelled: true }
+  const sent = await uploadShots(deps.upload, rendered.images, signal, forward)
   if (!sent.ok) {
     drop(sent.uploads)
+    if (signal.aborted || isAbort(sent.cause)) return { ok: false, message: '已取消导出', cancelled: true }
     if (sent.cause instanceof ExportSizeLimitError) return { ok: false, message: sent.cause.message }
     return { ok: false, message: `导出图上传失败：${sent.cause instanceof Error ? sent.cause.message : String(sent.cause)}` }
   }
-  onProgress?.({ stage: 'place', done: 0, total: 1 })
+  forward({ stage: 'place', done: 0, total: 1, fraction: 0.97, currentLabel: '写入画布节点…' })
   const out = await submitExport(
     { send: deps.send, wait: deps.wait },
     {
@@ -375,7 +497,10 @@ export async function runManualExport(deps: ManualExportDeps, job: ManualExport,
       shots: shotsOf(rendered.images, sent.uploads),
     },
   )
-  if (out.ok) return out
+  if (out.ok) {
+    forward({ stage: 'place', done: 1, total: 1, fraction: 1, currentLabel: '导出完成' })
+    return { ok: true, result: out.result, previews: rendered.images }
+  }
   drop(sent.uploads)
   return { ok: false, message: out.refused ? (refusals[out.code ?? ''] ?? out.message) : out.message }
 }

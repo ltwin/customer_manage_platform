@@ -103,6 +103,7 @@ import {
   fitViewport,
   nodeBounds,
   nodeRect,
+  nodesRect,
   panelInsets,
   revealViewport,
   validViewport,
@@ -836,6 +837,7 @@ export default function CanvasView({
   onPickReferences,
   centerRef,
   revealRef,
+  focusNodesRef,
   onPreview,
   onDraggingChange,
   onActions,
@@ -893,6 +895,8 @@ export default function CanvasView({
   centerRef: MutableRefObject<(() => { x: number; y: number }) | null>
   /** 节点树点击：把视口带到该节点（放得下只平移居中）；节点不在画布上时不动。 */
   revealRef?: MutableRefObject<((id: string) => void) | null>
+  /** 场景导出跳转：平滑框选并聚焦到新生成的节点（单节点平移居中，多节点框住整组）。 */
+  focusNodesRef?: MutableRefObject<((ids: readonly string[]) => void) | null>
   onPreview: (id: string, revision?: string) => void
   onDraggingChange: (dragging: boolean) => void
   onActions: (actions: GraphAction[]) => void
@@ -1089,6 +1093,31 @@ export default function CanvasView({
       revealRef.current = null
     }
   }, [revealRef, flow])
+  useEffect(() => {
+    if (!focusNodesRef) return
+    focusNodesRef.current = (ids) => {
+      const stage = element.current?.getBoundingClientRect()
+      if (!stage || !ids.length) return
+      const all = callbacks.current.canvasNodes
+      if (ids.length === 1) {
+        const rect = nodeRect(all, ids[0])
+        if (!rect) return
+        void flow.setViewport(
+          revealViewport(rect, stage, coveredInsets(stage), flow.getViewport()),
+          { duration: 280 },
+        )
+        return
+      }
+      const bounds = nodesRect(all, ids)
+      if (!bounds) return
+      void flow.setViewport(fitViewport(bounds, stage, coveredInsets(stage)), {
+        duration: 280,
+      })
+    }
+    return () => {
+      focusNodesRef.current = null
+    }
+  }, [focusNodesRef, flow])
   useEffect(() => {
     // 资产抽屉盖住左侧时，放入点往右让，落在看得见的地方。
     centerRef.current = () => {

@@ -68,6 +68,19 @@ export function nodeRect(nodes: CanvasNode[], id: string): Rect | null {
   }
 }
 
+// 一组节点的世界坐标并集包围盒（同时兼容根节点与分组内子节点），含卡片外标签。
+export function nodesRect(nodes: CanvasNode[], ids: readonly string[]): Rect | null {
+  const rects = ids
+    .map((id) => nodeRect(nodes, id))
+    .filter((r): r is Rect => r !== null)
+  if (!rects.length) return null
+  const x0 = Math.min(...rects.map((r) => r.x))
+  const y0 = Math.min(...rects.map((r) => r.y))
+  const x1 = Math.max(...rects.map((r) => r.x + r.width))
+  const y1 = Math.max(...rects.map((r) => r.y + r.height))
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+
 // 把视口带到一个节点（节点树点击）：放得下就保持倍率只平移居中；
 // 放不下才缩小到刚好放下，不低于最小倍率，也从不放大。
 export function revealViewport(
