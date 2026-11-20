@@ -460,7 +460,7 @@ func TestCompactionPrecedesHistoryMessageLimit(t *testing.T) {
 
 func TestCompactionTranscriptExcludesSkillBodies(t *testing.T) {
 	for _, name := range []string{loadSkillTool, readSkillTool} {
-		text := transcriptLine("tool", Body{ToolName: name, Blocks: []Block{{Type: "text", Text: "skill-instructions-must-not-be-summarized"}}}, true)
+		text := transcriptLine("tool", Body{ToolName: name, Blocks: []Block{{Type: "text", Text: "skill-instructions-must-not-be-summarized"}}}, true, true)
 		if strings.Contains(text, "skill-instructions-must-not-be-summarized") {
 			t.Errorf("%s body entered compaction transcript: %s", name, text)
 		}

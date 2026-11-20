@@ -23,6 +23,8 @@ export type QueuedMessage = {
   hasImage: boolean
   // 正在交给待确认链：送达才移出队列，被拒放回队首；刷新时按有没有链来恢复。
   sending?: true
+  // 服务端已确认引用不可用。移回输入框编辑后才能再次发送。
+  sceneUnavailable?: true
 }
 export type ConversationQueue = {
   items: QueuedMessage[]
@@ -79,7 +81,8 @@ export function enqueue(queue: ConversationQueue, item: QueuedMessage): Conversa
   return { ...queue, items: [...queue.items, item] }
 }
 export function removeQueued(queue: ConversationQueue, id: string): ConversationQueue {
-  return { ...queue, items: queue.items.filter((item) => item.id !== id) }
+  const items = queue.items.filter((item) => item.id !== id)
+  return { ...queue, items, ...(items.length === 0 ? { paused: false } : {}) }
 }
 export function markSending(queue: ConversationQueue, id: string): ConversationQueue {
   return {
@@ -120,7 +123,7 @@ export function nextQueueAction(
     return { queue: { ...queue, paused: true, settledRun: latest.id } }
   if (!settled.has(latest.state) && !interrupted) return { queue }
   const head = queue.items.find((item) => !item.sending)
-  if (queue.paused || !head || !ready) return { queue }
+  if (queue.paused || !head || head.sceneUnavailable || !ready) return { queue }
   return {
     queue: { ...markSending(queue, head.id), settledRun: latest.id },
     send: head,
@@ -133,6 +136,7 @@ export function resumeQueue(
   latestID?: string,
 ): { queue: ConversationQueue; send?: QueuedMessage } {
   const head = queue.items.find((item) => !item.sending)
+  if (head?.sceneUnavailable) return { queue }
   const resumed = { ...queue, paused: false, ...(latestID ? { settledRun: latestID } : {}) }
   return head
     ? { queue: markSending(resumed, head.id), send: head }
@@ -164,12 +168,14 @@ export function steerBlocked(
   item: QueuedMessage,
   imageInput: boolean,
 ): string {
+  if (item.send.segments.some((segment) => segment.type === 'scene_ref'))
+    return '含场景引用的消息只能排队'
   if (!item.steer) return '选了 Skill 的消息只能排队'
   if (item.hasImage && !imageInput) return '当前模型不支持图片，只能排队'
   return ''
 }
 
-// 去掉 Skill 的片段才能插队；有 Skill 时整条只能排队。引用之间只隔着空格时，
+// 含 Skill 或场景引用的消息整条排队。引用之间只隔着空格时，
 // 那段空白不单独成段：插队和补充不收空白的文字片段。
 export function steerSegments(segments: Segment[]): SteerSegment[] | null {
   if (segments.some((segment) => segment.type !== 'text' && segment.type !== 'content_ref'))

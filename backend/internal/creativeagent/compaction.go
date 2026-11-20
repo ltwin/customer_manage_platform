@@ -401,7 +401,7 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 			}
 			e.role, e.body = "user", Body{Blocks: []Block{{Type: "text", Text: content}}}
 		}
-		if line := transcriptLine(e.role, e.body, library); line != "" {
+		if line := transcriptLine(e.role, e.body, library, consentHas(consent, "canvas_metadata")); line != "" {
 			lines = append(lines, line)
 		}
 	}
@@ -436,7 +436,7 @@ func (s *Service) compactionRequestInTx(ctx context.Context, tx store.TxAccountS
 	}, nil
 }
 
-func transcriptLine(role string, body Body, library bool) string {
+func transcriptLine(role string, body Body, library, withSceneRefs bool) string {
 	var b strings.Builder
 	switch role {
 	case "user":
@@ -472,10 +472,8 @@ func transcriptLine(role string, body Body, library bool) string {
 			b.WriteString(text)
 		case "content_ref":
 			b.WriteString(referenceLabel(block.RefID))
-		case "scene_selection":
-			if block.Scene != nil {
-				b.WriteString(block.Scene.historyLine())
-			}
+		case "scene_selection", "scene_ref":
+			b.WriteString(historySceneLine(block, withSceneRefs))
 		}
 	}
 	for _, call := range body.ToolCalls {

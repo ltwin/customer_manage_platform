@@ -86,21 +86,89 @@ type Block struct {
 	Skill *BlockSkill `json:"skill,omitempty"`
 	// Scene is what a scene_selection block froze: the objects selected in the
 	// scene editor when the message was sent. Its own run was told the
-	// selection in its inputs; later runs hear it as a line of history.
+	// selection in its inputs; later runs hear it as a line of history. On a
+	// scene_ref block it is the scene, and the objects, referenced at that
+	// position in the message.
 	Scene *BlockScene `json:"scene,omitempty"`
 }
 
 // BlockScene snapshots the scene and the names its selected objects had, so a
 // later rename or deletion does not rewrite what the message showed.
 type BlockScene struct {
-	DocumentID string             `json:"document_id"`
-	Title      string             `json:"title"`
-	Objects    []BlockSceneObject `json:"objects"`
+	DocumentID string `json:"document_id"`
+	Title      string `json:"title"`
+	// Revision is the scene's revision when a scene_ref was frozen; a
+	// scene_selection block does not carry one.
+	Revision int64              `json:"revision,omitempty"`
+	Objects  []BlockSceneObject `json:"objects"`
 }
 
 type BlockSceneObject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Missing marks a referenced object that was no longer in the scene when
+	// the message was sent. Only the current scene is read, so its old name
+	// is unknown and Name is empty.
+	Missing bool `json:"missing,omitempty"`
+}
+
+// sceneRefGuide precedes a run's first scene reference, so "this" in the
+// photographer's words binds to what they referenced.
+const sceneRefGuide = "消息里的 [引用…] 指明了场景和物件；说「这个」「它们」时指的是引用的物件。"
+
+// sceneRefWording words a scene_ref block for the model. editing is the scene
+// open in the editor, which is named once by its own line and only pointed at
+// here. live is the run the message was sent with: only it is told to ask
+// before acting on a deleted object, since later runs read a past situation.
+func sceneRefWording(s *BlockScene, editing string, live bool) string {
+	var b strings.Builder
+	if editing != "" && s.DocumentID == editing {
+		b.WriteString("[引用当前编辑的场景")
+	} else {
+		fmt.Fprintf(&b, "[引用场景「%s」(%s，第 %d 版)", s.Title, s.DocumentID, s.Revision)
+	}
+	if len(s.Objects) > 0 {
+		var present, missing []string
+		for _, o := range s.Objects {
+			switch {
+			case o.Missing:
+				missing = append(missing, o.ID)
+			case o.Name != "":
+				present = append(present, fmt.Sprintf("「%s」(%s)", o.Name, o.ID))
+			default:
+				present = append(present, o.ID)
+			}
+		}
+		b.WriteString("中的物件：")
+		b.WriteString(strings.Join(present, "、"))
+		if len(missing) > 0 {
+			if len(present) > 0 {
+				b.WriteString("；")
+			}
+			b.WriteString(strings.Join(missing, "、") + " 发送时已不在场景里")
+			if live {
+				b.WriteString("，不要猜替代对象，先向创作者确认")
+			}
+		}
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+// historySceneLine renders the stored snapshot without consulting the live scene.
+func historySceneLine(block Block, withSceneRefs bool) string {
+	if block.Scene == nil {
+		return ""
+	}
+	switch block.Type {
+	case "scene_selection":
+		return block.Scene.historyLine()
+	case "scene_ref":
+		if withSceneRefs {
+			return sceneRefWording(block.Scene, "", false)
+		}
+	}
+	return ""
 }
 
 // historyLine words the selection for a later run reading this message, so
@@ -249,7 +317,8 @@ func validBody(b Body, limits Limits) error {
 		return creativeops.ErrValidation
 	}
 	for _, block := range b.Blocks {
-		if block.Command != "" && block.Type != "command" || block.Scene != nil && block.Type != "scene_selection" {
+		if block.Command != "" && block.Type != "command" ||
+			block.Scene != nil && block.Type != "scene_selection" && block.Type != "scene_ref" {
 			return creativeops.ErrValidation
 		}
 		switch block.Type {
@@ -279,8 +348,8 @@ func validBody(b Body, limits Limits) error {
 			if block.Code == "" || block.RefID != "" || block.Skill != nil {
 				return creativeops.ErrValidation
 			}
-		case "scene_selection":
-			if !validBlockScene(block.Scene) || block.Text != "" || block.RefID != "" || block.Code != "" || block.Skill != nil {
+		case "scene_selection", "scene_ref":
+			if !validBlockScene(block.Type, block.Scene) || block.Text != "" || block.RefID != "" || block.Code != "" || block.Skill != nil {
 				return creativeops.ErrValidation
 			}
 		default:
@@ -306,14 +375,22 @@ func validBody(b Body, limits Limits) error {
 
 // validBlockScene bounds a selection by its shape rather than the byte budget:
 // charging it would refuse a long message for having been asked about many
-// objects. What it costs as history is charged there, by itemBytes.
-func validBlockScene(s *BlockScene) bool {
-	if s == nil || s.DocumentID == "" || len(s.Objects) == 0 || len(s.Objects) > maxSceneSelection ||
-		!utf8.ValidString(s.Title) || utf8.RuneCountInString(s.Title) > maxSceneTitleRunes {
+// objects. What it costs as history is charged there, by itemBytes. A
+// scene_ref may name the whole scene (no objects) and may mark objects that
+// were gone; a selection always names objects that were there.
+func validBlockScene(kind string, s *BlockScene) bool {
+	least := 1
+	if kind == "scene_ref" {
+		least = 0
+	}
+	if s == nil || s.DocumentID == "" || !utf8.ValidString(s.DocumentID) || len(s.Objects) < least || len(s.Objects) > maxSceneSelection ||
+		!utf8.ValidString(s.Title) || utf8.RuneCountInString(s.Title) > maxSceneTitleRunes ||
+		s.Revision < 0 || s.Revision != 0 && kind != "scene_ref" {
 		return false
 	}
 	for _, o := range s.Objects {
-		if o.ID == "" || !utf8.ValidString(o.ID) || !utf8.ValidString(o.Name) || utf8.RuneCountInString(o.Name) > maxSceneNameRunes {
+		if o.ID == "" || !utf8.ValidString(o.ID) || !utf8.ValidString(o.Name) || utf8.RuneCountInString(o.Name) > maxSceneNameRunes ||
+			o.Missing && (kind != "scene_ref" || o.Name != "") {
 			return false
 		}
 	}
@@ -323,16 +400,28 @@ func validBlockScene(s *BlockScene) bool {
 // bodyBytes is what a body costs against the budget: every stored string, not
 // only the words. A skill block carries no prose but still occupies a row and a
 // payload, and charging it nothing would let 200 of them cost zero.
+//
+// A scene_ref is charged as worded for its own run, each as a separate
+// message, with the guide once: its longest form, since the editing scene's
+// shorter wording is decided only when the run is frozen.
 func bodyBytes(b Body) int {
 	total := len(b.ToolCallID) + len(b.ToolName)
 	for _, call := range b.ToolCalls {
 		total += len(call.ID) + len(call.Name) + len(call.Arguments)
 	}
+	guided := false
 	for _, block := range b.Blocks {
 		total += len(block.Text) + len(block.RefID) + len(block.Code) + len(block.Command)
 		if block.Skill != nil {
 			total += len(block.Skill.SkillID) + len(block.Skill.VersionID) +
 				len(block.Skill.Digest) + len(block.Skill.DisplayName)
+		}
+		if block.Type == "scene_ref" && block.Scene != nil {
+			total += len(sceneRefWording(block.Scene, "", true)) + perMessageOverhead
+			if !guided {
+				total += len(sceneRefGuide) + len("\n")
+				guided = true
+			}
 		}
 	}
 	return total

@@ -756,6 +756,7 @@ func (e CreativeAgentInstructionSegmentCommand) Valid() bool {
 const (
 	CreativeAgentInstructionSegmentTypeCommand    CreativeAgentInstructionSegmentType = "command"
 	CreativeAgentInstructionSegmentTypeContentRef CreativeAgentInstructionSegmentType = "content_ref"
+	CreativeAgentInstructionSegmentTypeSceneRef   CreativeAgentInstructionSegmentType = "scene_ref"
 	CreativeAgentInstructionSegmentTypeSkillRef   CreativeAgentInstructionSegmentType = "skill_ref"
 	CreativeAgentInstructionSegmentTypeText       CreativeAgentInstructionSegmentType = "text"
 )
@@ -766,6 +767,8 @@ func (e CreativeAgentInstructionSegmentType) Valid() bool {
 	case CreativeAgentInstructionSegmentTypeCommand:
 		return true
 	case CreativeAgentInstructionSegmentTypeContentRef:
+		return true
+	case CreativeAgentInstructionSegmentTypeSceneRef:
 		return true
 	case CreativeAgentInstructionSegmentTypeSkillRef:
 		return true
@@ -842,6 +845,7 @@ const (
 	CreativeAgentMessageBlockTypeContentRef     CreativeAgentMessageBlockType = "content_ref"
 	CreativeAgentMessageBlockTypeNotice         CreativeAgentMessageBlockType = "notice"
 	CreativeAgentMessageBlockTypeReference      CreativeAgentMessageBlockType = "reference"
+	CreativeAgentMessageBlockTypeSceneRef       CreativeAgentMessageBlockType = "scene_ref"
 	CreativeAgentMessageBlockTypeSceneSelection CreativeAgentMessageBlockType = "scene_selection"
 	CreativeAgentMessageBlockTypeSkillRef       CreativeAgentMessageBlockType = "skill_ref"
 	CreativeAgentMessageBlockTypeText           CreativeAgentMessageBlockType = "text"
@@ -858,6 +862,8 @@ func (e CreativeAgentMessageBlockType) Valid() bool {
 	case CreativeAgentMessageBlockTypeNotice:
 		return true
 	case CreativeAgentMessageBlockTypeReference:
+		return true
+	case CreativeAgentMessageBlockTypeSceneRef:
 		return true
 	case CreativeAgentMessageBlockTypeSceneSelection:
 		return true
@@ -5185,19 +5191,25 @@ type CreativeAgentInstructionSegment struct {
 	Command           *CreativeAgentInstructionSegmentCommand `json:"command,omitempty"`
 	ContentRevisionId *string                                 `json:"content_revision_id,omitempty"`
 
+	// DocumentId scene_ref 引用的场景文档 ID。
+	DocumentId *string `json:"document_id,omitempty"`
+
+	// ObjectIds scene_ref 引用的物件，不可重复；省略表示引用整个场景。上限按单个片段计算， 同一场景的多个片段各自计。
+	ObjectIds *[]string `json:"object_ids,omitempty"`
+
 	// SkillId 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。
 	SkillId        *string `json:"skill_id,omitempty"`
 	SkillVersionId *string `json:"skill_version_id,omitempty"`
 	Text           *string `json:"text,omitempty"`
 
-	// Type command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
+	// Type command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。 scene_ref 按位置引用一个场景，带 object_ids 时引用其中的物件；一次提交里不同的场景最多 5 个。
 	Type CreativeAgentInstructionSegmentType `json:"type"`
 }
 
 // CreativeAgentInstructionSegmentCommand defines model for CreativeAgentInstructionSegment.Command.
 type CreativeAgentInstructionSegmentCommand string
 
-// CreativeAgentInstructionSegmentType command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
+// CreativeAgentInstructionSegmentType command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。 scene_ref 按位置引用一个场景，带 object_ids 时引用其中的物件；一次提交里不同的场景最多 5 个。
 type CreativeAgentInstructionSegmentType string
 
 // CreativeAgentLimits defines model for CreativeAgentLimits.
@@ -5290,21 +5302,21 @@ type CreativeAgentMessageBlock struct {
 	// RefId 定位一个内容修订或工具结果；本身不授予任何权限
 	RefId *string `json:"ref_id,omitempty"`
 
-	// Scene scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。
+	// Scene scene_selection 与 scene_ref 块冻结的场景与物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。scene_selection 至少 1 个物体； scene_ref 引用整个场景时 objects 为空。
 	Scene *CreativeAgentMessageScene `json:"scene,omitempty"`
 
 	// Skill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。
 	Skill *CreativeAgentMessageSkill `json:"skill,omitempty"`
 	Text  *string                    `json:"text,omitempty"`
 
-	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。
+	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。 scene_ref 是正文里按位置引用的场景或场景中的物件（服务端写入的快照），objects 为空表示引用整个场景。
 	Type CreativeAgentMessageBlockType `json:"type"`
 }
 
 // CreativeAgentMessageBlockCommand command 块的命令名
 type CreativeAgentMessageBlockCommand string
 
-// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。
+// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。 scene_selection 是从 3D 场景编辑器发送时选中的物体（服务端写入的快照）；之后的运行读到这条历史时会附带一句「当时选中了什么」。 scene_ref 是正文里按位置引用的场景或场景中的物件（服务端写入的快照），objects 为空表示引用整个场景。
 type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
@@ -5334,16 +5346,22 @@ type CreativeAgentMessagePage struct {
 	PrevCursor string `json:"prev_cursor"`
 }
 
-// CreativeAgentMessageScene scene_selection 块冻结的场景与选中物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。
+// CreativeAgentMessageScene scene_selection 与 scene_ref 块冻结的场景与物体。标题和物体名是发送时的**快照**—— 之后改名或删除物体不改写历史里已经显示过的内容。scene_selection 至少 1 个物体； scene_ref 引用整个场景时 objects 为空。
 type CreativeAgentMessageScene struct {
 	DocumentId string `json:"document_id"`
 	Objects    []struct {
 		Id string `json:"id"`
 
-		// Name 未命名的物体为空字符串
+		// Missing 为 true 表示发送时这个物体已经不在场景里；省略即 false。
+		Missing *bool `json:"missing,omitempty"`
+
+		// Name 未命名或 missing 的物体为空字符串
 		Name string `json:"name"`
 	} `json:"objects"`
-	Title string `json:"title"`
+
+	// Revision 发送时场景的版本号；scene_ref 块必有，scene_selection 块不带。
+	Revision *int   `json:"revision,omitempty"`
+	Title    string `json:"title"`
 }
 
 // CreativeAgentMessageSkill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。
@@ -5476,9 +5494,12 @@ type CreativeAgentRunPayload struct {
 	// ModelKey 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。
 	ModelKey string `json:"model_key"`
 
-	// SceneContext 在场景编辑视图里发起时带上：当前场景和选中的物件，冻结为运行输入， 助手据此只改选中的物件。画布视图里发起时不带。
+	// SceneContext 在场景编辑视图里发起时带上：document_id 是正在编辑的场景（不计入 scene_ref 的 5 个场景上限）。 画布视图里发起时不带。
 	SceneContext *struct {
-		DocumentId        string   `json:"document_id"`
+		DocumentId string `json:"document_id"`
+
+		// SelectedObjectIds 已弃用：选中的物件改由指令里的 scene_ref 表达，新页面固定传空数组。 非空时仍按原规则在消息末尾追加 scene_selection 块。
+		// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 		SelectedObjectIds []string `json:"selected_object_ids"`
 	} `json:"scene_context,omitempty"`
 }

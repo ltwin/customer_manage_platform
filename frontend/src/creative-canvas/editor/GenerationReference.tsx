@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Contact, FileText, X } from 'lucide-react'
 import type { Content } from './api.ts'
-import { CharacterImage } from '../assets/CharacterFields.tsx'
 import { characterOf } from '../assets/character.ts'
-import { contentText } from './content.ts'
+import { ReferenceContent, ReferencePreview } from './ReferencePreview.tsx'
 import { MediaFigure } from './MediaView.tsx'
 
 // 参考的预览独立于节点当前查看的版本，始终展示实际发送的主版本。
@@ -25,16 +23,10 @@ export default function GenerationReference({
   label?: string
   updated?: boolean
 }) {
-  const [peek, setPeek] = useState<{ x: number; y: number } | null>(null)
+  const [peek, setPeek] = useState<HTMLElement | null>(null)
   const card = characterOf(content)
   const media = content && ['image', 'video', 'audio'].includes(content.kind)
-  const open = (el: HTMLElement) => {
-    const r = el.getBoundingClientRect()
-    setPeek({
-      x: Math.max(8, Math.min(r.left, window.innerWidth - 216)),
-      y: r.top,
-    })
-  }
+  const open = (el: HTMLElement) => setPeek(el)
   return (
     <span
       className={`cc-generation-ref ${updated ? 'is-updated' : ''}`}
@@ -86,44 +78,21 @@ export default function GenerationReference({
           <X size={11} />
         </button>
       )}
-      {peek &&
-        createPortal(
-          <div
-            className="cc-generation-ref-peek"
-            role="tooltip"
-            style={{
-              left: peek.x,
-              ...(peek.y > 310
-                ? { bottom: window.innerHeight - peek.y + 8 }
-                : { top: peek.y + 36 }),
-            }}
-          >
-            {card?.views[0] ? (
-              <CharacterImage id={card.views[0].content_revision_id} label={card.name} />
-            ) : media ? (
-              <MediaFigure
-                content={content}
-                kind={content.kind}
-                title={title}
-              />
-            ) : (
-              <p>{content ? contentText(content.payload) : '节点尚无内容'}</p>
-            )}
-            <div>
-              <b>{title}</b>
-              <span>
-                {card
-                  ? `生成时展开 ${card.views.length} 张参考图`
-                  : label
-                    ? content?.kind === 'text'
-                      ? '文本参考 · 引用处展开为原文'
-                      : `发送时记为 [${label}]`
-                    : '生成时使用的参考'}
-              </span>
-            </div>
-          </div>,
-          document.querySelector('.cc-workspace') ?? document.body,
-        )}
+      {peek && (
+        <ReferencePreview
+          anchor={peek}
+          title={title}
+          description={
+            card ? `生成时展开 ${card.views.length} 张参考图`
+              : label ? content?.kind === 'text'
+                ? '文本参考 · 引用处展开为原文'
+                : `发送时记为 [${label}]`
+                : '生成时使用的参考'
+          }
+        >
+          {content ? <ReferenceContent content={content} title={title} /> : <p>节点尚无内容</p>}
+        </ReferencePreview>
+      )}
     </span>
   )
 }

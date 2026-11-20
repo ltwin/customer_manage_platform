@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -347,5 +348,99 @@ func TestOnlyReadableTextContentCanBeSubmittedYet(t *testing.T) {
 	}
 	if len(resolved.ContentRefs) != 1 {
 		t.Fatalf("content refs %+v", resolved.ContentRefs)
+	}
+}
+
+// A scene reference owns its document and objects, and no other segment may
+// carry them. Its object list is bounded per reference, so an empty list or a
+// duplicate is a client that lost track rather than a size to trim.
+func TestASceneReferenceIsShapedBeforeAnyLookup(t *testing.T) {
+	tooMany := make([]string, maxSceneSelection+1)
+	for i := range tooMany {
+		tooMany[i] = "sobj_" + strconv.Itoa(i)
+	}
+	for _, tc := range []struct {
+		name    string
+		segment InstructionSegment
+	}{
+		{"缺场景", InstructionSegment{Type: "scene_ref"}},
+		{"夹带文字", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", Text: "x"}},
+		{"夹带内容", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", ContentRevisionID: "ccrv_x"}},
+		{"夹带 Skill", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", SkillID: "ccsk_x"}},
+		{"夹带命令", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", Command: compactCommand}},
+		{"物件为空数组", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: []string{}}},
+		{"物件 ID 为空", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: []string{""}}},
+		{"物件重复", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: []string{"sobj_1", "sobj_1"}}},
+		{"物件超过 50 个", InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: tooMany}},
+		{"文字带场景", InstructionSegment{Type: "text", Text: "x", DocumentID: "cdoc_a"}},
+		{"内容带物件", InstructionSegment{Type: "content_ref", ContentRevisionID: "ccrv_x", ObjectIDs: []string{"sobj_1"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validSegments([]InstructionSegment{tc.segment}); !errors.Is(err, creativeops.ErrValidation) {
+				t.Fatalf("%+v must be refused as malformed, got %v", tc.segment, err)
+			}
+		})
+	}
+}
+
+// Five scenes is a size, so a sixth is a limit; the same scene referenced
+// twice is one scene, each reference with its own fifty.
+func TestTheScenesOfASubmissionAreCountedOnce(t *testing.T) {
+	refs := make([]InstructionSegment, 0, maxSceneRefs+1)
+	for i := range maxSceneRefs + 1 {
+		refs = append(refs, InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_" + strconv.Itoa(i)})
+	}
+	if err := validSegments(refs); !errors.Is(err, ErrLimit) {
+		t.Fatalf("a sixth scene must be a limit, got %v", err)
+	}
+	if err := validSegments(refs[:maxSceneRefs]); err != nil {
+		t.Fatalf("five scenes must be accepted, got %v", err)
+	}
+	forty := func(prefix string) []string {
+		ids := make([]string, 40)
+		for i := range ids {
+			ids[i] = "sobj_" + prefix + strconv.Itoa(i)
+		}
+		return ids
+	}
+	twice := []InstructionSegment{
+		{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: forty("a")},
+		{Type: "text", Text: "改成金属，"},
+		{Type: "scene_ref", DocumentID: "cdoc_a", ObjectIDs: forty("b")},
+		{Type: "text", Text: "改成胡桃木"},
+	}
+	for range maxSceneRefs - 1 {
+		twice = append(twice, InstructionSegment{Type: "scene_ref", DocumentID: "cdoc_a"})
+	}
+	if err := validSegments(twice); err != nil {
+		t.Fatalf("one scene referenced several times is one scene, got %v", err)
+	}
+}
+
+// The resolver only places the references; their names are read where the run
+// is created, so a submission is placed without touching a scene.
+func TestASceneReferenceResolvesToAPlaceholderInPlace(t *testing.T) {
+	f := setup(t)
+	resolved, err := f.service.ResolveInstruction(t.Context(), f.alice, []InstructionSegment{
+		{Type: "text", Text: "把"},
+		{Type: "scene_ref", DocumentID: "cdoc_missing", ObjectIDs: []string{"sobj_1"}},
+		{Type: "text", Text: "加高"},
+		{Type: "scene_ref", DocumentID: "cdoc_missing"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := resolved.Body.Blocks
+	if len(blocks) != 4 || blocks[1].Type != "scene_ref" || blocks[3].Type != "scene_ref" {
+		t.Fatalf("blocks %+v", blocks)
+	}
+	if s := blocks[1].Scene; s == nil || s.DocumentID != "cdoc_missing" || len(s.Objects) != 1 || s.Objects[0].ID != "sobj_1" {
+		t.Fatalf("placeholder %+v", blocks[1].Scene)
+	}
+	if s := blocks[3].Scene; s == nil || s.Objects == nil || len(s.Objects) != 0 {
+		t.Fatalf("a whole-scene placeholder must carry an empty object list: %+v", blocks[3].Scene)
+	}
+	if resolved.Bytes != bodyBytes(resolved.Body) || resolved.Bytes <= len("把加高") {
+		t.Fatalf("references must be charged, bytes=%d", resolved.Bytes)
 	}
 }

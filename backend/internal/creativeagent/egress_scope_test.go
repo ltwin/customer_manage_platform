@@ -316,11 +316,11 @@ func TestClosingTheLibraryWithholdsWhatItsToolsReturned(t *testing.T) {
 	if strings.Contains(history, title) || !strings.Contains(history, "素材库检索已关闭") {
 		t.Fatalf("read_history: %s", history)
 	}
-	line := transcriptLine("tool", Body{ToolName: searchAssetsTool, Blocks: []Block{{Type: "text", Text: title}}}, false)
+	line := transcriptLine("tool", Body{ToolName: searchAssetsTool, Blocks: []Block{{Type: "text", Text: title}}}, false, true)
 	if strings.Contains(line, title) {
 		t.Fatalf("transcript: %s", line)
 	}
-	if line := transcriptLine("tool", Body{ToolName: searchAssetsTool, Blocks: []Block{{Type: "text", Text: title}}}, true); !strings.Contains(line, title) {
+	if line := transcriptLine("tool", Body{ToolName: searchAssetsTool, Blocks: []Block{{Type: "text", Text: title}}}, true, true); !strings.Contains(line, title) {
 		t.Fatalf("transcript with library search open: %s", line)
 	}
 }

@@ -2,6 +2,14 @@ import type { Asset, Canvas, CanvasNode, Content } from './api.ts'
 import type { Prompt } from './generation.ts'
 import { characterOf } from '../assets/character.ts'
 
+// 助手正文里的一处场景引用：不带物件就是整个场景。标题和物件名是插入时的显示用，
+// 发送时服务端会重新读一次并冻结。
+export type SceneRefDraft = {
+  documentID: string
+  title: string
+  objectIDs: string[]
+  names: string[]
+}
 // 展示信息来自画布快照；编号排序与服务端生成准入保持一致。
 export type PromptReference = {
   key: string
@@ -17,6 +25,8 @@ export type PromptReference = {
   // 还没有内容修订的本机图片（助手里刚粘贴或上传的）：用本机预览，上传完才能发送。
   thumbnail?: string
   state?: 'uploading' | 'failed'
+  // 场景引用（kind 为 scene）：按本机键写在正文里，发送时变成 scene_ref。
+  scene?: SceneRefDraft
 }
 const mention = () => /@\[([\w-]+)\]/g
 export function cleanMentions(text: string, ids: ReadonlySet<string>) {

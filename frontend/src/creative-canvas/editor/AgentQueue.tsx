@@ -8,28 +8,34 @@ export function AgentQueue({
   items,
   paused,
   locked,
+  draftOccupied,
   steerReason,
   onSteer,
   onRemove,
   onResume,
+  onRestore,
 }: {
   items: QueuedMessage[]
   paused: boolean
   locked: boolean
+  draftOccupied: boolean
   // null：没有可以插进去的运行，不出现插队；空串：可以插队；其余是不能插队的原因。
   steerReason: (item: QueuedMessage) => string | null
   onSteer: (item: QueuedMessage) => void
   onRemove: (id: string) => void
   onResume: () => void
+  onRestore: (item: QueuedMessage) => void
 }) {
   return (
     <section className="cc-agent-queue" aria-label="排队的消息">
       {paused && (
         <div className="cc-agent-queue-paused" role="status">
           <span>已暂停，不会自动发出</span>
-          <button type="button" disabled={locked} onClick={onResume}>
-            继续发送
-          </button>
+          {!items[0]?.sceneUnavailable && (
+            <button type="button" disabled={locked} onClick={onResume}>
+              继续发送
+            </button>
+          )}
         </div>
       )}
       <ol>
@@ -44,7 +50,17 @@ export function AgentQueue({
                 <span className="cc-agent-queue-state">发送中</span>
               ) : (
                 <>
-                  {reason !== null && (
+                  {item.sceneUnavailable ? (
+                    <button
+                      type="button"
+                      disabled={locked}
+                      aria-disabled={draftOccupied || undefined}
+                      title={draftOccupied ? '先处理输入框里正在写的消息' : '移回输入框更换场景引用'}
+                      onClick={() => onRestore(item)}
+                    >
+                      重新选择引用
+                    </button>
+                  ) : reason !== null && (
                     // 不能插队时仍可聚焦、可悬停，原因写在提示里。
                     <button
                       type="button"

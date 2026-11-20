@@ -549,6 +549,18 @@ test('a refused send goes back to the head and pauses', () => {
   assert.equal(back.paused, true)
 })
 
+test('removing the last queued item clears pause so later runs can continue', () => {
+  const paused = { ...enqueue(enqueue(emptyQueue, queued('a', { sceneUnavailable: true })), queued('b')), paused: true }
+  const partial = removeQueued(paused, 'a')
+  assert.equal(partial.paused, true)
+  assert.deepEqual(partial.items.map((item) => item.id), ['b'])
+  const emptied = removeQueued(partial, 'b')
+  assert.equal(emptied.paused, false)
+  assert.deepEqual(emptied.items, [])
+  const single = removeQueued({ ...enqueue(emptyQueue, queued('a', { sceneUnavailable: true })), paused: true }, 'a')
+  assert.equal(single.paused, false)
+})
+
 test('after a reload a message the chain holds stays in the queue as sending, one never handed over is back', () => {
   const queue = { ...markSending(enqueue(emptyQueue, queued('a')), 'a'), settledRun: 'r1' }
   const chain: PendingAgentChain = {
@@ -592,7 +604,7 @@ test('the queue survives storage and a broken storage is an empty queue', () => 
   assert.deepEqual(readQueue(storage, 'k'), emptyQueue)
 })
 
-test('only words and references steer; a skill keeps the message queued', () => {
+test('only words and content references steer; skills and scene references stay queued', () => {
   assert.deepEqual(
     steerSegments([{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }]),
     [{ type: 'text', text: '看这张' }, { type: 'content_ref', content_revision_id: 'ccrv_a' }],
@@ -611,6 +623,9 @@ test('only words and references steer; a skill keeps the message queued', () => 
     ],
   )
   assert.equal(steerBlocked(queued('a', { steer: null }), true), '选了 Skill 的消息只能排队')
+  const scene = queued('scene', { send: { model: 'm', segments: [{ type: 'scene_ref', document_id: 'cwdoc_a' }] }, steer: null })
+  assert.equal(steerSegments(scene.send.segments), null)
+  assert.equal(steerBlocked(scene, true), '含场景引用的消息只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), false), '当前模型不支持图片，只能排队')
   assert.equal(steerBlocked(queued('a', { hasImage: true }), true), '')
 })
@@ -620,4 +635,54 @@ test('a steer is a step the chain can replay', () => {
     steps: [{ path: '/agent-runs/ccrn_1/steers', operation: 'op', createdAt: '2026-11-11T00:00:00Z', payload: { instruction_segments: [] } }],
   }
   assert.equal(pendingAgentChain(JSON.stringify(chain))?.steps[0].path, '/agent-runs/ccrn_1/steers')
+})
+
+test('scene references sit in the text by local key and go out in place as scene_ref', async () => {
+  const { agentReferences, agentSegments, sceneReferences, sceneRefKey, sceneRefTitle, usedSceneRefs, sceneCount, revisionText, maxSceneRefs } =
+    await import('../src/creative-canvas/editor/agentReferences.ts')
+  const forty = (prefix: string) => Array.from({ length: 40 }, (_, i) => `sobj_${prefix}${i}`)
+  const metal = { documentID: 'cwdoc_living', title: '客厅', objectIDs: forty('m'), names: forty('m').map((_, i) => `金属${i}`) }
+  const walnut = { documentID: 'cwdoc_living', title: '客厅', objectIDs: forty('w'), names: forty('w').map((_, i) => `木${i}`) }
+  const whole = { documentID: 'cwdoc_bed', title: '卧室', objectIDs: [], names: [] }
+  const removed = { documentID: 'cwdoc_gone', title: '旧场景', objectIDs: [], names: [] }
+  const keys = [sceneRefKey(), sceneRefKey(), sceneRefKey(), sceneRefKey()]
+  assert.equal(new Set(keys).size, 4)
+  assert.ok(keys.every((key) => /^sref_[\w-]+$/.test(key)))
+  const table = { [keys[0]]: metal, [keys[1]]: walnut, [keys[2]]: whole, [keys[3]]: removed }
+  const refs = [...agentReferences(null, []), ...sceneReferences(table)]
+  // The removed reference stays in the table (for undo) but is not in the text.
+  const text = `把 @[${keys[0]}] 改成金属，@[${keys[1]}] 改成胡桃木，@[${keys[2]}] 不动`
+  assert.deepEqual(agentSegments(text, refs), [
+    { type: 'text', text: '把 ' },
+    { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: metal.objectIDs },
+    { type: 'text', text: ' 改成金属，' },
+    { type: 'scene_ref', document_id: 'cwdoc_living', object_ids: walnut.objectIDs },
+    { type: 'text', text: ' 改成胡桃木，' },
+    { type: 'scene_ref', document_id: 'cwdoc_bed' },
+    { type: 'text', text: ' 不动' },
+  ])
+  assert.deepEqual(usedSceneRefs(text, table), { [keys[0]]: metal, [keys[1]]: walnut, [keys[2]]: whole })
+  assert.equal(sceneCount(text, table), 2)
+  assert.equal(maxSceneRefs, 5)
+  // Local keys are left alone when the text is saved: they are not revisions.
+  assert.equal(revisionText(text, refs), text)
+  assert.equal(sceneRefTitle(whole), '卧室')
+  assert.equal(sceneRefTitle({ ...metal, objectIDs: metal.objectIDs.slice(0, 2) }), '客厅 · 金属0、金属1')
+  assert.equal(sceneRefTitle(metal), '客厅 · 金属0、金属1 +38')
+  assert.equal(sceneRefTitle({ documentID: 'd', title: '', objectIDs: ['a'], names: [''] }), '未命名场景 · 未命名')
+
+  // A draft keeps only the references its text uses, and comes back whole.
+  const chain = {
+    steps: messageSteps('c', { model: 'm', segments: agentSegments(text, refs) }),
+    draft: { conversation: 'c', model: 'm', skill: '', text, scenes: usedSceneRefs(text, table) },
+  }
+  assert.deepEqual(pendingAgentChain(JSON.stringify(chain)), chain)
+  assert.throws(
+    () => pendingAgentChain(JSON.stringify({ ...chain, draft: { ...chain.draft, scenes: { bad: whole } } })),
+    /场景引用记录损坏/,
+  )
+  assert.throws(
+    () => pendingAgentChain(JSON.stringify({ ...chain, draft: { ...chain.draft, scenes: { [keys[0]]: { ...whole, objectIDs: [1] } } } })),
+    /场景引用记录损坏/,
+  )
 })

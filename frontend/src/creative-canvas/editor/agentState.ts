@@ -1,4 +1,4 @@
-import type { AgentMaterial } from './agentReferences.ts'
+import type { AgentMaterial, SceneRefDraft } from './agentReferences.ts'
 import type { SceneContext } from '../../creative-scene/context.ts'
 import type { components } from '../../api/schema'
 
@@ -62,6 +62,8 @@ export type AgentDraft = {
   materials?: AgentMaterial[]
   // 来自队列的发送：链落盘后队列移出这一条，被拒时放回队首而不是回填输入框。
   queueItem?: string
+  // 正文里用到的场景引用，按本机键存；恢复草稿时放回引用表。
+  scenes?: Record<string, SceneRefDraft>
 }
 // 每张画布一个待确认槽位，每个标签页一份。
 export const agentPendingKey = (account: string, canvasID: string) =>
@@ -97,7 +99,8 @@ export function messageSteps(
   message: {
     model: string
     segments: Segment[]
-    // Sent from the scene editor: the run works on its scene and selection.
+    // Sent from the scene editor: the run works on its scene. Selected
+    // objects travel as scene_ref segments in the text now.
     scene?: SceneContext | null
   },
 ): AgentStep[] {
@@ -114,7 +117,7 @@ export function messageSteps(
           ? {
               scene_context: {
                 document_id: message.scene.documentID,
-                selected_object_ids: message.scene.selected.slice(0, 50),
+                selected_object_ids: [],
               },
             }
           : {}),
@@ -289,6 +292,22 @@ function readDraft(d: unknown): AgentDraft {
       ))
   )
     throw new Error('待发送素材记录损坏')
+  if (
+    d.scenes !== undefined &&
+    (!record(d.scenes) ||
+      !Object.entries(d.scenes).every(
+        ([key, s]: [string, unknown]) =>
+          /^sref_[\w-]+$/.test(key) &&
+          record(s) &&
+          typeof s.documentID === 'string' &&
+          typeof s.title === 'string' &&
+          Array.isArray(s.objectIDs) &&
+          s.objectIDs.every((id: unknown) => typeof id === 'string') &&
+          Array.isArray(s.names) &&
+          s.names.every((name: unknown) => typeof name === 'string'),
+      ))
+  )
+    throw new Error('待发送场景引用记录损坏')
   return {
     conversation: d.conversation,
     model: d.model,
@@ -297,6 +316,9 @@ function readDraft(d: unknown): AgentDraft {
     ...(d.materials ? { materials: d.materials as AgentMaterial[] } : {}),
     ...(typeof d.queueItem === 'string' && d.queueItem
       ? { queueItem: d.queueItem }
+      : {}),
+    ...(d.scenes
+      ? { scenes: d.scenes as Record<string, SceneRefDraft> }
       : {}),
   }
 }
