@@ -129,10 +129,12 @@ export function uploadGenerated(
   target: UploadTarget,
   signal?: AbortSignal,
   pause: Wait = wait,
+  onProgress?: (p: UploadProgress) => void,
 ): Promise<Upload> {
   let session: Upload | undefined
   const track = (p: UploadProgress) => {
     session = p.upload ?? session
+    onProgress?.(p)
   }
   return uploadAs(file, declared, target, track, signal, pause).catch(
     (e: unknown) => {

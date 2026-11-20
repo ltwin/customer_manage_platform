@@ -184,6 +184,7 @@ async function transparentSceneExports() {
     const { nodes } = await result.json()
     assert.equal(nodes.length, 1, `${resolution} places one canvas image`)
     exports.push({ id: nodes[0].node_id, size, mime, transparent })
+    await dialog.getByRole('button', { name: '留在编辑器' }).click()
     await dialog.waitFor({ state: 'hidden' })
     if (suspended) {
       assert.ok(!snapshot?.nodes.some((n) => n.id === nodes[0].node_id), 'snapshot still predates the receipt')

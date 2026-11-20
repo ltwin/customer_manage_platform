@@ -58,6 +58,10 @@ export type ShotOptions = {
   deadline?: number
   /** Lossy encoding quality (0.85 for render_view JPEG, 0.95 for 4K/8K opaque JPEG). */
   quality?: number
+  /** Frame-level progress callback while warming probes and accumulating frames. */
+  onFrame?: (done: number, total: number) => void
+  /** Cancels rendering between probe chunks and frames. */
+  signal?: AbortSignal
 }
 /** What the shooter has mounted: clay and line shots need clay, lit ones lit. */
 export type Look = 'clay' | 'lit'
@@ -270,7 +274,18 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
         try {
           // The probes from a cold start before the first frame (S2 design「导出预热与时限」).
           const started = performance.now()
-          await picture?.warm(camera, frame, PROBE_WARMUP)
+          let warmTotal = 0
+          await picture?.warm(
+            camera,
+            frame,
+            PROBE_WARMUP,
+            (done) => {
+              warmTotal = PROBE_WARMUP
+              options.onFrame?.(done, PROBE_WARMUP + frames)
+            },
+            options.signal,
+          )
+          if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
           // The e2e's: the warm-up's time, its work waited for, and what the probes hold after it.
           if (sceneTest && picture) {
             const warmed = picture.probeStats
@@ -282,14 +297,19 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
           }
           // Its lit materials built in the background, not in its first frame (SceneRenderer.prepare).
           await picture?.prepare(camera, frame)
+          if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
           for (let i = 1; i < frames; i++) {
+            if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
             g.advanceFrame()
             picture!.render(camera, frame)
             if (freezes && !thaw) thaw = freezeShadows(three)
             await g.settle()
+            if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
             if (g.isLost()) throw new DeviceLostError()
             if (options.deadline !== undefined && performance.now() > options.deadline) throw new ShotTimeout()
+            if (i % 4 === 0 || i === frames - 1) options.onFrame?.(warmTotal + i, warmTotal + frames)
           }
+          if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
           // The last frame is drawn and encoded in one go (SceneGPU.capture).
           const shot = await g.capture(
             () => {
@@ -306,6 +326,7 @@ export async function openShooter(first: Scene, models: Readonly<Record<string, 
             options.type,
             options.type === 'image/png' ? undefined : (options.quality ?? jpegQuality),
           )
+          options.onFrame?.(warmTotal + frames, warmTotal + frames)
           if (sceneTest && picture?.probeStats?.drawn) {
             gpuTestHooks.picturesWithProbes++
             if (gpuTestHooks.lastWarm) gpuTestHooks.lastWarm.after = picture.probeStats

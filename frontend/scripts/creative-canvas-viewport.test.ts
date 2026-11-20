@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fitViewport, nodeBounds, panelInsets, validViewport, zoomLimits } from '../src/creative-canvas/editor/viewport.ts'
+import { fitViewport, nodeBounds, nodesRect, panelInsets, validViewport, zoomLimits } from '../src/creative-canvas/editor/viewport.ts'
 import type { CanvasNode } from '../src/creative-canvas/editor/api.ts'
 
 const n = (id: string, x: number, y: number, w: number, h: number, parent: string | null = null) =>
@@ -47,4 +47,21 @@ test('panel insets follow the open drawers', () => {
   assert.deepEqual(panelInsets(stage, lib, agent), { left: 428, right: 424, top: 90, bottom: 90 })
   const narrow = { ...stage, width: 700, right: 700 } as DOMRect
   assert.deepEqual(panelInsets(narrow, lib, agent), { left: 16, right: 16, top: 72, bottom: 80 })
+})
+
+test('nodesRect computes union bounds for both root and grouped child nodes', () => {
+  const nodes = [
+    n('g', 500, 100, 900, 500, null),
+    n('c1', 20, 40, 300, 200, 'g'),
+    n('c2', 340, 40, 300, 200, 'g'),
+    n('other', -200, -200, 100, 100, null),
+  ]
+  assert.equal(nodesRect(nodes, ['missing']), null)
+  // c1 world = (520, 140), label top = 112; c2 world right = 500+340+300 = 1140, bottom = 140+200 = 340
+  assert.deepEqual(nodesRect(nodes, ['c1', 'c2']), {
+    x: 520,
+    y: 112,
+    width: 620,
+    height: 228,
+  })
 })

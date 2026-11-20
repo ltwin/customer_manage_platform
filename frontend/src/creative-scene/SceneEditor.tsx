@@ -14,7 +14,7 @@ import { runManualExport, type ExportPlan, type Progress } from './host/exportSh
 import { cameraFraming } from './host/framing.ts'
 import { loadModels } from './host/loadModels.ts'
 import { openShooter } from './host/render.ts'
-import { ExportDialog, type UnkeyedChoice } from './panels/ExportDialog.tsx'
+import { ExportDialog, type ExportCompleted, type UnkeyedChoice } from './panels/ExportDialog.tsx'
 import { ScreenshotDialog } from './panels/ScreenshotDialog.tsx'
 import type { CaptureViewport } from './screenshot.ts'
 import { escapeTarget, handleKey, isMac, shortcutFor, typing, type Action } from './input/keymap.ts'
@@ -114,20 +114,30 @@ const agentNotice = '助手正在修改此物件，你的修改可能让它重�
 const focusKinds: readonly SceneObject['kind'][] = ['primitive', 'model_instance', 'group']
 const savedWaitMs = 15_000
 
-/** Resolves true once nothing waits to be saved, false after the wait. */
-function whenSaved(session: ReturnType<typeof openScene>, ms: number): Promise<boolean> {
+/** Resolves true once nothing waits to be saved, false after the wait or abort. */
+function whenSaved(session: ReturnType<typeof openScene>, ms: number, signal?: AbortSignal): Promise<boolean> {
   if (!session.hasUnsaved()) return Promise.resolve(true)
+  if (signal?.aborted) return Promise.resolve(false)
   return new Promise((resolve) => {
-    const timer = window.setTimeout(() => {
+    const cleanup = () => {
+      window.clearTimeout(timer)
       stop()
+      signal?.removeEventListener('abort', onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      resolve(false)
+    }
+    const timer = window.setTimeout(() => {
+      cleanup()
       resolve(false)
     }, ms)
     const stop = session.store.subscribe(() => {
       if (session.hasUnsaved()) return
-      window.clearTimeout(timer)
-      stop()
+      cleanup()
       resolve(true)
     })
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -173,7 +183,8 @@ export default function SceneEditor({
   sceneNodeID,
   onSaveModel,
   onPlaceScreenshot,
-  onExportPlaced,
+  onExported,
+  onFocusExportedNodes,
   libraryTick = 0,
 }: {
   documentID: string
@@ -185,7 +196,10 @@ export default function SceneEditor({
   onSaveModel?: (request: SaveRequest) => void
   /** Uses the owning canvas's image import, including its upload tray and undo. */
   onPlaceScreenshot?: (file: File) => void
-  onExportPlaced?: (firstNodeID: string) => void
+  /** Called right after scene export places new nodes on the canvas. */
+  onExported?: (nodeIDs: readonly string[]) => void
+  /** Closes the scene editor and smoothly frames the newly exported canvas nodes. */
+  onFocusExportedNodes?: (nodeIDs: readonly string[]) => void
   /** Changes when the page wrote to the asset library; the asset panel reads it again. */
   libraryTick?: number
 }) {
@@ -247,7 +261,14 @@ export default function SceneEditor({
   // the outliner tab, so going back to it does not read the library again.
   const [assetsSeen, setAssetsSeen] = useState(false)
   if (!assetsSeen && u.sidebar && u.sidebarTab === 'assets') setAssetsSeen(true)
-  const [exportRun, setExportRun] = useState<{ busy: boolean; progress: Progress | null; error?: string }>({ busy: false, progress: null })
+  const exportAbort = useRef<AbortController | null>(null)
+  const [exportRun, setExportRun] = useState<{
+    busy: boolean
+    progress: Progress | null
+    error: string
+    completed: ExportCompleted | null
+  }>({ busy: false, progress: null, error: '', completed: null })
+  useEffect(() => () => exportAbort.current?.abort(), [])
   // The code sandbox starts with the first bake and goes with the editor.
   const sandbox = useRef<SandboxHost | null>(null)
   const modelEdits = useMemo(
@@ -768,9 +789,26 @@ export default function SceneEditor({
   }
   /** The dialog takes the focus with it when it goes: the keys stay with the editor. */
   const closeExport = () => {
-    setExportRun({ busy: false, progress: null })
+    if (exportRun.busy) return
+    setExportRun({ busy: false, progress: null, error: '', completed: null })
     ui.setState({ exporting: false })
     root.current?.focus()
+  }
+  const cancelExport = () => {
+    exportAbort.current?.abort()
+  }
+  const continueExport = () => {
+    setExportRun((prev) => ({ ...prev, error: '', completed: null }))
+  }
+  const focusExportedNodes = (nodeIDs: readonly string[]) => {
+    if (!onFocusExportedNodes) return
+    if (session.blockedCount() > 0) {
+      closeExport()
+      ui.setState({ confirmClose: true })
+      return
+    }
+    closeExport()
+    onFocusExportedNodes(nodeIDs)
   }
   /** The photographer's export: saved edits first, then the server's snapshot (E1). */
   const startExport = async (plan: ExportPlan, unkeyed?: UnkeyedChoice) => {
@@ -778,10 +816,21 @@ export default function SceneEditor({
     // The export draws the saved scene (AC-8b): what waits for a key is keyed first, as I does, or dropped.
     if (unkeyed === 'discard') ui.setState({ unkeyed: {} })
     if (unkeyed === 'key') insertKeysOn(Object.keys(ui.getState().unkeyed))
-    setExportRun({ busy: true, progress: null })
-    if (!(await whenSaved(session, savedWaitMs))) {
-      setExportRun({ busy: false, progress: null, error: '还有修改没有保存，保存后再导出' })
-      return
+    const controller = new AbortController()
+    exportAbort.current = controller
+    setExportRun({
+      busy: true,
+      progress: { stage: 'prepare', done: 0, total: 1, fraction: 0.01, currentLabel: '确认场景已保存…' },
+      error: '',
+      completed: null,
+    })
+    if (!(await whenSaved(session, savedWaitMs, controller.signal))) {
+      if (exportAbort.current === controller) exportAbort.current = null
+      if (controller.signal.aborted) {
+        setExportRun({ busy: false, progress: null, error: '', completed: null })
+        return notify('已取消导出')
+      }
+      return setExportRun({ busy: false, progress: null, error: '还有修改没有保存，保存后再导出', completed: null })
     }
     const account = currentAccount() ?? ''
     const out = await runManualExport(
@@ -789,22 +838,38 @@ export default function SceneEditor({
         read: (id) => readScene(id),
         loadModels: (doc) => loadModels(doc.scene, doc.models),
         open: (doc, look) => openShooter(doc.scene, doc.models, look),
-        upload: (file, declared, signal) =>
-          uploadGenerated(file, declared, { kind: 'staged', scene_export: { canvas_id: canvasID, scene_node_id: sceneNodeID } }, signal),
+        upload: (file, declared, signal, onProgress) =>
+          uploadGenerated(file, declared, { kind: 'staged', scene_export: { canvas_id: canvasID, scene_node_id: sceneNodeID } }, signal, undefined, onProgress),
         discard: discardUpload,
         send: (operation, createdAt, payload) => exportScene(account, documentID, operation, createdAt, payload),
         wait: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
       },
       { documentID, canvasID, sceneNodeID, plan },
-      new AbortController().signal,
-      (progress) => setExportRun({ busy: true, progress }),
+      controller.signal,
+      (progress) => setExportRun((prev) => (prev.busy ? { ...prev, progress } : prev)),
     )
+    if (exportAbort.current === controller) exportAbort.current = null
     if (out.ok) {
-      closeExport()
-      const firstNode = out.result.nodes[0]
-      if (firstNode) onExportPlaced?.(firstNode.node_id)
+      const nodeIDs = out.result.nodes.map((n) => n.node_id)
+      const exportedIDs = plan.markerIDs?.length ? plan.markerIDs : plan.cameraObjectIDs
+      setExportRun({
+        busy: false,
+        progress: null,
+        error: '',
+        completed: {
+          nodeIDs,
+          previews: out.previews,
+          exportedIDs,
+        },
+      })
+      onExported?.(nodeIDs)
       notify(`已导出 ${out.result.nodes.length} 张图到画布`)
-    } else setExportRun({ busy: false, progress: null, error: out.message })
+    } else if (out.cancelled) {
+      setExportRun({ busy: false, progress: null, error: '', completed: null })
+      notify('已取消导出')
+    } else {
+      setExportRun({ busy: false, progress: null, error: out.message, completed: null })
+    }
   }
   /**
    * An asset's model dropped on the viewport, where it snapped. Its summary is
@@ -1406,7 +1471,15 @@ export default function SceneEditor({
           视口截图
         </button>
         {canvasID && sceneNodeID && (
-          <button className="btn" disabled={readOnly} onClick={() => ui.setState({ exporting: true })} title="导出分镜到画布">
+          <button
+            className="btn"
+            disabled={readOnly}
+            onClick={() => {
+              setExportRun({ busy: false, progress: null, error: '', completed: null })
+              ui.setState({ exporting: true })
+            }}
+            title="导出分镜到画布"
+          >
             <ImageDown size={16} />
             导出
           </button>
@@ -1786,15 +1859,26 @@ export default function SceneEditor({
       {u.exporting && (
         <ExportDialog
           cameras={objects.filter((o) => o.kind === 'camera')}
-          shots={(s.view?.scene.timeline.markers ?? []).map((m, _i, all) => ({ id: m.id, title: shotTitle(all, m.id), bound: byID.get(m.camera_object_id)?.kind === 'camera' }))}
+          shots={(s.view?.scene.timeline.markers ?? []).map((m, _i, all) => {
+            const cam = byID.get(m.camera_object_id)
+            const bound = cam?.kind === 'camera'
+            const c = cam?.camera
+            const lensText = bound && c ? `${Math.round(c.focal_mm ?? 50)}mm${c.depth_of_field && c.f_stop ? ` · f/${c.f_stop}` : ''}` : undefined
+            return { id: m.id, title: shotTitle(all, m.id), bound, ...(lensText ? { lensText } : {}) }
+          })}
           unkeyed={Object.entries(u.unkeyed).flatMap(([id, paths]) => Object.keys(paths).map((p) => `「${byID.get(id)?.name || '物件'}」的${channelLabel(p)}`))}
           display={display}
           resolution={shown?.render.resolution ?? '2k'}
           transparentBackground={shown?.render.transparent_background === true}
+          engine={shown?.render.engine ?? 'workbench'}
           busy={exportRun.busy}
           progress={exportRun.progress}
           error={exportRun.error}
+          completed={exportRun.completed}
           onExport={(plan, unkeyed) => void startExport(plan, unkeyed)}
+          onCancelExport={cancelExport}
+          onContinueExport={continueExport}
+          onFocusNodes={onFocusExportedNodes ? focusExportedNodes : undefined}
           onClose={closeExport}
         />
       )}

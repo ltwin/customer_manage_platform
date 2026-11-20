@@ -16,7 +16,7 @@ import {
   verticalFov,
 } from '../src/creative-scene/cameraOptics.ts'
 import { cameraFraming } from '../src/creative-scene/host/framing.ts'
-import { renderShots, submitExport, uploadShots, type ExportPass, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
+import { renderShots, submitExport, uploadShots, type ExportPass, type Progress, type ShotImage } from '../src/creative-scene/host/exportShots.ts'
 import { ShotTimeout } from '../src/creative-scene/render/gpu.ts'
 import type { Shooter } from '../src/creative-scene/host/render.ts'
 import { DeviceLostError } from '../src/creative-scene/render/gpu.ts'
@@ -432,7 +432,6 @@ test('a device lost while the shots were drawn hands none of them on: the shoote
   assert.equal(closed, 2)
 })
 
-
 test('transparent encoding uses PNG at each resolution and opaque 4K/8K clay and lit use JPEG', async () => {
   const { imageTypeOf, extensionOf } = await import('../src/creative-scene/render/engines.ts')
   assert.deepEqual(imageTypeOf('clay', '1k', true), { type: 'image/png' })
@@ -453,11 +452,14 @@ test('transparent export follows plan.transparentBackground over scene setting, 
 
   const shootCalls: { kind: string; type: string; quality?: number; transparent?: boolean }[] = []
   const mkShooter = (makeBlob?: (o: { kind: string; type: string; quality?: number; transparent?: boolean }) => Blob): Shooter => ({
-    shoot: (_f, o) => {
+    maxTextureSize: 16384,
+    world: false,
+    shoot: async (_f, o) => {
       shootCalls.push({ kind: o.kind, type: o.type, quality: o.quality, transparent: o.transparent })
       return makeBlob ? makeBlob(o) : new Blob(['img'], { type: o.type })
     },
     setLook: async () => {},
+    setScene: async () => {},
     confirm: async () => {},
     close: () => {},
   })
@@ -552,4 +554,96 @@ test('transparent export follows plan.transparentBackground over scene setting, 
     assert.ok(partialUpload.cause instanceof ExportSizeLimitError)
     assert.equal(partialUpload.uploads.length, 1)
   }
+})
+
+test('manual export reports monotonic cost-weighted progress across prepare, frame rendering, chunked upload, and placement, returning previews', async () => {
+  const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+  const doc = {
+    scene: { ...sceneOf(camera()), render: { mode: 'lit', exposure_ev: 0, engine: 'realtime_gi', resolution: '2k' } },
+    models: {},
+    revision: '8',
+  }
+  const events: Progress[] = []
+  const shooter: Shooter = {
+    maxTextureSize: 16384,
+    world: true,
+    shoot: async (_f, opts) => {
+      opts.onFrame?.(1, 4)
+      opts.onFrame?.(4, 4)
+      return new Blob([opts.kind.repeat(opts.kind === 'lit' ? 40 : 10)], { type: 'image/png' })
+    },
+    setLook: async () => {},
+    setScene: async () => {},
+    confirm: async () => {},
+    close: () => {},
+  }
+  let upSeq = 0
+  const out = await runManualExport(
+    {
+      read: async () => doc as never,
+      loadModels: async () => {},
+      open: async () => shooter,
+      upload: async (file, _declared, _signal, onProgress) => {
+        onProgress?.({ stage: 'creating', sent: 0, total: file.size })
+        onProgress?.({ stage: 'uploading', sent: Math.floor(file.size / 2), total: file.size })
+        onProgress?.({ stage: 'verifying', sent: file.size, total: file.size })
+        return { id: `ccup_${++upSeq}` } as Upload
+      },
+      discard: async () => {},
+      send: async () => ({ change_id: 'cwch', scene_revision: '8', nodes: [{ marker_id: null, camera_object_id: 'cam', pass: 'clay', node_id: 'n1', content_revision_id: 'r1', lens: {} as never }, { marker_id: null, camera_object_id: 'cam', pass: 'lit', node_id: 'n2', content_revision_id: 'r2', lens: {} as never }] }),
+      wait: async () => {},
+    },
+    { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan: { cameraObjectIDs: ['cam'], passes: ['clay', 'lit'] } },
+    new AbortController().signal,
+    (p) => events.push(p),
+  )
+  assert.ok(out.ok && out.previews.length === 2)
+  assert.deepEqual(out.previews.map((p) => p.pass), ['clay', 'lit'])
+  assert.ok(events.length >= 6)
+  for (let i = 1; i < events.length; i++) {
+    assert.ok(events[i].fraction >= events[i - 1].fraction, `monotonic fraction: ${events[i - 1].fraction} -> ${events[i].fraction}`)
+  }
+  assert.equal(events[0].stage, 'prepare')
+  assert.equal(events.at(-1)?.fraction, 1)
+  // clay (1 frame workbench) weighs far less than realtime_gi lit (warm-up + 128 frames): clay end fraction stays well below midpoint of [0.06, 0.80].
+  const clayEnd = events.find((e) => e.stage === 'render' && e.done === 1)
+  assert.ok(clayEnd && clayEnd.fraction < 0.25, `clay weighted fraction ${clayEnd?.fraction} < 0.25`)
+})
+
+test('aborting a manual export closes the shooter, discards staged uploads, and returns cancelled', async () => {
+  const { runManualExport } = await import('../src/creative-scene/host/exportShots.ts')
+  const doc = { scene: sceneOf(camera()), models: {}, revision: '4' }
+  const controller = new AbortController()
+  let closed = 0
+  const discarded: string[] = []
+  const shooter: Shooter = {
+    maxTextureSize: 16384,
+    world: false,
+    shoot: async (_f, opts) => new Blob([opts.kind]),
+    setLook: async () => {},
+    setScene: async () => {},
+    confirm: async () => {},
+    close: () => { closed++ },
+  }
+  let n = 0
+  const out = await runManualExport(
+    {
+      read: async () => doc as never,
+      loadModels: async () => {},
+      open: async () => shooter,
+      upload: async () => {
+        const id = `ccup_${++n}`
+        if (n === 1) controller.abort()
+        return { id } as Upload
+      },
+      discard: async (u) => { discarded.push(u.id) },
+      send: async () => ({ change_id: 'cwch', scene_revision: '4', nodes: [] }),
+      wait: async () => {},
+    },
+    { documentID: 'doc', canvasID: 'ccv', sceneNodeID: 'node', plan: { cameraObjectIDs: ['cam'], passes: ['clay', 'line', 'lit'] } },
+    controller.signal,
+  )
+  assert.deepEqual(out, { ok: false, message: '已取消导出', cancelled: true })
+  assert.equal(closed, 1)
+  assert.ok(discarded.includes('ccup_1'))
 })

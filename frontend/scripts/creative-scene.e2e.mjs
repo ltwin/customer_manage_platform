@@ -3024,6 +3024,9 @@ async function runExport(page, server) {
   assert.match(await dialog.textContent(), /共 4 张/)
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.getByText('已成功导出 4 张分镜图到画布').waitFor()
+  assert.equal(await dialog.locator('.cc-export-thumb img').count(), 4)
+  await dialog.getByRole('button', { name: '留在编辑器' }).click()
   await dialog.waitFor({ state: 'detached' })
   const body = server.exports[0]
   return body.payload.shots.map((s) => ({ camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
@@ -4911,6 +4914,8 @@ await check('AC-6: in the rendered view the dialog ticks all three passes; 3 cam
   assert.match(await dialog.textContent(), /共 9 张/)
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.getByText('已成功导出 9 张分镜图到画布').waitFor()
+  await dialog.getByRole('button', { name: '留在编辑器' }).click()
   await dialog.waitFor({ state: 'detached' })
   const shots = server.exports[0].payload.shots.map((s) => ({ camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
   assert.deepEqual(shots.map((s) => [s.camera, s.images.map((i) => i.pass)]), [a, b, c].map((id) => [id, ['clay', 'line', 'lit']]))
@@ -5084,6 +5089,7 @@ await check('AC-4 faces: the same split in material preview, the rendered view, 
   await dialog.getByLabel('材质光照').check()
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, 'export submitted', 180_000)
+  await dialog.getByRole('button', { name: '留在编辑器' }).click()
   await dialog.waitFor({ state: 'detached' })
   const lit = server.exports[0].payload.shots.find((x) => x.camera_object_id === cam).images.find((i) => i.pass === 'lit')
   pictures.export = server.uploadBytes.get(lit.upload_id)
@@ -5219,6 +5225,7 @@ await check('W1 clay: the sun, the sky, fog, ambient and a shadowing lamp change
     await dialog.waitFor()
     await dialog.getByRole('button', { name: '导出' }).click()
     await waitFor(() => server.exports.length === n + 1, 'export submitted', 180_000)
+    await dialog.getByRole('button', { name: '留在编辑器' }).click()
     await dialog.waitFor({ state: 'detached' })
     return server.exports.at(-1).payload.shots.map((s) => server.uploadBytes.get(s.images.find((i) => i.pass === 'clay').upload_id))
   }
@@ -5462,6 +5469,7 @@ async function exportReference(gpu, name, { forceWebGL = false, forceCompatibili
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, `${name}: export submitted`, 600_000)
   const exportMs = Date.now() - started
+  await dialog.getByRole('button', { name: '留在编辑器' }).click()
   await dialog.waitFor({ state: 'detached' })
   const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
   const images = []
@@ -11192,6 +11200,7 @@ if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: AC-S1-8, S0’s h
       lit.push(server.uploadBytes.get(image.upload_id))
       if (dir) await writeFile(`${dir}/hall-export-${n}.png`, lit.at(-1))
       console.log(`  export ${n}${n > 2 ? ' without the layer' : ''}: ${Date.now() - started} ms`)
+      await dialog.getByRole('button', { name: '留在编辑器' }).click().catch(() => {})
       await dialog.waitFor({ state: 'hidden' }).catch(() => {})
     }
     record.heap = { viewport: Math.round(record.heap.viewport / 2 ** 20), peak: Math.round(record.heap.peak / 2 ** 20), drawing: Math.round(record.heap.drawing / 2 ** 20) }
@@ -11262,6 +11271,7 @@ if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: S0’s hall expor
         throw e
       })
       lit.push(server.uploadBytes.get(server.exports[n - 1].payload.shots[0].images.find((i) => i.pass === 'lit').upload_id))
+      await dialog.getByRole('button', { name: '留在编辑器' }).click().catch(() => {})
       await dialog.waitFor({ state: 'hidden' }).catch(() => {})
     }
     const digests = await page.evaluate(() => window.__sceneGPU.traceDigests)
@@ -11355,6 +11365,7 @@ if (process.env.SCENE_E2E_TRACE_PERF) await check('trace perf: AC-S1-9, the hall
       await dialog.getByRole('button', { name: '导出' }).click()
       await waitFor(() => server.exports.length === n, `${what}: export ${n} submitted`, 600_000)
       lit.push(server.uploadBytes.get(server.exports[n - 1].payload.shots[0].images.find((i) => i.pass === 'lit').upload_id))
+      await dialog.getByRole('button', { name: '留在编辑器' }).click().catch(() => {})
       await dialog.waitFor({ state: 'hidden' }).catch(() => {})
       console.log(`  ${what}: ${Date.now() - started} ms`)
     }
@@ -13238,6 +13249,7 @@ async function exportEquivalence(gpu, { nomerge = false, engine = 'workbench', h
   for (const pass of ['白模（clay）', '线稿', '材质光照']) await dialog.getByLabel(pass).check()
   await dialog.getByRole('button', { name: '导出' }).click()
   await waitFor(() => server.exports.length === 1, 'export submitted', 600_000)
+  await dialog.getByRole('button', { name: '留在编辑器' }).click()
   await dialog.waitFor({ state: 'detached' })
   const cameras = new Map(server.scene.objects.map((o) => [o.id, o.name]))
   const images = {}
@@ -14640,6 +14652,7 @@ await check('timeline AC-10 and AC-8b: an export by shot draws each shot at its 
       await ask.getByRole('button', { name: answer }).click()
     }
     await waitFor(() => server.exports.length === before + 1, 'export submitted', 180_000)
+    await dialog.getByRole('button', { name: '留在编辑器' }).click()
     await dialog.waitFor({ state: 'detached' })
     return server.exports.at(-1).payload.shots.map((s) => ({ marker: s.marker_id, camera: s.camera_object_id, images: s.images.map((img) => ({ pass: img.pass, png: server.uploadBytes.get(img.upload_id) })) }))
   }
@@ -15460,6 +15473,7 @@ await check('transparent background: 4K and 8K lossless PNG with depth of field 
     await dialog.waitFor()
     await dialog.getByRole('button', { name: '导出' }).click()
     await waitFor(() => server.exports.length === 1, '4K transparent export submitted', 120_000)
+    await dialog.getByRole('button', { name: '留在编辑器' }).click()
     await dialog.waitFor({ state: 'detached' })
 
     const exported = server.exports[0].payload
@@ -15495,6 +15509,7 @@ await check('transparent background: 4K and 8K lossless PNG with depth of field 
     console.log('8K square DOF export started')
     await dialog.getByRole('button', { name: '导出' }).click()
     await waitFor(() => server.exports.length === 2, '8K transparent export submitted', 120_000)
+    await dialog.getByRole('button', { name: '留在编辑器' }).click()
     await dialog.waitFor({ state: 'detached' })
     console.log(`8K square DOF export completed in ${Math.round(performance.now() - start8k)} ms`)
     const [shot8k] = server.exports[1].payload.shots

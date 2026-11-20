@@ -1012,7 +1012,7 @@ export class SceneRenderer {
    * the frames dispatched WARM_CHUNK at a time, the page let go between
    * (scene-gi-stalls): the GPU takes them in the same order.
    */
-  async warm(camera: Camera, frame: Frame, n: number) {
+  async warm(camera: Camera, frame: Frame, n: number, onProgress?: (done: number) => void, signal?: AbortSignal) {
     const perspective = (camera as PerspectiveCamera).isPerspectiveCamera === true
     if (frame.engine !== 'realtime_gi' || frame.wireframe === true || !perspective) return
     const handle = this.trace().handle()
@@ -1020,8 +1020,9 @@ export class SceneRenderer {
     const probes = this.probesFor(handle, camera)
     await probes.compiled()
     for (let i = 0; i < n; ) {
+      if (signal?.aborted) return
       if (i > 0) await yieldToPage()
-      if (this.disposed) return
+      if (this.disposed || signal?.aborted) return
       // Written and dispatched in one synchronous run, as a frame's (world/exposure.ts preExposure).
       applyExposure(this.scene, frame.preExposure ?? 1)
       try {
@@ -1034,6 +1035,7 @@ export class SceneRenderer {
       } finally {
         preExposure.value = 1
       }
+      onProgress?.(i)
     }
     this.warmed = true
   }
