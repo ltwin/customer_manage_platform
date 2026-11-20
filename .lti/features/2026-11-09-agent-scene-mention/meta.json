@@ -1,12 +1,26 @@
 {
   "uid": "98650d92-2da5-4025-97d7-f2b81ca459e1",
-  "revision": 7,
+  "revision": 8,
   "id": "agent-scene-mention",
   "kind": "feature",
   "assurance": "governed",
   "state": "closed",
   "createdAt": "2026-11-09T12:29:03.360Z",
-  "updatedAt": "2026-11-19T10:05:19.509Z",
+  "updatedAt": "2026-11-20T02:08:53.659Z",
+  "integration": {
+    "by": "Samson Lee",
+    "at": "2026-11-20T02:08:53.556Z",
+    "summary": "合入 develop（64a66ab6）并通过 make check-merge 集成验证",
+    "method": "manual",
+    "limitations": "项目未配置 LTI checks，采用主检出实跑 make check-merge（含前后端构建、golangci-lint/oxlint、generate-check、1145 项前端单测、全量受影响 Go 测试含 creativeagent/creativescene 全绿；scripts/deploy/Dockerfile 未变更跳过 test-ops）",
+    "sourceCommit": "cea09b8ba8d9180cb7bc53f3e80495d802251761",
+    "targetCommit": "64a66ab6f045003c684649a5206cb37fca21b3ce",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "5ade06555d6fade25002e6d492422b730dde2144bc21f4db05564b3d81c34afe"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "trust-boundary",
