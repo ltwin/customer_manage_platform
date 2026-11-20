@@ -248,7 +248,7 @@ func (v *Verifier) verifyImage(path string, out *Verified) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if out.Mime == "image/webp" && isAnimatedWebP(f, out.Size) {
 		return fmt.Errorf("%w: animated webp", ErrUnsupported)
 	}
