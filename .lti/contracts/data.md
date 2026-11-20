@@ -169,6 +169,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 | `scene.render.exposure_ev` | number −10…10（曝光补偿，档） | 否 | 0；只作用于 `lit`（编辑器的最终渲染、`lit` 导出、`render_view` 的 `lit`）：渲染时 three.js `toneMappingExposure = 2^exposure_ev`。白模、线稿和材质预览不受影响（修订 v10） |
 | `scene.render.engine` | `"workbench"` \| `"realtime_gi"`（渲染器） | 否 | `workbench`；只决定最终渲染怎么出图（编辑器的最终渲染、`lit` 导出、`render_view` 的 `lit`）。`workbench` 是光栅化渲染；`realtime_gi` 在其上加入屏幕空间的间接光、反射与接触阴影，并在满足上限的 WebGPU 设备上用世界空间追踪补上屏幕外的反射和漫反射（`scene-world-space-gi`；兼容模式、设备不支持或场景过大时只做屏幕空间，不改写场景），视口停止操作后收敛，导出和 `render_view` 多帧累积（`scene-webgpu-renderer` design「渲染器与显示模式」）。白模、线稿、线框和材质预览不受影响；正交视图按 `workbench` 显示。只计入 `lit` 的渲染指纹，值为 `workbench` 时不计入；`realtime_gi` 计入时连同世界空间追踪的版本号一起计入（`scene-world-space-gi` S2 起为 1），所以 S2 上线后已有的实时 GI `lit` 导出各显示一次「场景已更新」，`workbench` 的 `lit` 和 `clay`、`line` 不受影响，指纹版本前缀不升级。`path_tracing` 由后续 Epic 加入，现在写入返回 400 |
 | `scene.render.resolution` | `"1k"` \| `"2k"` \| `"4k"` \| `"8k"`（输出分辨率） | 否 | `2k`；导出图（`clay`、`line`、`lit`）的长边分别为 1024、2048、4096、8192 px，短边按摄像机的画幅比例。不影响视口、`render_view`（JPEG，长边 1024）和缩略图。不计入渲染指纹 |
+| `scene.render.transparent_background` | boolean（透明背景） | 否 | `false`（持久化快照在值为 `false` 时省略该键、仅在 `true` 时写入 `"transparent_background": true`；场景读取接口、修订读取接口与 `read_scene` 始终补齐返回布尔值）；开启后，跟随场景设置的白模（`clay`）和材质光照（`lit`）导出图里相机直接看到天空的像素（天空、纯色背景、太阳圆盘、夜空的月亮与星星和银河）透明（`alpha = 0`），物体照旧由天空、太阳、月光、环境反射和灯光照亮，金属与镜面映出的天空保留；抗锯齿与景深边缘按覆盖率输出半透明，玻璃等透射材质与体积物件保留场景内的物理透射、折射与反射，并对空背景输出单通道 W3C `source-over` 合成用的近似标量透明度；`1k` 至 `8k` 均按选定分辨率编码为无损 `image/png`。编辑器的最终渲染模式在视口背景显示棋盘格，白模、材质预览保持原有中性灰背景，线框不变。线稿（`line`）不受影响，仍是白底 `image/png`；助手回看（`render_view`）和缩略图不受影响。助手 `export_shots` 另可按次显式指定 `transparent_background` 覆盖本设置而不改写快照（见 `data: 场景客户端任务`、`data: 导出图来源`）。计入 `clay` 和 `lit` 的渲染指纹（`line` 不计入），有效值为 `false` 时省略该键，存量导出图不因本次上线变为过时 |
 | `scene.objects[]` | 对象数组，≤ 2000 | 是 | 新建为一个内置地面 |
 | `objects[].id` | string | 是 | 见身份规则 |
 | `objects[].kind` | `"primitive"` \| `"model_instance"` \| `"light"` \| `"camera"` \| `"group"` | 是 | `model_instance` 自 C2 起可写入 |
@@ -242,6 +243,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 - `scene-webgpu-renderer` R2：`render` 新增 `engine` 和 `resolution`。两者是场景的渲染设置而不是本机偏好，这样编辑器、`render_view` 和导出看到同样的画面，摄影师、其他标签页和助手也一致。不迁移：读取时补 `workbench`、`2k`，读取场景的响应里也带齐。回滚到不认识这两个字段的后端会读取失败，只做前向修复。
 - scene-pose-system 子项 2（外部 GLB 导入）：`maps` 加 `emissive`，`principled@1` 加参数 `vertex_color`。不迁移：没有这两项就是没有自发光贴图、不乘顶点色，渲染与之前相同；自发光贴图的图片进引用表、计入 64 张上限，与其他贴图相同。旧编辑器不认识 `emissive` 键会读取失败，前后端同一版本上线，回滚只做前向修复。OpenAPI 的 `CreativeSceneTextureMaps` 加可选的 `emissive`。
 - scene-pose-system 子项 3（蒙皮人形角色）：`objects[].model` 可以写 `{builtin}`（`data: 内置模型库`），与 `content_revision_id` 二选一。不迁移：已有物件都是 `content_revision_id`。渲染指纹按 `builtin` 的条目 ID 计入模型身份（条目发布后不变，与内容修订 ID 同样稳定），没有内置模型的场景指纹不变。OpenAPI 的场景模型引用改为二选一的两种结构。旧编辑器和旧后端都不认识 `builtin`，前后端同一版本上线，回滚只做前向修复。
+- `scene-transparent-background`：`render` 新增 `transparent_background`（缺省 `false`），经 `set_render` 按键合并读写（非布尔值或 `null` 返回 400 `validation_failed`）。不迁移：存储层（`encodeScene`）在值为 `false` 时省略该键、仅在值为 `true` 时写入 `"transparent_background": true`，而内存模型与全部读取出口（读取场景、读取历史修订、`read_scene`、冲突报告）始终返回完整布尔值；OpenAPI 的 `CreativeSceneRender` 增加必返的 `transparent_background`，`CreativeSceneRenderPatch` 增加可选的 `transparent_background`。未开启透明背景的新建或编辑场景（以及开启后又关回的最新修订）在库内不含该键，回滚到旧后端完全可读；已写入 `transparent_background: true` 的历史修订仍可能用于历史读取或恢复，关闭开关只影响新写入的修订。前后端与 worker 同版本上线，含 `true` 的修订适用既定的前向修复策略。
 
 ## 场景内置基础体
 
@@ -466,9 +468,10 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - `{viewpoint:{position, target, focal_mm}}`：临时视点，4:3；
   - `{preset:"overview"|"top"|"front"|"side"}`：按全部可见物件的包围盒自动取景，4:3（总览为斜上方 3/4 视角）。
   - `depth_of_field`（修订 v8，可选，默认 `false`）：`true` 时按这台摄像机的光圈和对焦渲染虚化，画面与白模导出同一套渲染（含 AO），长边仍为 1024。只能与 `camera_object_id` 一起用，并且建任务时这台摄像机的 `depth_of_field` 必须为 `true`，否则工具直接返回错误、不建任务；渲染时按当时快照里的光圈和对焦，不再检查开关。缺省时全清晰。修订 v9：截图与编辑器视口、白模导出同一套渲染，带 AO；`depth_of_field` 只决定是否虚化。
-- `export_shots`：`{camera_object_ids, passes, canvas_id, scene_node_id}`（C4）。
+- `export_shots`：`{camera_object_ids, passes, canvas_id, scene_node_id, transparent_background?}`（C4；分镜字段见 `data: 场景时间线`「客户端任务的分镜字段」；`transparent_background` 自 `scene-transparent-background` 起）。
   - `camera_object_ids`：建任务时当前快照里的摄像机（工具未指定时为全部摄像机，按物件顺序）；`passes`：`clay` / `line` / `lit` 的子集，不重复。图片总数 ≤ 48（`api: 导出分镜` 的上限）。
   - `canvas_id`、`scene_node_id`：运行所在画布，以及该画布上这个场景的节点（有多个时取最早创建的）；建任务时确定，场景不在该画布上时不建任务。
+  - `transparent_background`（可选布尔值）：助手调用 `export_shots` 显式指定本次导出的 `clay`、`lit` 是否使用透明背景（`line` 恒为白底），直接覆盖执行时场景快照的 `render.transparent_background` 而不改写场景文档，也不受其他标签页切换场景开关的影响；省略时渲染端按执行时刻场景快照的 `render.transparent_background` 出图。服务端在完成事务里以实际渲染修订和任务覆盖值核对渲染端回报的 `effective_transparent_background`。校验通过后，显式覆盖值原样写入导出节点的 `based_on.transparent_background`（见 `api: 完成场景客户端任务`、`data: 导出图来源`）。
   - 渲染端出图上传后，把图片清单随完成任务提交（`api: 完成场景客户端任务` 的 `export`），节点在完成事务里创建。任务没有成功，画布上就没有节点；同一任务最多一组节点。
 
 `result`：
@@ -486,16 +489,17 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ### 生命周期与演进
 - 终态任务保留 30 天后由维护任务删除；只删任务行，不影响产物。
-- 新增 `kind` 时扩展 CHECK，并在 `request` 定义新外形；渲染端只认领自己能执行的 kind（认领请求的 `kinds`）。C3 实现 `bake_model`、`render_view`，`export_shots` 由 C4 实现。修订 v10：`render_view` 的 `mode` 增加 `lit`（C5），请求外形不变，旧任务缺省按 `clay`。
+- 新增 `kind` 时扩展 CHECK，并在 `request` 定义新外形；渲染端只认领自己能执行的 kind（认领请求的 `kinds`）。C3 实现 `bake_model`、`render_view`，`export_shots` 由 C4 实现。修订 v10：`render_view` 的 `mode` 增加 `lit`（C5），请求外形不变，旧任务缺省按 `clay`。`scene-transparent-background`：`export_shots` 的 `request` 增加可选布尔字段 `transparent_background`，未带该字段的任务照旧按渲染时刻的场景设置出图。
 
 ## 导出图来源
 
 - **用途**：记录画布图片节点由哪个场景、哪个修订、哪个分镜（或哪台摄像机）、哪种导出方式生成，用于提示过时。
-- **存储**：`creative_nodes.config` 内的 `based_on` 对象，只对导出产生的 `core.image` 节点写入：`{scene_document_id, scene_revision: CreativeRevision, marker_id, frame, camera_object_id, pass:"clay"|"line"|"lit", content_revision_id, fingerprint, lens}`。
+- **存储**：`creative_nodes.config` 内的 `based_on` 对象，只对导出产生的 `core.image` 节点写入：`{scene_document_id, scene_revision: CreativeRevision, marker_id, frame, camera_object_id, pass:"clay"|"line"|"lit", content_revision_id, fingerprint, lens, transparent_background?}`。
   - `marker_id`、`frame`（`scene-pose-system` 子项 1）：按分镜导出时为分镜 ID 和导出时它的帧号；按摄像机导出时 `marker_id` 为 null、`frame` 为 0。旧节点没有这两个字段，按 null 和 0 读取。
   - `camera_object_id` 是渲染所用的摄像机（按分镜导出时取导出时分镜绑定的摄像机）。
   - `content_revision_id` 是导出时放进节点的那份图片内容修订。
   - `fingerprint` 是 `scene_revision` 的快照按 `frame` 求值后，对这台摄像机、这种导出方式的渲染指纹（带版本前缀，如 `v1:`），客户端只当不透明字符串。
+  - `transparent_background`（`scene-transparent-background`，可选布尔值）：仅当助手 `export_shots` 显式传入 `transparent_background` 参数时写入（`true` 或 `false`），记录这张图按哪一种透明背景覆盖设置导出；摄影师手动导出和未传该参数的 `export_shots` 省略该键，表示跟随场景的 `render.transparent_background`。
 - **镜头快照 `lens`**（修订 v9）：导出时这台摄像机在这一帧求值后的镜头，`{focal_mm, depth_of_field, f_stop, focus_m, focus_object_name}`。`focus_m` 是实际对焦距离（米）：有对焦物件时按物件原点沿视线的深度算出，否则为 `focus`，并夹在 `near`、`far` 之间；`focus_object_name` 是对焦物件的名称，按距离对焦或对焦物件已删除时为空字符串。景深关闭时也照样记录。`lens` 只说明这张图是怎么拍的，不参与过时判断（指纹已计入这些参数）；没有 `lens` 的节点按未知处理。
 - **角色**：派生信息，只用于提示，不参与权限和内容。
 - **写入**：只由导出的放置流程经画布命令层写入，入口是「导出分镜」接口和 `export_shots` 的完成事务；画布命令的 `add_node` 不接受 `config`，客户端无法写入。写入后不再修改：节点当前内容不是 `content_revision_id`（换了图、切了版本）时，来源信息不生效，所以改图的操作不需要逐一清除它。复制节点时随 `config` 一起复制，内容相同，判断照样成立。
@@ -511,6 +515,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
   - 按摄像机导出的节点（含旧节点）：按第 0 帧求值，用 `camera_object_id` 算指纹；这台摄像机已不在当前快照里算 `stale`。
   - 指纹只计入求值结果，不计入 `timeline` 和通道本身。所以只改别的分镜的关键帧，这一张不会过时；没有通道和分镜的场景，指纹与本条修改之前完全相同，**指纹版本不升级**。
   - 指纹计入哪些内容见 `scene-editor-3d` design「渲染模式与导出」，按导出方式区分。改动后又改回原样不算过时。指纹版本与当前不同时算 `stale`，不读旧快照重算（修订 v9，读画布不增加查询；指纹版本只在渲染规则变化时升级，届时旧图本来就该重新导出）。
+  - 透明背景（`scene-transparent-background`）：`clay` 和 `lit` 的渲染指纹计入有效透明背景布尔值，`line` 不计入（线稿恒为白底）。落位指纹以 `scene_revision` 对应的实际渲染快照计算，过时检查以画布读取时的当前快照计算。节点 `based_on.transparent_background` 存在（助手按次显式指定导出）时，两次计算均用该布尔值替代各自快照的场景开关，因此单独切换场景开关不影响过时状态。几何、摄像机、材质、灯光等相关改动仍照常触发 `stale`，包括渲染完成后、落位前发生的改动。覆盖值省略时按各自快照的场景开关计算，其他渲染输入相同的情况下，切换开关使 `clay`、`lit` 变为 `stale`、切回恢复 `current`。有效值为 `false` 时从指纹输入里省略该键，指纹版本前缀 `v1:` 与上线前导出的图哈希保持不变。
 
 ## 模型资产
 

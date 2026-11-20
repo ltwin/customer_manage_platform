@@ -496,7 +496,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 
 - **GLB 与缩略图**：响应不含地址。编辑器按模型修订调用现有的 `POST /creative/media-access-tickets`（`content_revision_id`，`role` 为 `original` 取 GLB、`thumbnail` 取缩略图，`purpose` 为 `display`），按修订缓存，与画布图片的做法一致。
 - **代码**：通过 `GET /creative/content-revisions/{content_revision_id}` 单独读取（载荷的 `model.generator.code`），避免每次重读快照都传几十 KB 代码。
-- **图片像素**（修订 v17）：响应不含地址。编辑器按图片修订调用 `POST /creative/media-access-tickets`（`role = original`、`purpose = display`）取原图：展示图是有损 JPEG，且会丢透明通道，不能用作贴图。
+- **图片像素**（修订 v17；`scene-transparent-background` 更新）：响应不含地址。编辑器按图片修订调用 `POST /creative/media-access-tickets`（`role = original`、`purpose = display`）取原图：展示图（`role = display`，长边超过 1600 px 时生成，缩至长边 1600 px；不透明原图编为有损 JPEG，含透明像素的 PNG/WebP 原图编为保留透明通道的无损 `image/png`）已缩小分辨率且对不透明图有损压缩，不能用作贴图。
 - **性能**：模型摘要和图片摘要在同一个读快照事务里批量读取，查询次数不随模型数、图片数增长。
 
 ### 失败响应
@@ -589,6 +589,7 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 - C2 修改：`models.*` 去掉 `glb_url`、`thumbnail_url`（C1 期间 `models` 恒为空，没有调用方用过这两个字段），加 `name_hint` 和 `generator.code_sha256`；去掉 503（读取不再签发票据）。
 - 修订 v13（C5b）：模型摘要增加 `faces`，基础体的 `primitive.faces` 随快照返回。只增加字段，旧客户端忽略。
 - 修订 v17（C5c1）：响应增加必返的 `images`（没有贴图时为 `{}`），快照的材质槽可能带 `maps`、`mapping`、`alpha_mode`、`alpha_cutoff`。只增加字段；旧编辑器忽略它们，按常数参数渲染，但会在下次整体替换槽位时丢掉贴图，所以前后端同一版本上线。
+- `scene-transparent-background`：响应 `scene.render` 增加必返的布尔字段 `transparent_background`（上线前旧快照与省略存储 `false` 的快照在读取时均补齐返回 `false`，对应 OpenAPI `CreativeSceneRender`）；服务端校验长边超过 1600 px 的上传图片（含场景导出图）时，含透明像素的 PNG/WebP 原图生成长边 1600 px 的无损 `image/png` 展示图（保留透明通道），JPEG 和完全不透明的 PNG/WebP 原图仍生成有损 JPEG 展示图。只增加响应字段并修正透明展示图，旧客户端忽略未知展示字段，前后端同一版本上线。
 
 ## 提交场景命令
 
@@ -934,7 +935,7 @@ Content-Type: application/json
 | `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`、`host_error`（宿主侧失败：媒体校验失败、WebGL 上下文丢失、代码加载失败等）；`message` ≤ 4000 字符，会原样交给助手 |
 | `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest, module, faces}`。`faces` 是渲染端从替换前的修订按 `data: 模型内容`「重新生成时」带过来的面级分配，没有时省略，原样写入 `commit_model.faces`（修订 v13）。任务结果的外形不变：保留和作废了多少，由工具层比较新旧两个模型修订的分配得出。`module` 为 `{params_schema, params, mount}`：沙箱回传、宿主按服务端规则校验过的规范化模块信息。服务端用任务 `request` 里的代码计算 `code_sha256`、组装 `generator`，按 `api: 场景模型命令` 的规则校验，再组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id`；替换目标的预期版本取任务 `request.expected` |
 | `render` | object | `kind=render_view` 且成功时 | `{image_upload_id, scene_revision}`：暂存图片（JPEG，长边 1024），以及渲染端实际渲染的场景修订（不得大于当前修订） |
-| `export` | object | `kind=export_shots` 且成功时 | `{scene_revision, shots}`：渲染端实际渲染的场景修订，以及图片清单。`shots` 的结构与 `api: 导出分镜` 相同，必须正好覆盖任务 `request` 的摄像机和导出方式。服务端在保存点内按 `api: 导出分镜` 的规则放置节点（位置、标题、`based_on`），放到任务 `request` 的画布和场景节点旁，节点按 `request.camera_object_ids` 的顺序排行，写入者记为助手的 `run_id` |
+| `export` | object | `kind=export_shots` 且成功时 | `{scene_revision, shots, effective_transparent_background?}`：实际渲染修订、图片清单和实际背景模式。`shots` 的结构与 `api: 导出分镜` 相同，必须正好覆盖任务 `request` 的摄像机和导出方式。服务端在保存点内按 `api: 导出分镜` 的规则放置节点（位置、标题、`based_on`），放到任务 `request` 的画布和场景节点旁，节点按 `request.camera_object_ids` 的顺序排行，写入者记为助手的 `run_id` |
 
 ### 成功响应
 200：`{job_id, state, result}`，`result` 结构见 `data: 场景客户端任务`。`state` 为 `succeeded` 或 `failed`。下列情况任务记为 `failed` 并照常返回 200，渲染端不重试：
@@ -952,6 +953,7 @@ Content-Type: application/json
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
 ### 交互规则
+- **背景模式校验**（`scene-transparent-background`）：由任务请求中显式的 `transparent_background`（含 `false`）覆盖实际渲染修订的场景开关，得到白模和材质光照的期望背景模式。含白模或材质光照，且任务显式覆盖或期望值为 `true` 时，`export.effective_transparent_background` 必传。仅线稿的期望值为 `false`，可省略。字段存在时必须匹配期望，显式 `null` 或其他非布尔输入返回 `400 validation_failed`（任务不变）。应传而缺少或值不匹配时，任务按 `invalid_result` 失败并返回 200，提示「导出背景设置不一致，请刷新页面后重新导出」。校验在消费暂存图和创建节点前执行，整批拒绝。已识别失败的新页面丢弃暂存图，旧页面遗留的暂存图由现有过期清理回收。刷新后重新发起导出。
 - **原子性**：结果落库与任务终态在同一事务里。前台在同一事务记录助手工具任务终态并续跑，存量任务沿用原有续跑路径。后台在同一事务标记待收尾，随后由收尾器发布完成通知。场景写入和导出的画布放置在保存点内执行，冲突、结果不合规或无法放置时回滚到保存点，任务记为 `failed`（带原因），前台运行或后台通知随后将结果送给助手。导出的节点只在任务成功时创建。
 - **幂等**：沿用公共约定。网络中断后用同一 key 重试或查回执。
 
@@ -992,6 +994,7 @@ Content-Type: application/json
 ### 兼容与变更
 首次定义。修订 v6：`bake` 增加 `module`；`render` 增加 `scene_revision`；错误码增加 `host_error`；暂存上传不可用改用 `creative_upload_unavailable`（与 `api: 场景模型命令` 一致）；冲突与结果不合规记为任务 `failed` 并返回 200（`creativeops` 只提交 2xx 回执）；完成时复查关联运行。修订 v8（C4 起草时）：`export` 由 `{export_operation_id}` 改为 `{scene_revision, shots}`，导出节点在完成事务里创建，不再经 `api: 导出分镜`。C3 只做了占位（服务端对 `export` 结果直接拒绝，没有调用方），不需要兼容。修订 v13（C5b）：`bake` 增加可选的 `faces`；旧渲染端烘焙时不带 `faces`，等于全部作废，服务端照常写入。
 - 本次扩展后台任务的完成准入和收尾。后台任务在本账号内核对已受理的对话、目标、任务期限和租约，来源运行可已终止；不复核外发同意。前台任务的完成事务照旧续跑运行。后台任务归属、终态和通知语义见「助手耗时工具任务与完成通知」。
+- `scene-transparent-background`：任务完成的 `export` 增设条件必传的背景模式回报。传统不透明任务和仅线稿任务仍接受旧请求外形。
 
 ## 列出场景客户端任务
 
@@ -1103,12 +1106,16 @@ Content-Type: application/json
 | `canvas_id` | string | 是 | 场景节点所在画布 |
 | `scene_node_id` | string | 是 | 场景节点；新节点放在它的右侧，与它同一父级 |
 | `scene_revision` | CreativeRevision | 是 | 出图时的场景修订；必须等于或早于当前修订，并且仍存在 |
+| `effective_transparent_background` | boolean | 条件必传 | 渲染端实际给白模、材质光照使用的背景模式。含任一该导出方式且 `scene_revision` 对应的场景开关为 `true` 时必传。仅线稿的有效值为 `false` |
 | `shots` | array，1–32 | 是 | 每个分镜（或每台摄像机）一项；节点按这个顺序逐行排列 |
 | `shots[].marker_id` | string | 与 `camera_object_id` 二选一 | 在 `scene_revision` 的 `timeline.markers` 里存在，且绑定的摄像机在该修订里存在、`kind=camera`。分镜不重复。渲染端按这个分镜的帧求值、用它的摄像机出图 |
 | `shots[].camera_object_id` | string | 与 `marker_id` 二选一 | 在 `scene_revision` 里存在且 `kind=camera`；按第 0 帧求值。摄像机不重复。只用于没有分镜的场景和旧客户端 |
 | `shots[].images` | array，1–3 | 是 | `{pass:"clay"\|"line"\|"lit", upload_id}`，同一镜头内 `pass` 不重复；暂存图片就绪、未消费、类型为图片。全部镜头合计 ≤ 48 张 |
 
 一次请求里的 `shots` 只能全部用 `marker_id`，或全部用 `camera_object_id`。
+
+- 手动导出与助手任务均通过 `POST /api/v1/creative/uploads` 建立图片暂存会话。`target` 含 `kind: "staged"` 及 `scene_export: {canvas_id, scene_node_id}`。建会话时校验当前账号可写画布及其场景节点，文件仍走分片上传、媒体校验和账号存储额度。建会话与媒体校验均以单张 320 MiB 限制原图。
+- 绑定场景的图片暂存项仅可由该场景的手动导出或助手任务消费。旧页面的通用暂存项仍可用原有分镜落位流程消费。普通上传的默认单张上限为 25 MiB。
 
 ### 成功响应
 200：`{change_id, scene_revision, nodes:[{marker_id, camera_object_id, pass, node_id, content_revision_id, lens}]}`。
@@ -1124,10 +1131,11 @@ Content-Type: application/json
 | 404 | `not_found` | 场景、画布或场景节点不存在，不属于当前账号，或场景节点不指向这个场景 | 停止 |
 | 409 | `archived_read_only` | 画布已归档（沿用画布现有错误码） | 恢复画布后重新导出 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 丢弃暂存图片 |
-| 409 | `creative_upload_unavailable` | 暂存图片不存在、未就绪、已过期、已被消费或不是图片 | 重新上传后用新的 operation id 重试 |
+| 409 | `creative_upload_unavailable` | 暂存图片不存在、未就绪、已过期、已被消费、不是图片或绑定到另一个场景 | 重新上传后用新的 operation id 重试 |
 | 413 | `creative_size_limit` | 图片合计超过 48 张，或画布节点数超过上限 | 分次导出 |
 
 ### 交互规则
+- **背景模式校验**（`scene-transparent-background`）：按请求中实际渲染的 `scene_revision` 确定期望值。回报字段存在时必须与期望一致，显式 `null` 属于外形错误。应传而缺少或报告不符时返回 `400 validation_failed`，提示「导出背景设置不一致，请刷新页面后重新导出」。在消费暂存图和写入节点前校验，拒绝时整批无节点，客户端按现有规则丢弃暂存图。
 - **原子性**：全部节点一起创建或都不创建。
 - **幂等**：沿用公共约定。网络中断、超时或 5xx 时，用同一 operation id 和 `client_created_at` 重试，得到同一组节点；只有服务端明确拒绝（4xx）时才丢弃暂存图片。
 - **过时**：后续场景修改不影响已创建的节点；过时提示由节点视图计算（`data: 导出图来源`）。
@@ -1154,6 +1162,8 @@ Content-Type: application/json
 首次定义。图片节点 `config` 新增 `based_on`，节点快照新增可选的 `based_on_state`，都属于兼容扩展；旧读取端忽略这些字段。修订 v8（C4 起草时）：错误码对齐画布与暂存的现有实现（归档为 `archived_read_only`，暂存不可用为 `creative_upload_unavailable`）；合计 48 张上限（画布一次修改最多牵动 100 个对象，每张图占节点和版本两个）；响应增加 `scene_revision`；只服务手动导出，去掉 `job_id`，助手导出改随完成任务提交；`based_on` 增加 `content_revision_id` 和 `fingerprint`；写明位置、标题和重试规则。修订 v9（C4 验收中）：`based_on` 和响应的节点增加镜头快照 `lens`，兼容扩展。
 
 `scene-pose-system` 子项 1：`shots[]` 增加 `marker_id`，与 `camera_object_id` 二选一；响应节点增加 `marker_id`。旧客户端只发 `camera_object_id`，行为不变（没有通道的场景按第 0 帧求值就是现在的快照）。前端同一版本上线。
+
+`scene-transparent-background`：增设条件必传的背景模式回报。旧页面提交不透明来源修订或仅线稿时可省略；需要该字段的请求须刷新后重新出图。
 
 ## 模型存入资产库
 
@@ -2298,6 +2308,12 @@ Content-Type: application/json
 ### `write_model@1`
 
 目标保持 `add` 或 `replace` 二选一。新任务给非空 `code` 或可复用的 `base_content_revision_id`。冲突重试给 `retry_job_id`，与前两种来源及 `params` 互斥。参数错误在入队前返回具体提示。
+
+### `export_shots@1`
+
+除既有的 `document_id`、`shots`、`camera_object_ids`、`passes` 外，支持可选布尔参数 `transparent_background`（`scene-transparent-background`）：
+- 显式传入 `true` 或 `false` 时，本次导出的 `clay`、`lit` 直接按该透明背景状态出图并记入导出节点的 `based_on.transparent_background`，不修改场景文档 `scene.render.transparent_background`、不产生场景修订，也不受场景开关当前取值或其他标签页切换开关的影响；`line` 始终为白底。传入非布尔值返回 `creative_tool_refused`。
+- 省略时，按渲染端执行任务时读取到的 `scene.render.transparent_background` 出图。
 
 ## 读取内置模型文件
 

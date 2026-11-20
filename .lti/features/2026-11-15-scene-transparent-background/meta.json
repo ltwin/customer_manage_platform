@@ -1,12 +1,12 @@
 {
   "uid": "11145675-5d4c-4fdd-b139-2b59b867d183",
-  "revision": 12,
+  "revision": 15,
   "id": "scene-transparent-background",
   "kind": "feature",
   "assurance": "governed",
-  "state": "in-progress",
+  "state": "closed",
   "createdAt": "2026-11-16T06:29:06.433Z",
-  "updatedAt": "2026-11-18T10:35:53.153Z",
+  "updatedAt": "2026-11-20T02:38:24.294Z",
   "risk": {
     "factors": [
       "broad-impact",
@@ -660,9 +660,215 @@
         "version": 2,
         "digest": "195bdd37e00053ecaf6cf11a14afcd451ec487d9997b5238e8a7d43012526cfe"
       }
+    },
+    {
+      "by": "Antigravity",
+      "at": "2026-11-20T02:36:58.812Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "项目未配置 LTI 自动 checks；本轮为代码审查修复与合并 develop 后的定向回归（creativemedia、creativeagent、generate-check、go vet、tsc/oxlint/build 与 151 项前端单测），未改动着色与视口逻辑，GPU 像素与 8K 性能沿用前轮 Metal Chromium 实测证据。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染设置、着色与视口分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "修正 scene_tools.go 禁用词后重跑 creativeagent 的 TestExportShotsTransparentOverrideAndSetRenderChanges 与全套 TestCompaction 回归全绿；合并 develop 后前端 creative-scene-agent.test.ts 与 tsc/lint/build 通过；保留前轮 Agent 浏览器回归证据。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关场景命令校验未改。TestRenderTransparentBackgroundStorageAndValidation 验证省略 false 的存储、布尔值响应及无效输入处理。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染管线与着色未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，线稿与导出对话框逻辑未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，透明 AA、WebGL2 暗斜边、黑白底景深、雾、大气与 GI 前景运动分支未改，均通过浏览器回归。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，玻璃与体积着色未改。Metal 浏览器玻璃/体积 E2E 与 creative-scene-gi.test.ts 守卫通过。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，夜空渲染未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，关闭态渲染分支未改。Metal WebGPU + Chromium 物理天空样本与 7d7fc198 基线 5 张不透明图 SHA-256 及解码 RGBA 一致。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "本轮修复 320 MiB 分镜原图在 workFactsProbe/probeImage 走 25 MiB 上限与整文件进堆的问题、补充 uploadMaxBytes 零值回退，以及高分辨率 PNG canvasPngBlob 竞态 DeviceLostError 守卫；实跑 TestScopedSceneExportLargePNG（含 >25 MiB 4096×2048 PNG 的 ScheduleFactsProbe 与 ResolveGenerationMedia 校验）、TestTransparentDisplayRendition 与 creative-scene-gpu.test.ts 全绿；沿用前轮 Metal Chromium 4K/8K 方形+景深透明 PNG 浏览器实测。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "合并 develop 后验证 WorkspacePage/SceneEditor 无冲突、tsc/lint/build 与 151 项前端单测全绿；保留前轮真实后端浏览器 2K/4K PNG 展示件与断 SSE 刷新定位证据。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹与过时判定逻辑未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹逻辑未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，回报校验与暂存隔离逻辑未改。手动导出与助手任务 HTTP 校验、旧通用暂存兼容及清理用例通过。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，视口棋盘格与白模/材质预览/线框背景未改。creative-scene.e2e.mjs UI 场景验证最终渲染棋盘格与其余显示模式原样保留。"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "完成代码审查修复（scene_tools.go 禁用词改「创作者」、workFactsProbe/probeImage 兼容 320 MiB 流式探测、uploadMaxBytes 零值回退、高分 PNG canvasPngBlob 设备丢失竞态守卫、清理残余 WebP 注释/文案及更新 CLAUDE.md GitFlow 分支命名）并合并最新 develop。generate-check、go vet、creativemedia/creativeagent 定向 Go 测试、前端 tsc/lint/build 与 151 项单测全绿；8 条契约与 4 条 Living Spec 增量均 applicable 且与 develop 无章节冲突；unplanned 项均为合并 develop 带入文件与 CLAUDE.md。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "230ac8d3333dc734eb00d12f2e36eb1e581ddc88612ded0ca8d829039b19123b"
+      }
+    },
+    {
+      "by": "Samson Lee",
+      "at": "2026-11-20T02:37:42.284Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "复用同快照技术验证记录；未重跑全量 E2E，沿用本轮定向回归与前轮 Metal Chromium 浏览器及 8K 实测证据。",
+        "coverage": [
+          {
+            "criterionId": "AC-3c397ec8ac00",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染设置、着色与视口分支未改。creative-scene.e2e.mjs 透明背景 UI 场景验证旧场景默认、Cmd+Z 与第二标签页同步；TestRenderTransparentBackgroundStorageAndValidation 核对落库与读取。"
+          },
+          {
+            "criterionId": "AC-66f4fde4eb01",
+            "status": "verified",
+            "evidence": "修正 scene_tools.go 禁用词后重跑 creativeagent 的 TestExportShotsTransparentOverrideAndSetRenderChanges 与全套 TestCompaction 回归全绿；合并 develop 后前端 creative-scene-agent.test.ts 与 tsc/lint/build 通过；保留前轮 Agent 浏览器回归证据。"
+          },
+          {
+            "criterionId": "AC-f8a3e4ed08b5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关场景命令校验未改。TestRenderTransparentBackgroundStorageAndValidation 验证省略 false 的存储、布尔值响应及无效输入处理。"
+          },
+          {
+            "criterionId": "AC-e8421f16c19a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，相关渲染管线与着色未改。creative-scene.e2e.mjs 物理天空庭院 2K 逐像素场景验证 Workbench 白模、材质光照与 RealtimeGI 材质光照的天空、核区、阴影与金属反射。"
+          },
+          {
+            "criterionId": "AC-d34ac91e879c",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，线稿与导出对话框逻辑未改。creative-scene.e2e.mjs UI 对话框与 2K 画面场景验证线稿始终白底、开关前后像素相同及背景提示联动。"
+          },
+          {
+            "criterionId": "AC-b598b3c085b6",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，透明 AA、WebGL2 暗斜边、黑白底景深、雾、大气与 GI 前景运动分支未改，均通过浏览器回归。"
+          },
+          {
+            "criterionId": "AC-12070303a1f5",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，玻璃与体积着色未改。Metal 浏览器玻璃/体积 E2E 与 creative-scene-gi.test.ts 守卫通过。"
+          },
+          {
+            "criterionId": "AC-102138a1a3e2",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，夜空渲染未改。creative-scene.e2e.mjs 物理夜空场景验证星月区域 alpha 为零且有月光的物体核区与关闭时一致。"
+          },
+          {
+            "criterionId": "AC-dac1a815b97a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，关闭态渲染分支未改。Metal WebGPU + Chromium 物理天空样本与 7d7fc198 基线 5 张不透明图 SHA-256 及解码 RGBA 一致。"
+          },
+          {
+            "criterionId": "AC-eec9fa8bd5f8",
+            "status": "verified",
+            "evidence": "本轮修复 320 MiB 分镜原图在 workFactsProbe/probeImage 走 25 MiB 上限与整文件进堆的问题、补充 uploadMaxBytes 零值回退，以及高分辨率 PNG canvasPngBlob 竞态 DeviceLostError 守卫；实跑 TestScopedSceneExportLargePNG（含 >25 MiB 4096×2048 PNG 的 ScheduleFactsProbe 与 ResolveGenerationMedia 校验）、TestTransparentDisplayRendition 与 creative-scene-gpu.test.ts 全绿；沿用前轮 Metal Chromium 4K/8K 方形+景深透明 PNG 浏览器实测。"
+          },
+          {
+            "criterionId": "AC-fe335ac9b750",
+            "status": "verified",
+            "evidence": "合并 develop 后验证 WorkspacePage/SceneEditor 无冲突、tsc/lint/build 与 151 项前端单测全绿；保留前轮真实后端浏览器 2K/4K PNG 展示件与断 SSE 刷新定位证据。"
+          },
+          {
+            "criterionId": "AC-6f8c7f01f2c4",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹与过时判定逻辑未改。TestExportTransparentBackgroundStaleAndReportValidation 与 TestTransparentBackgroundFingerprintsAndFreshness 验证开关变动与复原对 clay/lit/line 的 current/stale。"
+          },
+          {
+            "criterionId": "AC-7001817034e7",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，指纹逻辑未改。TestTransparentBackgroundFingerprintsAndFreshness 与存量指纹测试覆盖旧 v1 哈希以及不透明默认兼容。"
+          },
+          {
+            "criterionId": "AC-7e4fc6b44f4a",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，回报校验与暂存隔离逻辑未改。手动导出与助手任务 HTTP 校验、旧通用暂存兼容及清理用例通过。"
+          },
+          {
+            "criterionId": "AC-fa6523316755",
+            "status": "verified",
+            "evidence": "保留前轮验收证据，视口棋盘格与白模/材质预览/线框背景未改。creative-scene.e2e.mjs UI 场景验证最终渲染棋盘格与其余显示模式原样保留。"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "contracts",
+        "design",
+        "living-specs",
+        "performance",
+        "spec",
+        "tests"
+      ],
+      "summary": "Owner 授权修复代码审查问题、提交并结案，接受当前快照技术验证结论。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "230ac8d3333dc734eb00d12f2e36eb1e581ddc88612ded0ca8d829039b19123b"
+      }
     }
   ],
   "checkRuns": [],
+  "closed": {
+    "at": "2026-11-20T02:38:23.960Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "verify"
+  "stage": "closed"
 }
