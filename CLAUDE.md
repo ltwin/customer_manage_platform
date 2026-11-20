@@ -23,7 +23,7 @@
 ## Git 约定（GitFlow，2026-07-06 拍板）
 
 - 长期分支：`main` = 生产（受 CodeStable branch-guard 保护，只收 `release/*` / `hotfix/*` 合并）；`develop` = 集成基线，日常工作分支从这里拉出、合回。
-- 工作分支沿用 CodeStable 类型前缀：`feat/*`（新功能，≈ GitFlow feature）、`fix/*`（缺陷修复）、`refactor/*`（重构）——不要用 `feature/*` 命名，branch-guard 认的是 `feat/`。
+- 工作分支遵循 GitFlow 命名约定：`feature/*` / `feat/*`（新功能）、`fix/*`（缺陷修复）、`refactor/*`（重构）。
 - `release/*` / `hotfix/*` 保留给发布节奏出现之后；首版迭代期 `develop` → `main` 直接走发布合并即可，不为不存在的发布流程预支分支。
 - `develop` 是当前集成基线；工作分支完成后按 scoped commit 合回，不在 `main` 上直接开发。
 
