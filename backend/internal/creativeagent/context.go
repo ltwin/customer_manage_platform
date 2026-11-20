@@ -795,10 +795,10 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 	if args.Before == 0 || args.Before > trigger {
 		args.Before = trigger
 	}
-	var library bool
+	var consent Consent
 	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		c, err := readScopeInTx(ctx, tx)
-		library = libraryOpen(c, true)
+		var err error
+		consent, err = readScopeInTx(ctx, tx)
 		return err
 	}); err != nil {
 		return "", err
@@ -823,19 +823,29 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 		}
 		// References are locators only. read_asset separately authorizes bytes.
 		refs := []string{}
+		var parts []string
 		for _, block := range b.Blocks {
-			if block.Type == "content_ref" {
+			switch block.Type {
+			case "content_ref":
 				refs = append(refs, block.RefID)
+			case "text":
+				if block.Text != "" {
+					parts = append(parts, block.Text)
+				}
+			case "scene_ref":
+				if line := historySceneLine(block, consentHas(consent, "canvas_metadata")); line != "" {
+					parts = append(parts, line)
+				}
 			}
 		}
-		text := utf8Prefix(renderedText(body), 1024)
+		text := utf8Prefix(strings.Join(parts, "\n"), 1024)
 		if skillHistoryTool(b.ToolName) {
 			text = skillHistoryUnloaded
 		}
 		if contentReadTool(b.ToolName) {
 			text = "曾读取内容；正文请用 read_asset 重新读取"
 		}
-		if role == "tool" && !library && libraryResultTool(b.ToolName, "") {
+		if role == "tool" && !libraryOpen(consent, true) && libraryResultTool(b.ToolName, "") {
 			text = libraryWithheld
 		}
 		items = append(items, map[string]any{"ordinal": fmt.Sprint(ordinal), "role": role, "text": text, "references": refs, "tool_call_id": b.ToolCallID})

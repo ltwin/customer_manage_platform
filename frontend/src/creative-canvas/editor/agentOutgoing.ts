@@ -1,15 +1,30 @@
 import type { components } from '../../api/schema'
 import type { PendingAgentChain } from './agentState.ts'
+import { sceneRefTitle, type SceneRefDraft } from './agentReferences.ts'
 
 type Segment = components['schemas']['CreativeAgentInstructionSegment']
 type Block =
   components['schemas']['CreativeAgentMessage']['body']['blocks'][number]
 
-// 用户消息的一段：文字、引用（Skill 或素材）、命令，或从 3D 场景发送时选中的物体
-// （names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
+type MessageSkill = Pick<
+  components['schemas']['CreativeAgentMessageSkill'],
+  'skill_id' | 'skill_version_id' | 'display_name' | 'version_number'
+>
+
+// 摄影师消息的一段：文字、引用（Skill、素材或场景）、命令，或旧页面从 3D 场景发送时
+// 选中的物体（names 按选中顺序，未命名的为空串）。已存的消息和刚发出的消息都画成这样。
+// 场景引用的 chip 带 detail：完整的物件名单。
 export type MessagePart =
   | { kind: 'text'; text: string }
-  | { kind: 'chip'; title: string }
+  | {
+      kind: 'chip'
+      title: string
+      scene?: true
+      sceneTitle?: string
+      detail?: string
+      revisionID?: string
+      skill?: MessageSkill
+    }
   | { kind: 'command'; command: string; text?: string }
   | { kind: 'scene'; names: string[] }
 
@@ -24,22 +39,44 @@ export interface Outgoing {
 }
 
 const unnamed = '引用素材'
+const deletedObject = '已删除的物件'
 
+function sceneChip(ref: SceneRefDraft): MessagePart {
+  const names = ref.objectIDs.map((_, i) => ref.names[i] || '未命名')
+  return {
+    kind: 'chip',
+    title: sceneRefTitle(ref),
+    scene: true,
+    sceneTitle: ref.title || '未命名场景',
+    detail: names.length ? names.join('、') : '整个场景',
+  }
+}
+
+// scenes 是正文里的场景引用，按出现顺序，与 scene_ref 片段一一对应。
 export function outgoingParts(
   segments: Segment[],
   titleOf: (revisionID: string) => string | undefined,
-  skillName?: string,
-  sceneNames: string[] = [],
+  skill?: MessageSkill,
+  scenes: SceneRefDraft[] = [],
 ): MessagePart[] {
-  const parts = segments.map((segment): MessagePart => {
+  let scene = 0
+  return segments.map((segment): MessagePart => {
     switch (segment.type) {
+      case 'scene_ref': {
+        const ref = scenes[scene++]
+        return sceneChip(
+          ref ?? {
+            documentID: segment.document_id ?? '',
+            title: '',
+            objectIDs: segment.object_ids ?? [],
+            names: [],
+          },
+        )
+      }
       case 'skill_ref':
-        return { kind: 'chip', title: skillName ?? 'Skill' }
+        return skill ? skillChip(skill) : { kind: 'chip', title: 'Skill' }
       case 'content_ref':
-        return {
-          kind: 'chip',
-          title: titleOf(segment.content_revision_id ?? '') ?? unnamed,
-        }
+        return contentChip(segment.content_revision_id, titleOf)
       case 'command':
         return {
           kind: 'command',
@@ -50,10 +87,6 @@ export function outgoingParts(
         return { kind: 'text', text: segment.text ?? '' }
     }
   })
-  // 服务端把选中的物体存在消息末尾，这里照样放。
-  return sceneNames.length
-    ? [...parts, { kind: 'scene', names: sceneNames }]
-    : parts
 }
 
 export function messageParts(
@@ -69,12 +102,38 @@ export function messageParts(
         kind: 'scene',
         names: block.scene?.objects.map((object) => object.name) ?? [],
       }
-    return {
-      kind: 'chip',
-      title:
-        block.skill?.display_name ?? titleOf(block.ref_id ?? '') ?? unnamed,
-    }
+    // 场景引用显示发送时冻结的名称；发送时已经不在场景里的物件显示为「已删除的物件」。
+    if (block.type === 'scene_ref' && block.scene)
+      return sceneChip({
+        documentID: block.scene.document_id,
+        title: block.scene.title,
+        objectIDs: block.scene.objects.map((object) => object.id),
+        names: block.scene.objects.map((object) =>
+          object.missing ? deletedObject : object.name,
+        ),
+      })
+    if (block.skill) return skillChip(block.skill)
+    return contentChip(block.ref_id, titleOf)
   })
+}
+
+function skillChip({ skill_id, skill_version_id, display_name, version_number }: MessageSkill): MessagePart {
+  return {
+    kind: 'chip',
+    title: display_name,
+    skill: { skill_id, skill_version_id, display_name, version_number },
+  }
+}
+
+function contentChip(
+  revisionID: string | undefined,
+  titleOf: (id: string) => string | undefined,
+): MessagePart {
+  return {
+    kind: 'chip',
+    title: (revisionID && titleOf(revisionID)) || unnamed,
+    ...(revisionID && { revisionID }),
+  }
 }
 
 // 服务端受理了：记下触发消息和运行，会话换成服务端给的那个。

@@ -21,7 +21,7 @@ interface Entry {
 
 const entries = new Map<string, Entry>()
 const contents = new Map<string, api.Content>()
-const contentReads = new Map<string, Promise<void>>()
+const contentReads = new Map<string, Promise<api.Content | undefined>>()
 const contentLimit = 400
 const warmLimit = 8
 
@@ -41,9 +41,10 @@ export function cachedContent(id: string): api.Content | undefined {
   return contents.get(scoped(id))
 }
 
-function readContent(id: string): Promise<void> {
+export function loadContentRevision(id: string): Promise<api.Content | undefined> {
   const k = scoped(id)
-  if (contents.has(k)) return Promise.resolve()
+  const cached = contents.get(k)
+  if (cached) return Promise.resolve(cached)
   let read = contentReads.get(k)
   if (!read) {
     read = api
@@ -52,9 +53,10 @@ function readContent(id: string): Promise<void> {
         contents.set(k, c)
         if (contents.size > contentLimit)
           contents.delete(contents.keys().next().value as string)
+        return c
       })
       .catch(() => {
-        /* 缩略图是辅助视图，读取失败时留空。 */
+        return undefined
       })
       .finally(() => contentReads.delete(k))
     contentReads.set(k, read)
@@ -89,7 +91,7 @@ export function loadVersions(
     .then(async (page) => {
       // 内容先到再发布，版本条不会先出现一排空格子。
       await Promise.all(
-        page.items.map((v) => readContent(v.content_revision_id)),
+        page.items.map((v) => loadContentRevision(v.content_revision_id)),
       )
       for (const v of page.items.slice(0, warmLimit))
         warmTicket(v.content_revision_id)
@@ -128,7 +130,7 @@ export function useContentRevision(
   useEffect(() => {
     if (!id || !enabled || cachedContent(id)) return
     let live = true
-    void readContent(id).then(() => {
+    void loadContentRevision(id).then(() => {
       if (live) setLoaded((n) => n + 1)
     })
     return () => {

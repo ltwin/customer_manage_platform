@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useId, useState } from 'react'
-import { Box, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import {
   commandScene,
   readRunChanges,
@@ -16,24 +16,10 @@ import {
   outcomeText,
   restorePayload,
   sceneWriteTools,
-  selectionLabel,
   screenshotRevision,
   submitBatches,
 } from './agentScene.ts'
 import { mediaTicket } from './media.ts'
-
-// The objects selected in the scene editor: above the input while they will
-// go with the message, and on the message once sent.
-export function SceneSelectionTag({ names }: { names: string[] }) {
-  const { label, detail } = selectionLabel(names)
-  return (
-    <span className="cc-agent-scene-tag" title={`选中的物体：${detail}`}>
-      <Box size={13} aria-hidden="true" />
-      <span className="sr-only">选中的物体：</span>
-      <span>{label}</span>
-    </span>
-  )
-}
 
 // A render_view screenshot under its tool row. Screenshots stay staged and
 // have a 1024 long side, under the display rendition's threshold: the

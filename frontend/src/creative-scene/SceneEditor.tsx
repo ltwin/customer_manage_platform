@@ -376,12 +376,13 @@ export default function SceneEditor({
   const editable = !!s.base && !s.trashed && !s.missing
   useEffect(() => {
     if (!editable) return clearSceneContext(documentID)
+    const published = selected.filter((id) => byID.has(id))
     const names: Record<string, string> = {}
-    for (const id of selected) {
+    for (const id of published) {
       const name = byID.get(id)?.name
       if (name) names[id] = name
     }
-    setSceneContext({ documentID, selected: [...selected], names })
+    setSceneContext({ documentID, selected: published, names })
   }, [documentID, selected, editable, byID])
   useEffect(() => () => clearSceneContext(documentID), [documentID])
   useEffect(() => {

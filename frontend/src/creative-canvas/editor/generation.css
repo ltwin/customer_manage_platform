@@ -310,52 +310,6 @@
   max-height: 280px;
   object-fit: contain;
 }
-.cc-generation-ref-peek {
-  position: fixed;
-  z-index: 70;
-  width: 200px;
-  overflow: hidden;
-  border-radius: var(--r);
-  background: var(--s2);
-  box-shadow: var(--shadow);
-  pointer-events: none;
-  font-size: 12px;
-}
-.cc-generation-ref-peek .cc-media {
-  width: 100%;
-  min-height: 0;
-  max-height: 240px;
-}
-.cc-generation-ref-peek img,
-.cc-generation-ref-peek video {
-  display: block;
-  width: 100%;
-  max-height: 240px;
-  object-fit: contain;
-}
-.cc-generation-ref-peek p {
-  max-height: 160px;
-  overflow: hidden;
-  padding: 12px;
-  margin: 0;
-  color: var(--fg-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.cc-generation-ref-peek > div:last-child {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-}
-.cc-generation-ref-peek b {
-  overflow-wrap: anywhere;
-  font-weight: 500;
-}
-.cc-generation-ref-peek span {
-  color: var(--fg-3);
-  font-size: 11px;
-}
 @media (max-width: 760px) {
   .cc-generation {
     top: auto !important;
@@ -454,9 +408,10 @@
 .cc-prompt-picker {
   position: fixed;
   z-index: 66;
+  display: flex;
+  flex-direction: column;
   width: 272px;
-  max-height: 320px;
-  overflow: auto;
+  max-height: 412px;
   padding: 4px;
   border-radius: var(--r);
   background: var(--s2);
@@ -484,7 +439,7 @@
   cursor: pointer;
 }
 .cc-prompt-picker button.is-on,
-.cc-prompt-picker button:hover {
+.cc-prompt-picker button:enabled:hover {
   background: var(--s3);
 }
 .cc-prompt-picker button > span:not(.cc-mention-icon) {
@@ -520,6 +475,173 @@
 .cc-prompt-picker :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+/* 搜索框固定在上面，列表在下面滚动。 */
+.cc-prompt-search {
+  flex: none;
+  height: 30px;
+  margin: 0 4px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--s1);
+  color: var(--fg);
+  font: inherit;
+}
+.cc-prompt-search:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.cc-prompt-options {
+  max-height: 320px;
+  overflow: auto;
+}
+.cc-prompt-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.cc-prompt-picker button em {
+  flex: none;
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+}
+.cc-prompt-picker button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 场景项：整行插入整个场景，右侧箭头展开物件列表。 */
+.cc-prompt-scene-row {
+  display: flex;
+  align-items: center;
+}
+.cc-prompt-picker .cc-prompt-scene-row > button[role='option'] {
+  flex: 1;
+  min-width: 0;
+}
+.cc-prompt-picker .cc-prompt-scene-row > .cc-prompt-expand {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  color: var(--fg-3);
+}
+.cc-scene-picker-list [data-missing='true'] {
+  color: var(--fg-3);
+}
+/* 待选引用：置灰，点进输入框后才转正。 */
+.cc-prompt-mention.is-pending {
+  background: transparent;
+  outline: 1px dashed var(--fg-3);
+  outline-offset: -1px;
+  color: var(--fg-3);
+  opacity: 0.7;
+}
+.cc-prompt-mention[data-label='场景'] {
+  cursor: pointer;
+}
+/* 场景的物件列表（@ 菜单的第二级）。 */
+.cc-scene-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.cc-scene-picker header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+.cc-scene-picker header button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+}
+.cc-scene-picker header b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.cc-scene-picker-list {
+  max-height: 320px;
+  overflow: auto;
+  user-select: none;
+  touch-action: none;
+}
+.cc-scene-picker-list [role='option'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.cc-scene-picker-list [role='option'] .cc-mention-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+.cc-scene-picker-list [role='option'] > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-scene-picker-list [role='option']:not([aria-disabled='true']):hover {
+  background: var(--s3);
+}
+.cc-scene-picker-list [aria-selected='true'] {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.cc-scene-picker-list [aria-selected='true']:not([aria-disabled='true']):hover {
+  background: color-mix(in srgb, var(--primary) 36%, transparent);
+}
+.cc-scene-picker-list [data-keyboard-active='true'] {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+.cc-scene-picker-list [aria-disabled='true'] {
+  color: var(--fg-3);
+  cursor: default;
+}
+.cc-scene-picker-list .cc-scene-picker-whole {
+  height: 28px;
+}
+.cc-scene-picker footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--line);
+  color: var(--fg-3);
+}
+.cc-scene-picker footer button {
+  width: auto;
+  height: 26px;
+  padding: 0 12px;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cc-scene-picker footer button:enabled:hover {
+  background: color-mix(in srgb, var(--primary) 40%, white);
+}
+.cc-scene-picker footer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cc-scene-picker p button {
+  display: inline;
+  width: auto;
+  height: auto;
+  margin-left: 6px;
+  padding: 0;
+  color: var(--primary);
 }
 
 .cc-generation-ref.is-updated {

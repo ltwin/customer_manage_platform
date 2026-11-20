@@ -23,6 +23,7 @@ const titles = new Map([
 const titleOf = (id: string) => titles.get(id)
 
 test('what was sent is drawn the way the server will draw it', () => {
+  const skill = { skill_id: 's', skill_version_id: 'v', display_name: '人像修图', version_number: 2 }
   const parts = outgoingParts(
     [
       { type: 'skill_ref', skill_id: 's', skill_version_id: 'v' },
@@ -32,14 +33,14 @@ test('what was sent is drawn the way the server will draw it', () => {
       { type: 'content_ref', content_revision_id: 'rev-9' },
     ],
     titleOf,
-    '人像修图',
+    skill,
   )
   assert.deepEqual(parts, [
-    { kind: 'chip', title: '人像修图' },
+    { kind: 'chip', title: '人像修图', skill },
     { kind: 'text', text: '参考' },
-    { kind: 'chip', title: '秋日样片' },
+    { kind: 'chip', title: '秋日样片', revisionID: 'rev-1' },
     { kind: 'text', text: '出三版' },
-    { kind: 'chip', title: '引用素材' },
+    { kind: 'chip', title: '引用素材', revisionID: 'rev-9' },
   ])
   assert.deepEqual(
     outgoingParts(
@@ -52,6 +53,7 @@ test('what was sent is drawn the way the server will draw it', () => {
   assert.deepEqual(
     messageParts(
       [
+        { type: 'skill_ref', skill: { ...skill, digest: 'd' } },
         { type: 'text', text: '参考' },
         { type: 'content_ref', ref_id: 'rev-2' },
         { type: 'command', command: 'compact' },
@@ -59,25 +61,20 @@ test('what was sent is drawn the way the server will draw it', () => {
       titleOf,
     ),
     [
+      { kind: 'chip', title: '人像修图', skill },
       { kind: 'text', text: '参考' },
-      { kind: 'chip', title: '上传的参考图' },
+      { kind: 'chip', title: '上传的参考图', revisionID: 'rev-2' },
       { kind: 'command', command: 'compact', text: undefined },
     ],
   )
 })
 
-test('the objects selected in the scene editor ride on the message', () => {
-  const parts = outgoingParts(
-    [{ type: 'text', text: '把它们加高' }],
-    titleOf,
-    undefined,
-    ['柱 A', ''],
-  )
-  assert.deepEqual(parts, [
+test('a selection an older page sent still rides on the message', () => {
+  const parts = [
     { kind: 'text', text: '把它们加高' },
     { kind: 'scene', names: ['柱 A', ''] },
-  ])
-  // The stored message reads back the same: the server puts the selection last.
+  ]
+  // The server put the selection last.
   assert.deepEqual(
     messageParts(
       [
@@ -103,6 +100,53 @@ test('the objects selected in the scene editor ride on the message', () => {
     label: '柱 A 等 3 个物体',
     detail: '柱 A、未命名物体、椅子',
   })
+})
+
+test('scene references are drawn in place, as sent and as stored', () => {
+  const lamp = { documentID: 'doc', title: '客厅', objectIDs: ['a', 'b'], names: ['台灯', ''] }
+  const whole = { documentID: 'bed', title: '卧室', objectIDs: [], names: [] }
+  const parts = outgoingParts(
+    [
+      { type: 'text', text: '把' },
+      { type: 'scene_ref', document_id: 'doc', object_ids: ['a', 'b'] },
+      { type: 'text', text: '改成金属，' },
+      { type: 'scene_ref', document_id: 'bed' },
+    ],
+    titleOf,
+    undefined,
+    [lamp, whole],
+  )
+  assert.deepEqual(parts, [
+    { kind: 'text', text: '把' },
+    { kind: 'chip', title: '客厅 · 台灯、未命名', scene: true, sceneTitle: '客厅', detail: '台灯、未命名' },
+    { kind: 'text', text: '改成金属，' },
+    { kind: 'chip', title: '卧室', scene: true, sceneTitle: '卧室', detail: '整个场景' },
+  ])
+  // Stored: the snapshot's names, and an object gone when sent reads as deleted.
+  assert.deepEqual(
+    messageParts(
+      [
+        {
+          type: 'scene_ref',
+          scene: {
+            document_id: 'doc',
+            title: '客厅',
+            revision: 12,
+            objects: [
+              { id: 'a', name: '台灯' },
+              { id: 'b', name: '', missing: true },
+            ],
+          },
+        },
+        { type: 'scene_ref', scene: { document_id: 'bed', title: '卧室', revision: 3, objects: [] } },
+      ],
+      titleOf,
+    ),
+    [
+      { kind: 'chip', title: '客厅 · 台灯、已删除的物件', scene: true, sceneTitle: '客厅', detail: '台灯、已删除的物件' },
+      { kind: 'chip', title: '卧室', scene: true, sceneTitle: '卧室', detail: '整个场景' },
+    ],
+  )
 })
 
 const sending: Outgoing = {

@@ -1080,13 +1080,13 @@ test('a run parked on a page job says what it waits for', () => {
   assert.equal(currentStep(view('slot_busy')), '等待其他助手运行结束')
 })
 
-test('a run started from the scene editor carries its scene and at most 50 selected objects; elsewhere none', () => {
+test('a run started from the scene editor carries its scene, its selection only as references; elsewhere none', () => {
   const message = { model: 'vision', segments: [{ type: 'text', text: '改成木头的' }] } as Parameters<typeof messageSteps>[1]
   const runStep = (scene?: Parameters<typeof messageSteps>[1]['scene']) => messageSteps('c', { ...message, scene }).find((s) => s.path.endsWith('/runs'))!
   assert.equal('scene_context' in runStep().payload, false)
   assert.equal('scene_context' in runStep(null).payload, false)
   const many = Array.from({ length: 60 }, (_, i) => `sobj_${String(i).padStart(21, '0')}`)
-  assert.deepEqual(runStep({ documentID: 'cwdoc_1', selected: many }).payload.scene_context, { document_id: 'cwdoc_1', selected_object_ids: many.slice(0, 50) })
+  assert.deepEqual(runStep({ documentID: 'cwdoc_1', selected: many }).payload.scene_context, { document_id: 'cwdoc_1', selected_object_ids: [] })
 })
 
 test('after a device loss the page claims nothing until a wake 10 seconds on finds a device', async () => {

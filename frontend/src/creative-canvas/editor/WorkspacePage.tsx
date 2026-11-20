@@ -1329,7 +1329,15 @@ function Workspace({ account }: { account: string }) {
       className={`cc-workspace ${!canvasID ? 'is-library' : ''} ${libraryOpen ? 'has-library' : ''}`}
     >
       {canvasID && (
-        <AgentPanel key={canvasID} account={account} canvasID={canvasID} canvas={view} defaultOpen={openAgent} />
+        <AgentPanel
+          key={canvasID}
+          account={account}
+          canvasID={canvasID}
+          canvas={view}
+          defaultOpen={openAgent}
+          canvasFocus={maximized ? null : selection.length === 1 ? selection[0] : null}
+          editingSceneID={maximized?.typeKey === 'core.scene' ? maximized.id : null}
+        />
       )}
       <header className="cc-header">
         <Link

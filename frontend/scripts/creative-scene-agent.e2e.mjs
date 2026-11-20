@@ -85,8 +85,9 @@ ${auth}
 // 账号已同意发送前说明（服务端状态由这个 fetch 垫片给出）。
 {const f=window.fetch,v='${noticeVersion}';window.fetch=(i,o)=>{const u=typeof i==='string'?i:i.url,m=(o&&o.method)||(typeof i==='string'?'GET':i.method);return u.endsWith('/api/v1/creative/egress-consent')&&m==='GET'?Promise.resolve(new Response(JSON.stringify({policy_version:v,effective:true,revision:'1',consent:{id:'ccec_qa',policy_version:v,library_access:true,granted_at:'2026-11-13T00:00:00Z'}}),{headers:{'content-type':'application/json'}})):f(i,o)}}
 window.__scene = setSceneContext;
-const nodes = [{id: 'node-scene', metadata: {title: '棚拍布景'}, data: {document_id: '${DOC}'}}];
-createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}}));
+setSceneContext({ documentID: '${DOC}', selected: [] });
+const nodes = [{id: 'node-scene', metadata: {title: '棚拍布景', type_key: 'core.scene'}, data: {document_id: '${DOC}'}}];
+createRoot(document.getElementById('root')).render(React.createElement(AgentPanel, {account: 'qa-account', canvasID: 'canvas', defaultOpen: true, canvas: {nodes}, editingSceneID: '${DOC}'}));
 window.__ready = true;
 </script></body></html>`,
 )
@@ -795,23 +796,35 @@ try {
     await p.context.close()
   })
 
-  await check('a message sent from the scene editor carries its scene and selection', async () => {
+  await check('a selection in the scene editor becomes a reference in the text, where the caret was', async () => {
     const p = await openPanel()
     const chair = 'sobj_chair000000000000000000'
     const lamp = 'sobj_lamp0000000000000000000'
-    await p.page.evaluate(([doc, chair, lamp]) => window.__scene({ documentID: doc, selected: [chair, lamp], names: { [chair]: '椅子' } }), [DOC, chair, lamp])
-    // What will go with the message shows above the input.
-    const composer = p.page.locator('.cc-agent-compose .cc-agent-scene-tag')
-    await composer.filter({ hasText: '椅子 等 2 个物体' }).waitFor()
-    assert.equal(await composer.getAttribute('title'), '选中的物体：椅子、未命名物体')
     const editor = p.page.getByRole('textbox', { name: '创作问题' })
     await editor.click()
-    await p.page.keyboard.type('把椅子换成木头的')
+    await p.page.keyboard.type('把')
+    await p.page.evaluate(() => document.activeElement.blur())
+    await p.page.evaluate(([doc, chair, lamp]) => window.__scene({ documentID: doc, selected: [chair, lamp], names: { [chair]: '椅子' } }), [DOC, chair, lamp])
+    // Nothing floats over the input: the selection waits greyed at the caret.
+    const label = '棚拍布景 · 椅子、未命名'
+    await p.page.locator('.cc-prompt-editor [data-pending]').filter({ hasText: label }).waitFor()
+    assert.equal(await p.page.locator('.cc-agent-compose .cc-agent-scene-tag').count(), 0)
+    // Clicking into the input makes it a reference; typing goes after it.
+    await editor.click()
+    await p.page.locator('.cc-prompt-editor [data-ref]').filter({ hasText: label }).waitFor()
+    await p.page.keyboard.type('换成木头的')
     await p.page.keyboard.press('Enter')
     await waitUntil(() => p.panel.created.length === 1, 'the run was created')
-    assert.deepEqual(p.panel.created[0].payload.scene_context, { document_id: DOC, selected_object_ids: [chair, lamp] })
-    // And on the message as it is sent.
-    await p.page.locator('.cc-agent-user-scene .cc-agent-scene-tag').filter({ hasText: '椅子 等 2 个物体' }).waitFor()
+    const payload = p.panel.created[0].payload
+    assert.deepEqual(payload.scene_context, { document_id: DOC, selected_object_ids: [] })
+    const segments = payload.instruction.instruction_segments
+    assert.deepEqual(segments.map((s) => s.type), ['text', 'scene_ref', 'text'])
+    assert.equal(segments[0].text, '把')
+    assert.deepEqual(segments[1], { type: 'scene_ref', document_id: DOC, object_ids: [chair, lamp] })
+    assert.equal(segments[2].text.trim(), '换成木头的')
+    // The message as sent shows the reference in place.
+    await p.page.locator('.cc-agent-user .cc-agent-chip[data-scene]').filter({ hasText: label }).waitFor()
+    assert.deepEqual(p.errors, [])
     await p.context.close()
   })
 
